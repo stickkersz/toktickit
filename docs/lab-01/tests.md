@@ -20,23 +20,100 @@ TokTickIT's Lab 1 slice has two moving parts that need independent proof of corr
 
 ## How to run
 
-```bash
-# server suite — requires PostgreSQL running and DATABASE_URL set (server/.env)
-cd server
-npx prisma migrate deploy
-npx prisma db seed
-npm test
+### 1. Start PostgreSQL
 
-# client suite — no DB needed, api.ts is mocked
+The API tests (API-01, API-02) hit a real database, so Postgres must be
+running first. This project runs Postgres in Docker, container name
+`toktickit-pg`.
+
+```bash
+# check Docker Desktop is running at all
+docker ps
+```
+
+If that errors with something like `Cannot connect to the Docker daemon`,
+Docker Desktop itself is not running — open it (`open -a Docker` on macOS)
+and wait ~10-30s for the daemon to come up, then re-check with `docker ps`.
+
+```bash
+# check whether the toktickit-pg container exists and its state
+docker ps -a --filter name=toktickit-pg
+```
+
+- If it shows `Up ...`, Postgres is already running — skip to step 2.
+- If it shows `Exited ...`, start it: `docker start toktickit-pg`
+- If no container is listed at all, it needs to be created (see the
+  project setup docs) before continuing.
+
+Confirm the port is actually reachable:
+
+```bash
+nc -z localhost 5432 && echo "Postgres is reachable" || echo "Postgres is NOT reachable"
+```
+
+### 2. Point the server at the database
+
+`server/.env` must have `DATABASE_URL` pointing at that same Postgres
+instance (copy `server/.env.example` if `.env` doesn't exist yet):
+
+```text
+DATABASE_URL="postgresql://toktickit:toktickit@localhost:5432/toktickit?schema=public"
+```
+
+### 3. Apply migrations and seed data
+
+```bash
+cd server
+npx prisma migrate deploy   # applies any pending schema migrations
+npx prisma db seed          # inserts the 4 fixed categories the tests expect
+```
+
+`migrate deploy` prints "No pending migrations to apply" if the schema is
+already current — that's fine, not an error. `db seed` prints
+"Seeded 4 categories." on success.
+
+### 4. Run the server test suite
+
+Still inside `server/`:
+
+```bash
+npm test
+```
+
+or, to see each test named individually (useful for screenshots/evidence):
+
+```bash
+npx vitest run tests/lab-01/health.test.ts tests/lab-01/categories.test.ts --reporter=verbose
+```
+
+Both API-01 (`health.test.ts`) and API-02 (`categories.test.ts`) should
+report `✓`. If API-02 fails with a 500 status instead of 200, the most
+common cause is Postgres not actually running/reachable — go back to
+step 1.
+
+### 5. Run the client test suite
+
+The UI tests (UI-01, UI-02, UI-03) mock `client/src/api.ts` with
+`vi.spyOn`, so no database or running server is required for this part.
+
+```bash
 cd client
 npm test
 ```
+
+or, verbose/individually:
+
+```bash
+npx vitest run tests/lab-01/App.test.tsx --reporter=verbose
+```
+
+All 3 tests in `App.test.tsx` should report `✓`.
 
 ## Passing terminal output (re-run on `feature/Lab1Doc`, commit `9f7c1e1`, 2026-08-15)
 
 ### Server — `cd server && npx vitest run tests/lab-01/health.test.ts tests/lab-01/categories.test.ts --reporter=verbose`
 
-```
+```text
  RUN  v2.1.9 /toktickit/server
 
  ✓ tests/lab-01/health.test.ts > GET /api/health > returns 200 with status ok and the service name
@@ -48,7 +125,7 @@ npm test
 
 ### Client — `cd client && npx vitest run tests/lab-01/App.test.tsx --reporter=verbose`
 
-```
+```text
  RUN  v2.1.9 /toktickit/client
 
  ✓ tests/lab-01/App.test.tsx > App > renders the TokTickIT heading
