@@ -32,26 +32,28 @@ cd client
 npm test
 ```
 
-## Passing terminal output (captured on `main`, commit `4196100`)
+## Passing terminal output (re-run on `feature/Lab1Doc`, commit `9f7c1e1`, 2026-08-15)
 
-### Server — `cd server && npm test`
+### Server — `cd server && npx vitest run tests/lab-01/health.test.ts tests/lab-01/categories.test.ts --reporter=verbose`
 
 ```
- RUN  v2.1.9 server
+ RUN  v2.1.9 /toktickit/server
 
- ✓ tests/lab-01/health.test.ts (1 test) 9ms
- ✓ tests/lab-01/categories.test.ts (1 test) 50ms
+ ✓ tests/lab-01/health.test.ts > GET /api/health > returns 200 with status ok and the service name
+ ✓ tests/lab-01/categories.test.ts > GET /api/categories > returns the four seeded categories in id order
 
  Test Files  2 passed (2)
       Tests  2 passed (2)
 ```
 
-### Client — `cd client && npm test`
+### Client — `cd client && npx vitest run tests/lab-01/App.test.tsx --reporter=verbose`
 
 ```
- RUN  v2.1.9 client
+ RUN  v2.1.9 /toktickit/client
 
- ✓ tests/lab-01/App.test.tsx (3 tests) 62ms
+ ✓ tests/lab-01/App.test.tsx > App > renders the TokTickIT heading
+ ✓ tests/lab-01/App.test.tsx > App > shows Online and the seeded categories on success
+ ✓ tests/lab-01/App.test.tsx > App > shows an Offline error message when the API is unavailable
 
  Test Files  1 passed (1)
       Tests  3 passed (3)
