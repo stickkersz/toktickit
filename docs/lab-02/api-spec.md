@@ -6,7 +6,7 @@ Companion to `docs/lab-02/specification.md`. Every endpoint below implements one
 
 - Base path: `/api`.
 - All request/response bodies are JSON except file upload (`multipart/form-data`) and file download (raw bytes).
-- Since there is no authenticated session (BR-03), every endpoint that touches Ticket or Attachment data takes an explicit `requesterId` — query parameter on GET, body field on POST/DELETE — representing the currently selected Development Requester. The server always re-derives ownership from the database and rejects mismatches; it never trusts a client-asserted relationship beyond this id.
+- Since there is no authenticated session (BR-03), every endpoint that touches Ticket or Attachment data takes an explicit `requesterId` (query parameter on GET, body field on POST/DELETE) representing the currently selected Development Requester. The server always re-derives ownership from the database and rejects mismatches; it never trusts a client-asserted relationship beyond this id.
 - Timestamps are ISO 8601 UTC strings.
 - Enums are transmitted as their Prisma enum string values: `requestedPriority` ∈ `LOW | MEDIUM | HIGH`; `currentStatus` ∈ `NEW` (only value reachable in Lab 2).
 
@@ -31,7 +31,7 @@ All non-2xx responses share one envelope:
 | 200 OK | Successful read, or successful soft-remove | GET endpoints, DELETE attachment |
 | 201 Created | Ticket or Attachment created | POST tickets, POST attachments |
 | 400 Bad Request | Missing/invalid field, invalid reference id, malformed query param | all write endpoints, list endpoint |
-| 404 Not Found | Resource does not exist, or exists but is not owned by `requesterId` (BR-35 — same code either way, never 403) | GET/DELETE by id |
+| 404 Not Found | Resource does not exist, or exists but is not owned by `requesterId` (BR-35: same code either way, never 403) | GET/DELETE by id |
 | 409 Conflict | Max 5 active attachments reached (BR-26), attachment already removed | POST attachments, DELETE attachment |
 | 410 Gone | Attachment exists but is soft-removed (BR-30) | GET attachment download |
 | 413 Payload Too Large | File exceeds 5 MB (BR-26) | POST attachments |
@@ -55,7 +55,7 @@ Response 200:
 ]
 ```
 
-Errors: 500 on database failure — client shows the safe-failure state from BR-34.
+Errors: 500 on database failure. Client shows the safe-failure state from BR-34.
 
 ## 2. GET /api/related-systems
 
@@ -63,7 +63,7 @@ Purpose: reference data for the Create Ticket related-system select.
 
 Auth/ownership: none.
 
-Response 200: same shape as categories — `[{ "id": number, "name": string }]`.
+Response 200: same shape as categories, `[{ "id": number, "name": string }]`.
 
 Errors: 500.
 
@@ -71,7 +71,7 @@ Errors: 500.
 
 Purpose: populate the Development Requester Selection dropdown.
 
-Auth/ownership: none. Server filters to `isActive = true` (BR-04) — inactive Requesters never appear in the payload.
+Auth/ownership: none. Server filters to `isActive = true` (BR-04); inactive Requesters never appear in the payload.
 
 Response 200:
 
@@ -81,11 +81,11 @@ Response 200:
 ]
 ```
 
-Errors: 500 — client shows BR-33's empty/failure state (an empty `[]` array is a valid success response, not an error, when zero active Requesters exist).
+Errors: 500. Client shows BR-33's empty/failure state (an empty `[]` array is a valid success response, not an error, when zero active Requesters exist).
 
 ## 4. POST /api/tickets
 
-Purpose: create one validated Ticket (FR-02, FR-03). Attachments are **not** part of this call — the client uploads them afterward via endpoint 7, once the Ticket id is known (BR-25).
+Purpose: create one validated Ticket (FR-02, FR-03). Attachments are **not** part of this call. The client uploads them afterward via endpoint 7, once the Ticket id is known (BR-25).
 
 Auth/ownership: `requesterId` in the body must reference an existing, active Requester.
 
@@ -120,21 +120,21 @@ Response 201:
 ```
 
 Errors:
-- 400 `VALIDATION_ERROR` — missing/out-of-range `summary` (BR-13) or `description` (BR-14), missing/invalid `requestedPriority` (BR-16), unknown or inactive `categoryId`/`relatedSystemId` (BR-15), unknown or inactive `requesterId`. `fields` maps each failing field to its message; multiple fields may fail at once.
-- 500 — no partial Ticket is left queryable (BR-19).
+- 400 `VALIDATION_ERROR`: missing/out-of-range `summary` (BR-13) or `description` (BR-14), missing/invalid `requestedPriority` (BR-16), unknown or inactive `categoryId`/`relatedSystemId` (BR-15), unknown or inactive `requesterId`. `fields` maps each failing field to its message; multiple fields may fail at once.
+- 500: no partial Ticket is left queryable (BR-19).
 
 ## 5. GET /api/tickets
 
 Purpose: paginated, searched, filtered, sorted list of the current Requester's own Tickets (FR-04).
 
-Auth/ownership: `requesterId` (query, required) scopes every result — BR-11.
+Auth/ownership: `requesterId` (query, required) scopes every result (BR-11).
 
 Query parameters:
 
 | Param | Required | Type | Notes |
 |---|---|---|---|
 | `requesterId` | yes | number | 400 if missing or not a valid active Requester id |
-| `search` | no | string | matches `ticketNumber` (partial) or `summary` (partial, case-insensitive) — BR-20 |
+| `search` | no | string | matches `ticketNumber` (partial) or `summary` (partial, case-insensitive; BR-20) |
 | `category` | no | number | `categoryId` to filter by |
 | `requestedPriority` | no | `LOW\|MEDIUM\|HIGH` | exact match |
 | `currentStatus` | no | `NEW` | exact match (only value in Lab 2) |
@@ -164,7 +164,7 @@ Response 200:
 }
 ```
 
-A zero-match search/filter returns `"data": []` with valid `pagination` metadata (`total: 0`) — not an error (BR-24). The client distinguishes "empty" from "no results" (BR-24a) purely from whether it sent any `search`/`category`/`requestedPriority`/`currentStatus` param — the API response shape is identical either way.
+A zero-match search/filter returns `"data": []` with valid `pagination` metadata (`total: 0`), not an error (BR-24). The client distinguishes "empty" from "no results" (BR-24a) purely from whether it sent any `search`/`category`/`requestedPriority`/`currentStatus` param; the API response shape is identical either way.
 
 Errors: 400 if `requesterId` missing or does not resolve to an active Requester; 500.
 
@@ -172,7 +172,7 @@ Errors: 400 if `requesterId` missing or does not resolve to an active Requester;
 
 Purpose: full Ticket detail for the Requester Ticket Detail screen (FR-05), including its attachments.
 
-Auth/ownership: `requesterId` (query, required). If the Ticket does not exist, or exists but its `requesterId` does not match, respond 404 either way (BR-35 — existence is never leaked).
+Auth/ownership: `requesterId` (query, required). If the Ticket does not exist, or exists but its `requesterId` does not match, respond 404 either way (BR-35: existence is never leaked).
 
 Response 200:
 
@@ -230,7 +230,7 @@ Request: `multipart/form-data` with fields `requesterId` and one or more `files`
 Per-file validation, independent of the others in the same request (BR-31):
 - extension/MIME must be JPG, JPEG, PNG, WEBP, or PDF, else 415 for that file;
 - size ≤ 5 MB, else 413 for that file;
-- rejected only if accepting it would exceed 5 **active** attachments on the Ticket (BR-26) — counted against the Ticket's current active count plus files already accepted earlier in the same request, else 409 for that file.
+- rejected only if accepting it would exceed 5 **active** attachments on the Ticket (BR-26), counted against the Ticket's current active count plus files already accepted earlier in the same request, else 409 for that file.
 
 Response 201 (at least one file accepted):
 
@@ -245,11 +245,11 @@ Response 201 (at least one file accepted):
 }
 ```
 
-Response 400 (all files rejected, or `requesterId`/Ticket ownership check failed before any file processing — see errors below): same `failed` array, empty `uploaded`.
+Response 400 (all files rejected, or `requesterId`/Ticket ownership check failed before any file processing; see errors below): same `failed` array, empty `uploaded`.
 
 Errors:
-- 400 `VALIDATION_ERROR` — no files present in the request.
-- 404 — Ticket not found or not owned by `requesterId`.
+- 400 `VALIDATION_ERROR`: no files present in the request.
+- 404: Ticket not found or not owned by `requesterId`.
 - Per-file 413/415/409 are reported inside the response body's `failed` array (not as the HTTP status of the whole request) whenever at least one other file in the same batch succeeds, per BR-31; if **every** file in the batch fails, the endpoint returns 400 with the same `failed` array so a fully-failed batch is distinguishable from a partial one.
 - 500.
 
@@ -274,7 +274,7 @@ Response 200: file bytes, `Content-Type` set to the stored `mimeType`, `Content-
 Errors:
 - 400 missing `requesterId`.
 - 404 not found or not owned.
-- 410 `ATTACHMENT_REMOVED` — attachment exists and is owned, but `isRemoved = true` (BR-30); no bytes are returned.
+- 410 `ATTACHMENT_REMOVED`: attachment exists and is owned, but `isRemoved = true` (BR-30); no bytes are returned.
 - 500.
 
 ## 10. DELETE /api/attachments/:id
@@ -289,10 +289,10 @@ Request body:
 { "requesterId": 1, "reason": "Duplicate of another attachment" }
 ```
 
-Response 200: the updated attachment object (`isRemoved: true`, `removedAt`, `removalReason` populated) — same shape as endpoint 8's response.
+Response 200: the updated attachment object (`isRemoved: true`, `removedAt`, `removalReason` populated), same shape as endpoint 8's response.
 
 Errors:
-- 400 `VALIDATION_ERROR` — missing `requesterId`, or `reason` missing/out of the 5–200 character range (BR-29).
-- 404 — attachment not found or not owned.
-- 409 `ALREADY_REMOVED` — attachment is already soft-removed.
+- 400 `VALIDATION_ERROR`: missing `requesterId`, or `reason` missing/out of the 5–200 character range (BR-29).
+- 404: attachment not found or not owned.
+- 409 `ALREADY_REMOVED`: attachment is already soft-removed.
 - 500.

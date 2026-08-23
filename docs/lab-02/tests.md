@@ -1,12 +1,12 @@
 # Lab 2 Test Plan and Results
 
-Companion to `docs/lab-02/specification.md`, `docs/lab-02/api-spec.md`, and `docs/lab-02/ui-spec.md`. Written before implementation (Test DD) — the coding agent implements against this plan; it does not invent tests after the fact and this file is not reconstructed from whatever the agent happened to generate.
+Companion to `docs/lab-02/specification.md`, `docs/lab-02/api-spec.md`, and `docs/lab-02/ui-spec.md`. Written before implementation (Test DD): the coding agent implements against this plan; it does not invent tests after the fact and this file is not reconstructed from whatever the agent happened to generate.
 
 ## 1. Test Strategy
 
 - **TDD loop per Issue**: write the planned test(s) for that Issue first, confirm they fail for the expected reason, implement the smallest correct behavior, refactor with tests green.
 - **Levels covered**: unit (pure logic), API/integration (Supertest against Express + a test Postgres schema), UI component (Vitest + Testing Library, mocked API), responsive/visual (Playwright screenshots at 3 viewports), end-to-end (Playwright against a running stack).
-- **Ownership isolation** is tested at both API and E2E level, never assumed from UI behavior alone — a UI that merely hides another Requester's ticket is not sufficient; the API must actually refuse it.
+- **Ownership isolation** is tested at both API and E2E level, never assumed from UI behavior alone. A UI that merely hides another Requester's ticket is not sufficient; the API must actually refuse it.
 - Every Acceptance Criterion in `specification.md` (AC-01…AC-21) maps to at least one row below; a few rows also cover Business Rules or UI-spec component rules (§8.3/§8.8 of the handout) that aren't phrased as a numbered AC but are still required checks.
 - No planned test is skipped, commented out, or replaced by manual-only verification in the final `main` branch.
 
@@ -25,7 +25,7 @@ Companion to `docs/lab-02/specification.md`, `docs/lab-02/api-spec.md`, and `doc
 | API-06 | API | AC-12 | `GET /api/tickets` with a filter matching zero tickets | 200, `data: []`, valid `pagination.total = 0` (not an error) | `server/tests/lab-02/my-tickets.api.test.ts` | Pending |
 | API-07 | API | AC-13, BR-23 | `GET /api/tickets` pagination across multiple pages, plus out-of-range `page`/`pageSize` | Correct slicing, no duplicates/gaps across pages; invalid params fall back to defaults instead of erroring | `server/tests/lab-02/my-tickets.api.test.ts` | Pending |
 | API-08 | API | FR-05 | `GET /api/tickets/:id` for an owned Ticket | 200, full detail payload including `attachments[]` | `server/tests/lab-02/ticket-detail.api.test.ts` | Pending |
-| API-09 | API | AC-03 | `GET /api/tickets/:id` for a nonexistent id, and for one owned by a different Requester | Both return 404 (never 403) — existence not leaked (BR-35) | `server/tests/lab-02/ticket-detail.api.test.ts` | Pending |
+| API-09 | API | AC-03 | `GET /api/tickets/:id` for a nonexistent id, and for one owned by a different Requester | Both return 404 (never 403); existence not leaked (BR-35) | `server/tests/lab-02/ticket-detail.api.test.ts` | Pending |
 | API-10 | API | AC-14 | `POST /api/tickets/:id/attachments` with one valid file | 201, file appears in `uploaded[]` and in a subsequent `GET /api/tickets/:id` | `server/tests/lab-02/attachments.api.test.ts` | Pending |
 | API-11 | API | AC-07 | Upload a 6 MB file | Reported in `failed[]` with `FILE_TOO_LARGE`/413 semantics; not stored | `server/tests/lab-02/attachments.api.test.ts` | Pending |
 | API-12 | API | AC-08 | Upload a `.docx` file | Reported in `failed[]` with `UNSUPPORTED_TYPE`/415 semantics; not stored | `server/tests/lab-02/attachments.api.test.ts` | Pending |
@@ -132,4 +132,4 @@ To be filled in once implementation is complete and the commands above are run a
 
 - Load/performance testing is out of scope for Lab 2 (not required by the handout).
 - Cross-browser testing is limited to Playwright's default Chromium project; Firefox/WebKit runs are not required for Lab 2.
-- Duplicate-submission prevention (BR-17) is tested only client-side (UI-03); per `specification.md` §5, the backend intentionally does not deduplicate identical payloads in Lab 2, so no server-side idempotency test exists — this is a documented, not accidental, gap.
+- Duplicate-submission prevention (BR-17) is tested only client-side (UI-03); per `specification.md` §5, the backend intentionally does not deduplicate identical payloads in Lab 2, so no server-side idempotency test exists. This is a documented, not accidental, gap.

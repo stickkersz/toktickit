@@ -2,11 +2,11 @@
 
 ## 1. Sprint Goal
 
-Deliver a working Requester-facing ticketing MVP: a Requester (simulated via a Development Requester selector) can create an IT support ticket with attachments, receive a backend-generated Ticket Number, and later find, open, and manage that ticket — search, filter, sort, and paginate their own tickets in My Tickets, inspect a read-only Ticket Detail, and add or soft-remove permitted attachments — with one Requester never able to see another Requester's data.
+Deliver a working Requester-facing ticketing MVP: a Requester (simulated via a Development Requester selector) can create an IT support ticket with attachments, receive a backend-generated Ticket Number, and later find, open, and manage that ticket: search, filter, sort, and paginate their own tickets in My Tickets; inspect a read-only Ticket Detail; and add or soft-remove permitted attachments. One Requester must never be able to see another Requester's data.
 
 ## 2. Stakeholder Request Interpretation
 
-IT wants a real intake channel before staff tooling exists. End users need a clean way to submit a ticket (problem, category, related system, priority, evidence) and track it afterward. Because real login isn't built yet, a temporary "pick your test identity" screen stands in for auth — it must be visibly a dev/test tool, not a security boundary. All other IT-staff and lifecycle features are deferred.
+IT wants a real intake channel before staff tooling exists. End users need a clean way to submit a ticket (problem, category, related system, priority, evidence) and track it afterward. Because real login isn't built yet, a temporary "pick your test identity" screen stands in for auth: it must be visibly a dev/test tool, not a security boundary. All other IT-staff and lifecycle features are deferred.
 
 ## 3. Scope
 
@@ -76,7 +76,7 @@ IT wants a real intake channel before staff tooling exists. End users need a cle
 - BR-14 `description` is required, trimmed, 20–2000 characters.
 - BR-15 `categoryId` and `relatedSystemId` are required and must reference existing, active records; unknown or inactive ids are rejected with 400.
 - BR-16 `requestedPriority` is required and must be one of `LOW`, `MEDIUM`, `HIGH`.
-- BR-17 The Create Ticket form is submitted once per click; the Submit button is disabled and shows a busy state for the duration of the request to prevent duplicate-submission double-clicks. The backend does not deduplicate identical payloads — client-side single-flight submission is the sole safeguard, since no idempotency key exists in Lab 2.
+- BR-17 The Create Ticket form is submitted once per click; the Submit button is disabled and shows a busy state for the duration of the request to prevent duplicate-submission double-clicks. The backend does not deduplicate identical payloads: client-side single-flight submission is the sole safeguard, since no idempotency key exists in Lab 2.
 - BR-18 On validation failure (400), no Ticket is created, and all previously entered field values remain in the form.
 - BR-19 On an unexpected server error during creation, no partial Ticket is left queryable by the Requester (see BR-25 for the attachment-after-creation edge case), and the form values are preserved for retry.
 
@@ -86,7 +86,7 @@ IT wants a real intake channel before staff tooling exists. End users need a cle
 - BR-22 Default sort is `createdAt` descending (newest first); ties break by `id` descending.
 - BR-23 Page size is fixed at 10 per page unless the client requests a smaller/larger value within an allowed range (5–50); out-of-range or non-numeric page/pageSize values fall back to the default rather than erroring.
 - BR-24 A search/filter combination that matches zero tickets returns an empty array with valid pagination metadata (total 0), not an error.
-- BR-24a My Tickets distinguishes two zero-result cases: "empty" (Requester owns zero Tickets, no search/filter applied — show a create-your-first-ticket prompt) versus "no results" (Requester owns Tickets but the current search/filter matches none — show a clear-filters prompt). The API response for both cases is identical (empty array, total 0); the UI decides which message to show based on whether any search/filter parameter is active.
+- BR-24a My Tickets distinguishes two zero-result cases: "empty" (Requester owns zero Tickets, no search/filter applied: show a create-your-first-ticket prompt) versus "no results" (Requester owns Tickets but the current search/filter matches none: show a clear-filters prompt). The API response for both cases is identical (empty array, total 0); the UI decides which message to show based on whether any search/filter parameter is active.
 
 ### Attachments
 - BR-25 If Ticket creation succeeds but an accompanying attachment upload fails, the Ticket is kept (it already has a valid Ticket Number) and the failure is reported per-file so the Requester can retry adding that attachment from Ticket Detail; ticket creation is not rolled back by an attachment failure.
@@ -98,7 +98,7 @@ IT wants a real intake channel before staff tooling exists. End users need a cle
 - BR-31 Attachment uploads that fail type/size/count validation are rejected per-file with a specific reason; other valid files in the same batch are still processed.
 
 ### Inactive Requesters, empty states, detail access
-- BR-32 An inactive Development Requester cannot be selected (BR-04) and, if somehow referenced directly, cannot authenticate a session — there is no way to act as an inactive Requester in Lab 2.
+- BR-32 An inactive Development Requester cannot be selected (BR-04) and, if somehow referenced directly, cannot authenticate a session. There is no way to act as an inactive Requester in Lab 2.
 - BR-33 If zero active Development Requesters exist, the Selection screen shows an explicit empty state and Continue is disabled.
 - BR-34 If the Requester/Category/Related System reference APIs fail to load, Create Ticket shows a safe failure state and disables submission rather than allowing a request with missing reference data.
 - BR-35 Requesting a Ticket Detail id that does not exist returns 404; requesting one owned by a different Requester returns 404 (not 403), so ticket existence is not leaked across Requesters.
@@ -107,16 +107,16 @@ IT wants a real intake channel before staff tooling exists. End users need a cle
 - BR-36 The Development Requester selector, its session storage, and its ownership checks are all replaced (not extended) in Lab 3 by real authentication; no password, session-token, or role field is added to `RequesterUser` in Lab 2.
 
 ### Seed data
-- BR-37 The seed script is idempotent (safe to run repeatedly without creating duplicates, using `upsert` keyed on unique fields) and must produce: the 4 required Categories (Account and Access, Hardware, Software, Network — already seeded in Lab 1); at least 6 Related Systems (e.g. Email, Campus Wi-Fi, VPN, LEB2 App, Grade Submission App, Printer, Corporate Laptop); at least 4 active Development Requesters; and at least 1 inactive Development Requester (`isActive = false`, excluded from the selector per BR-04).
+- BR-37 The seed script is idempotent (safe to run repeatedly without creating duplicates, using `upsert` keyed on unique fields) and must produce: the 4 required Categories (Account and Access, Hardware, Software, Network, already seeded in Lab 1); at least 6 Related Systems (e.g. Email, Campus Wi-Fi, VPN, LEB2 App, Grade Submission App, Printer, Corporate Laptop); at least 4 active Development Requesters; and at least 1 inactive Development Requester (`isActive = false`, excluded from the selector per BR-04).
 
 ## 6. UI Specification Summary
 
 Full detail lives in `docs/lab-02/ui-spec.md`. Summary of required surfaces, all built on the shared Zen Green shell (header with TokTickIT identity, My Tickets / Create Ticket nav, current-Requester display, responsive mobile nav):
 
-- **Development Requester Selection** — dropdown of active Requesters, Continue button, loading/empty/error states, explanatory "not a login screen" text.
-- **Create Ticket** — read-only system fields (Ticket Number pending, Ticket Date, Requester) up top, classification fields (Category, Related System, Requested Priority) grouped, full-width Summary/Description, Attachments picker below, primary Submit + secondary Cancel at bottom. States: initial, validation-error (inline per field), submitting (busy, disabled), success (Ticket Number + "View Ticket" action), API failure (values preserved), invalid-attachment (per-file reason).
-- **My Tickets** — search box, filter row (Category/Requested Priority/Current Status), sortable columns, desktop table / mobile card list, pagination, Create Ticket action, loading/empty ("no tickets yet")/no-results ("adjust filters")/failure states.
-- **Ticket Detail** — read-only header fields (Ticket No., Date, Category, Related System, Requester, Requested Priority, Current Status, Summary, Description), Attachments panel (active + removed-with-metadata), Add Attachment control, per-attachment Remove action with reason prompt, Back to My Tickets nav.
+- **Development Requester Selection**: dropdown of active Requesters, Continue button, loading/empty/error states, explanatory "not a login screen" text.
+- **Create Ticket**: read-only system fields (Ticket Number pending, Ticket Date, Requester) up top, classification fields (Category, Related System, Requested Priority) grouped, full-width Summary/Description, Attachments picker below, primary Submit + secondary Cancel at bottom. States: initial, validation-error (inline per field), submitting (busy, disabled), success (Ticket Number + "View Ticket" action), API failure (values preserved), invalid-attachment (per-file reason).
+- **My Tickets**: search box, filter row (Category/Requested Priority/Current Status), sortable columns, desktop table / mobile card list, pagination, Create Ticket action, loading/empty ("no tickets yet")/no-results ("adjust filters")/failure states.
+- **Ticket Detail**: read-only header fields (Ticket No., Date, Category, Related System, Requester, Requested Priority, Current Status, Summary, Description), Attachments panel (active + removed-with-metadata), Add Attachment control, per-attachment Remove action with reason prompt, Back to My Tickets nav.
 - Shared components: badges (priority/status, color + text, never color-only), field states (editable/read-only/error), buttons (primary/secondary/destructive/disabled/busy), loading/empty/error patterns reused across all three screens.
 
 ## 7. Data Changes
@@ -260,6 +260,6 @@ Since Lab 2 has no session/auth layer, `requesterId` travels as an explicit requ
 
 - No new session/auth library is introduced; the selected Requester is kept client-side (e.g. `localStorage` + React context) and sent explicitly as `requesterId` on every request, per §8's simplification.
 - Attachment storage is local disk under `server/uploads/` (path outside version control, gitignored), referenced by `storedFilename`; this is acceptable for a dev-only Lab 2 environment and is not a scoped decision the handout dictates otherwise.
-- New dependencies required beyond the current Lab 1 stack: `multer` (server, file upload), `react-router-dom` (client, screen navigation), `@playwright/test` (repo root or a new `e2e/` package, E2E tests + responsive screenshots per handout §8.8) — all within the existing Express/Vite/React/Prisma stack, no framework change.
+- New dependencies required beyond the current Lab 1 stack: `multer` (server, file upload), `react-router-dom` (client, screen navigation), `@playwright/test` (repo root or a new `e2e/` package, E2E tests + responsive screenshots per handout §8.8). All within the existing Express/Vite/React/Prisma stack, no framework change.
 - Ticket Number format `TKT-{year}-{6-digit id}` is chosen over a per-year-reset counter for implementation simplicity; format is display-only and not parsed back into an id anywhere.
 - `itPriority` and `ticketOwner`-shaped fields are included in the schema now (nullable) rather than added via a Lab 3 migration, to avoid an awkward later `ALTER TABLE` on a column later labs will need non-null; this does not add any Lab-2-visible behavior.
