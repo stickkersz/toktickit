@@ -22,16 +22,18 @@ app.get("/api/health", (_req: Request, res: Response) => {
 // Issue 4 — Category list
 // GET /api/categories -> read categories from PostgreSQL via Prisma,
 // return each { id, name } in id order. On failure, respond 500 safely.
+// Lab 2 (api-spec.md §1) filters to isActive: true.
 // ---------------------------------------------------------------------------
 app.get("/api/categories", async (_req: Request, res: Response) => {
   try {
     const categories = await getPrisma().category.findMany({
+      where: { isActive: true },
       select: { id: true, name: true },
       orderBy: { id: "asc" },
     });
     res.status(200).json(categories);
   } catch {
-    res.status(500).json({ error: "Unable to load categories" });
+    res.status(500).json({ error: "INTERNAL_ERROR", message: "Unable to load categories." });
   }
 });
 
