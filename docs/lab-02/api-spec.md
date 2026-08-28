@@ -10,6 +10,14 @@ Companion to `docs/lab-02/specification.md`. Every endpoint below implements one
 - Timestamps are ISO 8601 UTC strings.
 - Enums are transmitted as their Prisma enum string values: `requestedPriority` ∈ `LOW | MEDIUM | HIGH`; `currentStatus` ∈ `NEW` (only value reachable in Lab 2).
 
+### `requesterId` validation vs ownership (400 vs 404)
+
+One consistent rule, applied the same way at every endpoint that takes `requesterId`, split into the three cases where a different response is actually justified:
+
+- **Creating a new Ticket** (`POST /api/tickets`): `requesterId` is validated like any other input field, since no existing resource exists yet to hide behind a 404. Missing, non-numeric, or referencing an unknown/inactive Requester is 400 `VALIDATION_ERROR` (same treatment as `categoryId`/`relatedSystemId`, BR-15's pattern).
+- **Listing** (`GET /api/tickets`, no single resource in play): `requesterId` missing, non-numeric, or not resolving to an active Requester is 400, for the same reason as creation.
+- **Every endpoint scoped to one existing Ticket or Attachment** (`GET /api/tickets/:id`, `POST /api/tickets/:id/attachments`, `GET /api/attachments/:id`, `GET /api/attachments/:id/download`, `DELETE /api/attachments/:id`): `requesterId` missing or non-numeric is 400 (malformed request, nothing to look up yet). Everything else, resource not found, resource owned by a different Requester, or `requesterId` not resolving to any real Requester at all, collapses into the same 404 (BR-35: existence and ownership are never distinguishable in the response, and neither is "that Requester doesn't exist").
+
 ### Error shape
 
 All non-2xx responses share one envelope:
@@ -30,8 +38,8 @@ All non-2xx responses share one envelope:
 |---|---|---|
 | 200 OK | Successful read, or successful soft-remove | GET endpoints, DELETE attachment |
 | 201 Created | Ticket or Attachment created | POST tickets, POST attachments |
-| 400 Bad Request | Missing/invalid field, invalid reference id, malformed query param | all write endpoints, list endpoint |
-| 404 Not Found | Resource does not exist, or exists but is not owned by `requesterId` (BR-35: same code either way, never 403) | GET/DELETE by id |
+| 400 Bad Request | Missing/invalid field, invalid reference id, malformed query param; for `requesterId` specifically, see the Conventions rule above | all write endpoints, list endpoint |
+| 404 Not Found | Resource does not exist, exists but is not owned by `requesterId`, or `requesterId` does not resolve to a real Requester (BR-35: all three collapse to the same code, never 403) | endpoints scoped to one Ticket/Attachment |
 | 409 Conflict | Attachment already removed (BR-29's re-removal guard) | DELETE attachment (real response status) |
 | 410 Gone | Attachment exists but is soft-removed (BR-30) | GET attachment download |
 | 413 Payload Too Large | Reference code only: matches the `FILE_TOO_LARGE` per-file `reason` in POST attachments' `failed[]` array (BR-26, BR-31); never this endpoint's own response status, see §7 | none (reason code only) |
@@ -219,7 +227,7 @@ Response 200:
 
 Removed attachments keep full metadata (BR-30) but the client disables their download control; the payload carries no download URL for a removed row's file bytes.
 
-Errors: 400 if `requesterId` missing/invalid; 404 not found or not owned; 500.
+Errors: 400 `requesterId` missing or non-numeric; 404 Ticket not found, not owned, or `requesterId` does not resolve to a real Requester (single-resource rule above); 500.
 
 ## 7. POST /api/tickets/:id/attachments
 
@@ -250,8 +258,8 @@ Response 201 (at least one file accepted):
 Response 400 (all files rejected, or `requesterId`/Ticket ownership check failed before any file processing; see errors below): same `failed` array shape, empty `uploaded`.
 
 Errors:
-- 400 `VALIDATION_ERROR`: no files present in the request.
-- 404: Ticket not found or not owned by `requesterId`.
+- 400 `VALIDATION_ERROR`: `requesterId` missing or non-numeric, or no files present in the request.
+- 404: Ticket not found, not owned by `requesterId`, or `requesterId` does not resolve to a real Requester (single-resource rule above).
 - `UNSUPPORTED_TYPE`/`FILE_TOO_LARGE`/`MAX_ATTACHMENTS_EXCEEDED` are reported inside the response body's `failed` array, never as the HTTP status of the whole request, whenever at least one other file in the same batch succeeds (201), per BR-31; if **every** file in the batch fails, the endpoint returns 400 with the same `failed` array so a fully-failed batch is distinguishable from a partial one. These three reason codes are documented in the status-code table above purely as a cross-reference to their conceptual HTTP meaning (413/415/409); the wire-level status of this endpoint is always 201 or 400, never those three.
 - 500.
 
@@ -263,7 +271,7 @@ Auth/ownership: `requesterId` (query, required); attachment's parent Ticket must
 
 Response 200: single attachment object, same shape as an entry in endpoint 6's `attachments` array.
 
-Errors: 400 missing `requesterId`; 404 not found or not owned; 500.
+Errors: 400 `requesterId` missing or non-numeric; 404 attachment not found, not owned, or `requesterId` does not resolve to a real Requester (single-resource rule above); 500.
 
 ## 9. GET /api/attachments/:id/download
 
@@ -274,8 +282,8 @@ Auth/ownership: `requesterId` (query, required); attachment's parent Ticket must
 Response 200: file bytes, `Content-Type` set to the stored `mimeType`, `Content-Disposition: attachment; filename="<originalFilename>"`.
 
 Errors:
-- 400 missing `requesterId`.
-- 404 not found or not owned.
+- 400 `requesterId` missing or non-numeric.
+- 404 attachment not found, not owned, or `requesterId` does not resolve to a real Requester (single-resource rule above).
 - 410 `ATTACHMENT_REMOVED`: attachment exists and is owned, but `isRemoved = true` (BR-30); no bytes are returned.
 - 500.
 
@@ -294,7 +302,7 @@ Request body:
 Response 200: the updated attachment object (`isRemoved: true`, `removedAt`, `removalReason` populated), same shape as endpoint 8's response.
 
 Errors:
-- 400 `VALIDATION_ERROR`: missing `requesterId`, or `reason` missing/out of the 5–200 character range (BR-29).
-- 404: attachment not found or not owned.
+- 400 `VALIDATION_ERROR`: `requesterId` missing or non-numeric, or `reason` missing/out of the 5–200 character range (BR-29).
+- 404: attachment not found, not owned, or `requesterId` does not resolve to a real Requester (single-resource rule above).
 - 409 `ALREADY_REMOVED`: attachment is already soft-removed.
 - 500.
