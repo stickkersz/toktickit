@@ -62,6 +62,40 @@ export interface UploadAttachmentsResult {
   failed: FailedAttachment[];
 }
 
+export interface TicketListItem {
+  id: number;
+  ticketNumber: string;
+  summary: string;
+  categoryName: string;
+  requestedPriority: TicketPriority;
+  currentStatus: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TicketListPagination {
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+}
+
+export interface TicketListResult {
+  data: TicketListItem[];
+  pagination: TicketListPagination;
+}
+
+export interface TicketListParams {
+  requesterId: number;
+  search?: string;
+  category?: number;
+  requestedPriority?: TicketPriority;
+  currentStatus?: string;
+  sort?: string;
+  page?: number;
+  pageSize?: number;
+}
+
 // BR-18: thrown on a 400 VALIDATION_ERROR so the form can show per-field
 // errors and keep the entered values, per the API's { fields } shape.
 export class ValidationError extends Error {
@@ -114,6 +148,25 @@ export async function createTicket(input: CreateTicketInput): Promise<Ticket> {
     throw new Error(body?.message ?? "Unable to create the Ticket.");
   }
   return body;
+}
+
+// Lab 2 — My Tickets (api-spec.md §5, FR-04).
+export async function getTickets(params: TicketListParams): Promise<TicketListResult> {
+  const query = new URLSearchParams();
+  query.set("requesterId", String(params.requesterId));
+  if (params.search) query.set("search", params.search);
+  if (params.category) query.set("category", String(params.category));
+  if (params.requestedPriority) query.set("requestedPriority", params.requestedPriority);
+  if (params.currentStatus) query.set("currentStatus", params.currentStatus);
+  if (params.sort) query.set("sort", params.sort);
+  if (params.page) query.set("page", String(params.page));
+  if (params.pageSize) query.set("pageSize", String(params.pageSize));
+
+  const res = await fetch(`${API_URL}/api/tickets?${query.toString()}`);
+  if (!res.ok) {
+    throw new Error("Unable to load tickets.");
+  }
+  return res.json();
 }
 
 // Lab 2 — Attachment upload during/after creation (api-spec.md §7, BR-25).

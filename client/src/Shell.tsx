@@ -1,9 +1,9 @@
-import { Outlet, useNavigate } from "react-router-dom";
+import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useRequester } from "./requesterContext.js";
 
-// Minimal application shell: current-Requester display + Change Requester
-// (FR-09). Full header nav (My Tickets/Create Ticket links, mobile menu,
-// ui-spec.md §4) is built out once those screens have real content.
+// Application shell: nav (My Tickets/Create Ticket, ui-spec.md §4) +
+// current-Requester display + Change Requester (FR-09). Mobile hamburger
+// collapse is part of the later responsive/visual pass.
 export default function Shell() {
   const { requester, clearRequester } = useRequester();
   const navigate = useNavigate();
@@ -13,10 +13,24 @@ export default function Shell() {
     navigate("/select-requester");
   }
 
+  function navLinkClass({ isActive }: { isActive: boolean }) {
+    return `nav-link text-white${isActive ? " fw-semibold border-bottom border-2" : ""}`;
+  }
+
   return (
     <div>
       <header className="zg-header d-flex justify-content-between align-items-center text-white px-3">
-        <span className="fw-semibold">TokTickIT</span>
+        <div className="d-flex align-items-center gap-4">
+          <span className="fw-semibold">TokTickIT</span>
+          <nav className="d-flex gap-3" aria-label="Main">
+            <NavLink to="/tickets" className={navLinkClass}>
+              My Tickets
+            </NavLink>
+            <NavLink to="/tickets/new" className={navLinkClass}>
+              Create Ticket
+            </NavLink>
+          </nav>
+        </div>
         <div className="d-flex align-items-center gap-3">
           <span>{requester?.name}</span>
           <button
