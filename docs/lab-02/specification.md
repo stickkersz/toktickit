@@ -107,7 +107,7 @@ IT wants a real intake channel before staff tooling exists. End users need a cle
 - BR-36 The Development Requester selector, its session storage, and its ownership checks are all replaced (not extended) in Lab 3 by real authentication; no password, session-token, or role field is added to `RequesterUser` in Lab 2.
 
 ### Seed data
-- BR-37 The seed script is idempotent (safe to run repeatedly without creating duplicates, using `upsert` keyed on unique fields) and must produce: the 4 required Categories (Account and Access, Hardware, Software, Network, already seeded in Lab 1); at least 6 Related Systems (e.g. Email, Campus Wi-Fi, VPN, LEB2 App, Grade Submission App, Printer, Corporate Laptop); at least 4 active Development Requesters; and at least 1 inactive Development Requester (`isActive = false`, excluded from the selector per BR-04).
+- BR-37 The seed script is idempotent (safe to run repeatedly without creating duplicates, using `upsert` keyed on unique fields) and must produce: the 4 required Categories (Account and Access, Hardware, Software, Network, already seeded in Lab 1); at least 6 Related Systems (e.g. Email, Campus Wi-Fi, VPN, LEB2 App, Grade Submission App, Printer, Corporate Laptop); at least 4 active Development Requesters; at least 1 inactive Development Requester (`isActive = false`, excluded from the selector per BR-04); and at least 1 inactive Category plus 1 inactive Related System (`isActive = false` each, excluded from `GET /api/categories`/`GET /api/related-systems` and rejected by BR-15 if referenced directly), so the inactive-reference rejection path is exercisable from seed data alone.
 
 ## 6. UI Specification Summary
 
@@ -136,6 +136,7 @@ model RequesterUser {
 model RelatedSystem {
   id        Int      @id @default(autoincrement())
   name      String   @unique
+  isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   tickets   Ticket[]
 }
@@ -189,9 +190,9 @@ model Attachment {
 }
 ```
 
-`Category` (existing, from Lab 1) gains `tickets Ticket[]` back-relation only; no field changes.
+`Category` (existing, from Lab 1) gains `tickets Ticket[]` back-relation and a new `isActive Boolean @default(true)` field (existing rows default to true, mirroring `RequesterUser.isActive`); no other changes.
 
-**Justified decision:** `ticketNumber` is generated *after* insert, as `TKT-` + creation year + zero-padded `id` (e.g. `TKT-2026-000042`). Deriving it from the row's own autoincrement id guarantees uniqueness without a separate counter table or a race-prone "max + 1" query, at the cost of one extra `UPDATE` in the same transaction as the `INSERT`. This is documented per §5.2's requirement for at least one justified schema decision.
+**Justified decision:** `ticketNumber` is generated *before* insert using a dedicated Postgres sequence (`ticket_number_seq`, created via raw SQL in the initial Lab 2 migration), not the two-step insert-then-update pattern, which cannot work here: `ticketNumber String @unique` has no default, so a temporary row would violate NOT NULL/unique between the `INSERT` and the follow-up `UPDATE`. Instead, the backend runs `SELECT nextval('ticket_number_seq')` inside the same transaction as `Ticket.create`, formats the result as `TKT-` + creation year + zero-padded sequence value (e.g. `TKT-2026-000042`), and performs one `INSERT` with the final value already known. This avoids both the placeholder problem and a race-prone "max + 1" query. This is documented per §5.2's requirement for at least one justified schema decision.
 
 Soft removal is represented on `Attachment` directly (`isRemoved`/`removedAt`/`removalReason`) rather than a separate audit table, since Lab 2 only needs current-state metadata, not full history.
 
@@ -210,7 +211,7 @@ Full request/response shapes, statuses, and error bodies are defined in `docs/la
 | POST `/api/tickets/:id/attachments` | upload attachment(s) | ownership-checked |
 | GET `/api/attachments/:id` | metadata | ownership-checked |
 | GET `/api/attachments/:id/download` | file bytes, 410 if removed | ownership-checked |
-| DELETE `/api/attachments/:id` | soft-remove, body `{ reason }` | ownership-checked |
+| DELETE `/api/attachments/:id` | soft-remove, body `{ requesterId, reason }` | ownership-checked |
 
 Since Lab 2 has no session/auth layer, `requesterId` travels as an explicit request parameter (query for GET, body for POST) representing the client's selected Development Requester; the backend always re-validates it against the resource's actual `requesterId` before returning data. This is a known Lab-2-only simplification, replaced by session-derived identity in Lab 3.
 
@@ -261,5 +262,5 @@ Since Lab 2 has no session/auth layer, `requesterId` travels as an explicit requ
 - No new session/auth library is introduced; the selected Requester is kept client-side (e.g. `localStorage` + React context) and sent explicitly as `requesterId` on every request, per §8's simplification.
 - Attachment storage is local disk under `server/uploads/` (path outside version control, gitignored), referenced by `storedFilename`; this is acceptable for a dev-only Lab 2 environment and is not a scoped decision the handout dictates otherwise.
 - New dependencies required beyond the current Lab 1 stack: `multer` (server, file upload), `react-router-dom` (client, screen navigation), `@playwright/test` (repo root or a new `e2e/` package, E2E tests + responsive screenshots per handout §8.8). All within the existing Express/Vite/React/Prisma stack, no framework change.
-- Ticket Number format `TKT-{year}-{6-digit id}` is chosen over a per-year-reset counter for implementation simplicity; format is display-only and not parsed back into an id anywhere.
+- Ticket Number format `TKT-{year}-{6-digit sequence value}` uses a dedicated Postgres sequence rather than a per-year-reset counter or the Ticket row's own autoincrement `id` (see §7's justified decision), so the number is known before insert; format is display-only and not parsed back into an id anywhere.
 - `itPriority` and `ticketOwner`-shaped fields are included in the schema now (nullable) rather than added via a Lab 3 migration, to avoid an awkward later `ALTER TABLE` on a column later labs will need non-null; this does not add any Lab-2-visible behavior.

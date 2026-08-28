@@ -32,17 +32,19 @@ All non-2xx responses share one envelope:
 | 201 Created | Ticket or Attachment created | POST tickets, POST attachments |
 | 400 Bad Request | Missing/invalid field, invalid reference id, malformed query param | all write endpoints, list endpoint |
 | 404 Not Found | Resource does not exist, or exists but is not owned by `requesterId` (BR-35: same code either way, never 403) | GET/DELETE by id |
-| 409 Conflict | Max 5 active attachments reached (BR-26), attachment already removed | POST attachments, DELETE attachment |
+| 409 Conflict | Attachment already removed (BR-29's re-removal guard) | DELETE attachment (real response status) |
 | 410 Gone | Attachment exists but is soft-removed (BR-30) | GET attachment download |
-| 413 Payload Too Large | File exceeds 5 MB (BR-26) | POST attachments |
-| 415 Unsupported Media Type | File extension/MIME not in JPG/JPEG/PNG/WEBP/PDF (BR-26) | POST attachments |
+| 413 Payload Too Large | Reference code only: matches the `FILE_TOO_LARGE` per-file `reason` in POST attachments' `failed[]` array (BR-26, BR-31); never this endpoint's own response status, see §7 | none (reason code only) |
+| 415 Unsupported Media Type | Reference code only: matches the `UNSUPPORTED_TYPE` per-file `reason` in POST attachments' `failed[]` array (BR-26, BR-31); never this endpoint's own response status, see §7 | none (reason code only) |
 | 500 Internal Server Error | Unexpected failure; body never leaks stack traces or DB details | any endpoint |
+
+A multi-file upload has exactly one response-level HTTP status (see endpoint 7); a max-5-active-attachments rejection (BR-26) is therefore also a per-file `reason` code (`MAX_ATTACHMENTS_EXCEEDED`) inside that single response, not a 409 of its own. 409 is a real, standalone response status only for DELETE attachment's already-removed case.
 
 ## 1. GET /api/categories
 
 Purpose: reference data for the Create Ticket category select.
 
-Auth/ownership: none (not Requester-scoped).
+Auth/ownership: none (not Requester-scoped). Server filters to `isActive = true`; inactive Categories never appear in the payload (backs BR-15's rejection of inactive `categoryId`).
 
 Request: no parameters.
 
@@ -61,7 +63,7 @@ Errors: 500 on database failure. Client shows the safe-failure state from BR-34.
 
 Purpose: reference data for the Create Ticket related-system select.
 
-Auth/ownership: none.
+Auth/ownership: none. Server filters to `isActive = true`; inactive Related Systems never appear in the payload (backs BR-15's rejection of inactive `relatedSystemId`).
 
 Response 200: same shape as categories, `[{ "id": number, "name": string }]`.
 
@@ -227,10 +229,10 @@ Auth/ownership: `requesterId` (body field, required, `multipart/form-data`); Tic
 
 Request: `multipart/form-data` with fields `requesterId` and one or more `files` parts.
 
-Per-file validation, independent of the others in the same request (BR-31):
-- extension/MIME must be JPG, JPEG, PNG, WEBP, or PDF, else 415 for that file;
-- size ≤ 5 MB, else 413 for that file;
-- rejected only if accepting it would exceed 5 **active** attachments on the Ticket (BR-26), counted against the Ticket's current active count plus files already accepted earlier in the same request, else 409 for that file.
+A multi-file request has exactly one response-level HTTP status (201 or 400, see below); per-file outcomes never set their own HTTP status. Each rejected file instead carries one of these three `reason` codes in the response body's `failed[]` array (BR-31), independent of the others in the same request:
+- extension/MIME must be JPG, JPEG, PNG, WEBP, or PDF, else `reason: "UNSUPPORTED_TYPE"`;
+- size ≤ 5 MB, else `reason: "FILE_TOO_LARGE"`;
+- rejected only if accepting it would exceed 5 **active** attachments on the Ticket (BR-26), counted against the Ticket's current active count plus files already accepted earlier in the same request, else `reason: "MAX_ATTACHMENTS_EXCEEDED"`.
 
 Response 201 (at least one file accepted):
 
@@ -245,12 +247,12 @@ Response 201 (at least one file accepted):
 }
 ```
 
-Response 400 (all files rejected, or `requesterId`/Ticket ownership check failed before any file processing; see errors below): same `failed` array, empty `uploaded`.
+Response 400 (all files rejected, or `requesterId`/Ticket ownership check failed before any file processing; see errors below): same `failed` array shape, empty `uploaded`.
 
 Errors:
 - 400 `VALIDATION_ERROR`: no files present in the request.
 - 404: Ticket not found or not owned by `requesterId`.
-- Per-file 413/415/409 are reported inside the response body's `failed` array (not as the HTTP status of the whole request) whenever at least one other file in the same batch succeeds, per BR-31; if **every** file in the batch fails, the endpoint returns 400 with the same `failed` array so a fully-failed batch is distinguishable from a partial one.
+- `UNSUPPORTED_TYPE`/`FILE_TOO_LARGE`/`MAX_ATTACHMENTS_EXCEEDED` are reported inside the response body's `failed` array, never as the HTTP status of the whole request, whenever at least one other file in the same batch succeeds (201), per BR-31; if **every** file in the batch fails, the endpoint returns 400 with the same `failed` array so a fully-failed batch is distinguishable from a partial one. These three reason codes are documented in the status-code table above purely as a cross-reference to their conceptual HTTP meaning (413/415/409); the wire-level status of this endpoint is always 201 or 400, never those three.
 - 500.
 
 ## 8. GET /api/attachments/:id
