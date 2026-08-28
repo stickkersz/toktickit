@@ -127,6 +127,8 @@ describe("Create Ticket", () => {
     renderScreen();
     await screen.findByLabelText(/category \*/i);
 
+    expect(screen.getByText(/jpg, jpeg, png, webp, pdf/i)).toBeInTheDocument();
+
     const input = screen.getByLabelText(/attachments/i) as HTMLInputElement;
 
     const big = new File([new Uint8Array(6 * 1024 * 1024)], "big.jpg", { type: "image/jpeg" });
@@ -150,6 +152,40 @@ describe("Create Ticket", () => {
 
     // The 5 valid files stay listed and selectable (no error on them).
     expect(screen.getByText("photo-0.jpg")).toBeInTheDocument();
+    // Each row shows its size, per ui-spec.md §6.
+    expect(screen.getByText("(6.0 MB)")).toBeInTheDocument();
+  });
+
+  it("reports a client-rejected file as a retryable warning after the ticket is created", async () => {
+    mockReferenceData();
+    vi.spyOn(api, "createTicket").mockResolvedValue({
+      id: 7,
+      ticketNumber: "TKT-2026-000007",
+      requesterId: REQUESTER.id,
+      categoryId: CATEGORY.id,
+      relatedSystemId: RELATED_SYSTEM.id,
+      summary: VALID_SUMMARY,
+      description: VALID_DESCRIPTION,
+      requestedPriority: "MEDIUM",
+      currentStatus: "NEW",
+      createdAt: new Date().toISOString(),
+    });
+    const uploadSpy = vi.spyOn(api, "uploadAttachments");
+
+    renderScreen();
+    await fillValidForm();
+
+    const wrongType = new File(["x"], "notes.docx", { type: "application/msword" });
+    await userEvent.upload(screen.getByLabelText(/attachments/i), wrongType);
+    expect(await screen.findByText(/only jpg, jpeg, png, webp, and pdf/i)).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /submit ticket/i }));
+
+    expect(await screen.findByText(/TKT-2026-000007/)).toBeInTheDocument();
+    expect(screen.getByText(/notes\.docx/)).toBeInTheDocument();
+    expect(screen.getByText(/only jpg, jpeg, png, webp, and pdf/i)).toBeInTheDocument();
+    // Nothing valid to upload, so the server is never even called for it.
+    expect(uploadSpy).not.toHaveBeenCalled();
   });
 
   // UI-05

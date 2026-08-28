@@ -1,7 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import request from "supertest";
 import { app } from "../../src/app.js";
 import { getPrisma } from "../../src/prisma.js";
+import * as prismaModule from "../../src/prisma.js";
 
 const validBody = {
   requesterId: 1,
@@ -14,6 +15,10 @@ const validBody = {
 
 // Requires the DB to be migrated and seeded first (BR-37).
 describe("POST /api/tickets", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   // API-01
   it("creates a Ticket with a valid body", async () => {
     const res = await request(app).post("/api/tickets").send(validBody);
@@ -107,5 +112,33 @@ describe("POST /api/tickets", () => {
 
     expect(res.status).toBe(400);
     expect(res.body.fields.requesterId).toBeDefined();
+  });
+
+  it("rejects non-integer ids (e.g. 1.5) rather than passing them through to the database", async () => {
+    const res = await request(app)
+      .post("/api/tickets")
+      .send({ ...validBody, categoryId: 1.5, relatedSystemId: 1.5, requesterId: 1.5 });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("VALIDATION_ERROR");
+    expect(res.body.fields.categoryId).toBeDefined();
+    expect(res.body.fields.relatedSystemId).toBeDefined();
+    expect(res.body.fields.requesterId).toBeDefined();
+  });
+
+  it("returns the documented safe 500 shape when a reference lookup fails", async () => {
+    vi.spyOn(prismaModule, "getPrisma").mockReturnValue({
+      requesterUser: { findFirst: () => Promise.reject(new Error("connection refused")) },
+      category: { findFirst: () => Promise.resolve(null) },
+      relatedSystem: { findFirst: () => Promise.resolve(null) },
+    } as unknown as ReturnType<typeof prismaModule.getPrisma>);
+
+    const res = await request(app).post("/api/tickets").send(validBody);
+
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({
+      error: "INTERNAL_ERROR",
+      message: "Unable to create the Ticket.",
+    });
   });
 });

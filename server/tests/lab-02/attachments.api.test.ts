@@ -1,7 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { existsSync } from "node:fs";
+import path from "node:path";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import request from "supertest";
 import { app } from "../../src/app.js";
 import { getPrisma } from "../../src/prisma.js";
+import * as prismaModule from "../../src/prisma.js";
+import { UPLOAD_DIR } from "../../src/attachmentStorage.js";
 
 async function createTicket(requesterId = 1) {
   const res = await request(app)
@@ -19,6 +23,10 @@ async function createTicket(requesterId = 1) {
 
 // Requires the DB to be migrated and seeded first (BR-37).
 describe("POST /api/tickets/:id/attachments", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   // API-10
   it("accepts one valid file", async () => {
     const ticketId = await createTicket();
@@ -103,6 +111,38 @@ describe("POST /api/tickets/:id/attachments", () => {
       .attach("files", Buffer.from("x"), { filename: "file.jpg", contentType: "image/jpeg" });
 
     expect(res.status).toBe(404);
+  });
+
+  it("keeps an already-persisted file's row and disk copy when a later file in the batch fails", async () => {
+    const ticketId = await createTicket();
+    const realPrisma = getPrisma();
+    let createCalls = 0;
+
+    vi.spyOn(prismaModule, "getPrisma").mockReturnValue({
+      ticket: realPrisma.ticket,
+      attachment: {
+        create: (args: Parameters<(typeof realPrisma)["attachment"]["create"]>[0]) => {
+          createCalls += 1;
+          if (createCalls === 2) {
+            return Promise.reject(new Error("simulated database failure"));
+          }
+          return realPrisma.attachment.create(args);
+        },
+      },
+    } as unknown as ReturnType<typeof prismaModule.getPrisma>);
+
+    const res = await request(app)
+      .post(`/api/tickets/${ticketId}/attachments`)
+      .field("requesterId", "1")
+      .attach("files", Buffer.from("a"), { filename: "a.jpg", contentType: "image/jpeg" })
+      .attach("files", Buffer.from("b"), { filename: "b.jpg", contentType: "image/jpeg" });
+
+    expect(res.status).toBe(500);
+
+    const saved = await realPrisma.attachment.findMany({ where: { ticketId } });
+    expect(saved).toHaveLength(1);
+    expect(saved[0].originalFilename).toBe("a.jpg");
+    expect(existsSync(path.join(UPLOAD_DIR, saved[0].storedFilename))).toBe(true);
   });
 });
 

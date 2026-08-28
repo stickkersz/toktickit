@@ -13,13 +13,24 @@ import {
   FailedAttachment,
 } from "../api.js";
 import { useRequester } from "../requesterContext.js";
-import { ATTACHMENT_REJECT_MESSAGES, validateAttachmentFile } from "../attachmentValidation.js";
+import {
+  ATTACHMENT_REJECT_MESSAGES,
+  AttachmentRejectReason,
+  validateAttachmentFile,
+} from "../attachmentValidation.js";
 
 type RefState = "loading" | "ready" | "error";
 
 interface AttachmentRow {
   file: File;
+  reason?: AttachmentRejectReason;
   error?: string;
+}
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 const PRIORITIES: TicketPriority[] = ["LOW", "MEDIUM", "HIGH"];
@@ -69,7 +80,11 @@ export default function CreateTicket() {
       const rows = [...prev];
       for (const file of chosen) {
         const reason = validateAttachmentFile(file, validCount(rows));
-        rows.push({ file, error: reason ? ATTACHMENT_REJECT_MESSAGES[reason] : undefined });
+        rows.push({
+          file,
+          reason: reason ?? undefined,
+          error: reason ? ATTACHMENT_REJECT_MESSAGES[reason] : undefined,
+        });
       }
       return rows;
     });
@@ -149,20 +164,34 @@ export default function CreateTicket() {
 
       setCreatedTicket(ticket);
 
+      // Files rejected client-side never reach uploadAttachments, but they
+      // still need to be reported so the user knows to retry them too,
+      // rather than silently vanishing once the ticket is created.
+      const clientRejected: FailedAttachment[] = attachments
+        .filter((row) => row.error)
+        .map((row) => ({
+          originalFilename: row.file.name,
+          reason: row.reason ?? "UNSUPPORTED_TYPE",
+          message: row.error!,
+        }));
+
       const validFiles = attachments.filter((row) => !row.error).map((row) => row.file);
       if (validFiles.length > 0) {
         try {
           const result = await uploadAttachments(ticket.id, requester.id, validFiles);
-          setAttachmentWarnings(result.failed);
+          setAttachmentWarnings([...clientRejected, ...result.failed]);
         } catch {
-          setAttachmentWarnings(
-            validFiles.map((file) => ({
+          setAttachmentWarnings([
+            ...clientRejected,
+            ...validFiles.map((file) => ({
               originalFilename: file.name,
-              reason: "UNSUPPORTED_TYPE",
+              reason: "UNSUPPORTED_TYPE" as const,
               message: "Upload failed. Retry from Ticket Detail.",
             })),
-          );
+          ]);
         }
+      } else if (clientRejected.length > 0) {
+        setAttachmentWarnings(clientRejected);
       }
     } catch (error) {
       if (error instanceof ValidationError) {
@@ -376,13 +405,18 @@ export default function CreateTicket() {
           disabled={submitting}
           onChange={handleFilesSelected}
         />
-        <p className="text-muted small mb-2">JPG, PNG, WEBP, PDF, up to 5 MB, 5 files max.</p>
+        <p className="text-muted small mb-2">
+          JPG, JPEG, PNG, WEBP, PDF, up to 5 MB, 5 files max.
+        </p>
         {attachments.length > 0 && (
           <ul className="list-group">
             {attachments.map((row, i) => (
               <li key={i} className="list-group-item d-flex justify-content-between align-items-start">
                 <div>
-                  <div>{row.file.name}</div>
+                  <div>
+                    {row.file.name}{" "}
+                    <span className="text-muted small">({formatFileSize(row.file.size)})</span>
+                  </div>
                   {row.error && <div className="text-danger small">{row.error}</div>}
                 </div>
                 <button

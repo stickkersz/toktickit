@@ -92,51 +92,55 @@ app.get("/api/requesters", async (_req: Request, res: Response) => {
 // Lab 2 — Create Ticket
 // POST /api/tickets (api-spec.md §4, FR-02/FR-03, BR-01/BR-08/BR-09/BR-13..19).
 // ---------------------------------------------------------------------------
+function isValidId(value: number): boolean {
+  return Number.isInteger(value) && value > 0;
+}
+
 app.post("/api/tickets", async (req: Request, res: Response) => {
-  const fields: Record<string, string> = {};
-
-  const summaryResult = validateSummary(req.body?.summary);
-  if (summaryResult.error) fields.summary = summaryResult.error;
-
-  const descriptionResult = validateDescription(req.body?.description);
-  if (descriptionResult.error) fields.description = descriptionResult.error;
-
-  const priorityResult = validateRequestedPriority(req.body?.requestedPriority);
-  if (priorityResult.error) fields.requestedPriority = priorityResult.error;
-
-  const requesterId = Number(req.body?.requesterId);
-  const categoryId = Number(req.body?.categoryId);
-  const relatedSystemId = Number(req.body?.relatedSystemId);
-
-  if (!Number.isFinite(requesterId)) {
-    fields.requesterId = "A valid requesterId is required.";
-  } else if (!(await getPrisma().requesterUser.findFirst({ where: { id: requesterId, isActive: true } }))) {
-    fields.requesterId = "requesterId must reference an active Requester.";
-  }
-
-  if (!Number.isFinite(categoryId)) {
-    fields.categoryId = "A valid categoryId is required.";
-  } else if (!(await getPrisma().category.findFirst({ where: { id: categoryId, isActive: true } }))) {
-    fields.categoryId = "categoryId must reference an active Category.";
-  }
-
-  if (!Number.isFinite(relatedSystemId)) {
-    fields.relatedSystemId = "A valid relatedSystemId is required.";
-  } else if (
-    !(await getPrisma().relatedSystem.findFirst({ where: { id: relatedSystemId, isActive: true } }))
-  ) {
-    fields.relatedSystemId = "relatedSystemId must reference an active Related System.";
-  }
-
-  if (Object.keys(fields).length > 0) {
-    return res.status(400).json({
-      error: "VALIDATION_ERROR",
-      message: Object.values(fields)[0],
-      fields,
-    });
-  }
-
   try {
+    const fields: Record<string, string> = {};
+
+    const summaryResult = validateSummary(req.body?.summary);
+    if (summaryResult.error) fields.summary = summaryResult.error;
+
+    const descriptionResult = validateDescription(req.body?.description);
+    if (descriptionResult.error) fields.description = descriptionResult.error;
+
+    const priorityResult = validateRequestedPriority(req.body?.requestedPriority);
+    if (priorityResult.error) fields.requestedPriority = priorityResult.error;
+
+    const requesterId = Number(req.body?.requesterId);
+    const categoryId = Number(req.body?.categoryId);
+    const relatedSystemId = Number(req.body?.relatedSystemId);
+
+    if (!isValidId(requesterId)) {
+      fields.requesterId = "A valid requesterId is required.";
+    } else if (!(await getPrisma().requesterUser.findFirst({ where: { id: requesterId, isActive: true } }))) {
+      fields.requesterId = "requesterId must reference an active Requester.";
+    }
+
+    if (!isValidId(categoryId)) {
+      fields.categoryId = "A valid categoryId is required.";
+    } else if (!(await getPrisma().category.findFirst({ where: { id: categoryId, isActive: true } }))) {
+      fields.categoryId = "categoryId must reference an active Category.";
+    }
+
+    if (!isValidId(relatedSystemId)) {
+      fields.relatedSystemId = "A valid relatedSystemId is required.";
+    } else if (
+      !(await getPrisma().relatedSystem.findFirst({ where: { id: relatedSystemId, isActive: true } }))
+    ) {
+      fields.relatedSystemId = "relatedSystemId must reference an active Related System.";
+    }
+
+    if (Object.keys(fields).length > 0) {
+      return res.status(400).json({
+        error: "VALIDATION_ERROR",
+        message: Object.values(fields)[0],
+        fields,
+      });
+    }
+
     // BR-19/§7's justified decision: the sequence value is fetched and the
     // Ticket inserted in the same transaction, so a failure leaves no
     // partial row and no gap between "number known" and "row exists".
@@ -188,18 +192,26 @@ app.post(
     const requesterId = Number(req.body?.requesterId);
     const files = (req.files as Express.Multer.File[] | undefined) ?? [];
 
-    const cleanupFiles = () =>
-      Promise.all(files.map((file) => unlink(path.join(UPLOAD_DIR, file.filename)).catch(() => {})));
+    // Files already persisted as an Attachment row (or already rejected and
+    // unlinked inline) must never be swept up by the catch block's cleanup:
+    // only files still unprocessed when a later file throws are unsettled.
+    const settledFilenames = new Set<string>();
+    const cleanupUnsettledFiles = () =>
+      Promise.all(
+        files
+          .filter((file) => !settledFilenames.has(file.filename))
+          .map((file) => unlink(path.join(UPLOAD_DIR, file.filename)).catch(() => {})),
+      );
 
-    if (!Number.isFinite(requesterId)) {
-      await cleanupFiles();
+    if (!isValidId(requesterId)) {
+      await cleanupUnsettledFiles();
       return res
         .status(400)
         .json({ error: "VALIDATION_ERROR", message: "A valid requesterId is required." });
     }
 
-    if (!Number.isFinite(ticketId)) {
-      await cleanupFiles();
+    if (!isValidId(ticketId)) {
+      await cleanupUnsettledFiles();
       return res.status(404).json({ error: "NOT_FOUND", message: "Ticket not found." });
     }
 
@@ -210,7 +222,7 @@ app.post(
       });
 
       if (!ticket) {
-        await cleanupFiles();
+        await cleanupUnsettledFiles();
         return res.status(404).json({ error: "NOT_FOUND", message: "Ticket not found." });
       }
 
@@ -232,6 +244,7 @@ app.post(
 
         if (reason) {
           await unlink(path.join(UPLOAD_DIR, file.filename)).catch(() => {});
+          settledFilenames.add(file.filename);
           failed.push({
             originalFilename: file.originalname,
             reason,
@@ -249,6 +262,7 @@ app.post(
             sizeBytes: file.size,
           },
         });
+        settledFilenames.add(file.filename);
         activeCount += 1;
 
         uploaded.push({
@@ -272,7 +286,7 @@ app.post(
 
       res.status(201).json({ uploaded, failed });
     } catch {
-      await cleanupFiles();
+      await cleanupUnsettledFiles();
       res.status(500).json({ error: "INTERNAL_ERROR", message: "Unable to process the upload." });
     }
   },
