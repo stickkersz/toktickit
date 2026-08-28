@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import App from "../../src/App.js";
@@ -78,7 +78,7 @@ describe("My Tickets", () => {
       .mockResolvedValueOnce(listResult([]));
 
     renderAtTickets();
-    await screen.findByText("Existing ticket");
+    await screen.findAllByText("Existing ticket");
 
     const search = screen.getByPlaceholderText(/search by ticket number/i);
     fireEvent.change(search, { target: { value: "nothing matches this" } });
@@ -137,7 +137,7 @@ describe("My Tickets", () => {
     });
 
     renderAtTickets();
-    await screen.findByText("Initial ticket");
+    await screen.findAllByText("Initial ticket");
 
     const search = screen.getByPlaceholderText(/search by ticket number/i);
     fireEvent.change(search, { target: { value: "slow" } });
@@ -145,14 +145,89 @@ describe("My Tickets", () => {
     // the "fast" request resolves first and must win.
     fireEvent.change(search, { target: { value: "fast" } });
 
-    expect(await screen.findByText("Fast result")).toBeInTheDocument();
+    expect((await screen.findAllByText("Fast result"))[0]).toBeInTheDocument();
 
     // The stale "slow" request finally resolves; it must not overwrite the
     // already-rendered, more recent "fast" result.
     resolveSlow(listResult([ticket({ summary: "Slow result" })]));
     await Promise.resolve();
     expect(screen.queryByText("Slow result")).not.toBeInTheDocument();
-    expect(screen.getByText("Fast result")).toBeInTheDocument();
+    expect(screen.getAllByText("Fast result")[0]).toBeInTheDocument();
+  });
+
+  it("shows a failure state with Retry and clears stale rows when a later request fails (AC-13-adjacent)", async () => {
+    vi.spyOn(api, "getRequesters").mockResolvedValue([ARI]);
+    vi.spyOn(api, "getCategories").mockResolvedValue([]);
+    const getTicketsSpy = vi
+      .spyOn(api, "getTickets")
+      .mockResolvedValueOnce(listResult([ticket({ summary: "Soon-to-be-stale ticket" })]))
+      .mockRejectedValueOnce(new Error("network error"))
+      .mockResolvedValueOnce(listResult([ticket({ summary: "Recovered ticket" })]));
+
+    renderAtTickets();
+    await screen.findAllByText("Soon-to-be-stale ticket");
+
+    const search = screen.getByPlaceholderText(/search by ticket number/i);
+    fireEvent.change(search, { target: { value: "trigger failure" } });
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(/unable to load your tickets/i);
+    expect(screen.queryByText("Soon-to-be-stale ticket")).not.toBeInTheDocument();
+    // The toolbar stays available so the user isn't stuck.
+    expect(screen.getByPlaceholderText(/search by ticket number/i)).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /retry/i }));
+    expect((await screen.findAllByText("Recovered ticket"))[0]).toBeInTheDocument();
+    expect(getTicketsSpy).toHaveBeenCalledTimes(3);
+  });
+
+  it("provides a reduced tablet table and a separate mobile card list for the same data (ui-spec.md §7)", async () => {
+    vi.spyOn(api, "getRequesters").mockResolvedValue([ARI]);
+    vi.spyOn(api, "getCategories").mockResolvedValue([]);
+    vi.spyOn(api, "getTickets").mockResolvedValue(
+      listResult([ticket({ summary: "Responsive ticket" })]),
+    );
+
+    const { container } = renderAtTickets();
+    await screen.findAllByText("Responsive ticket");
+
+    // Desktop/tablet table: hidden below md (768px), Created Date/Category
+    // hidden below lg (992px) for the tablet 5-column layout.
+    const tableWrapper = container.querySelector(".table-responsive");
+    expect(tableWrapper).toHaveClass("d-none", "d-md-block");
+    const headers = screen.getAllByRole("columnheader");
+    const createdDateHeader = headers.find((h) => h.textContent?.startsWith("Created Date"));
+    const categoryHeader = headers.find((h) => h.textContent === "Category");
+    expect(createdDateHeader).toHaveClass("d-none", "d-lg-table-cell");
+    expect(categoryHeader).toHaveClass("d-none", "d-lg-table-cell");
+
+    // Mobile card list: shown only below md (768px).
+    const cardList = screen.getByLabelText("Tickets");
+    expect(cardList).toHaveClass("d-md-none");
+    expect(cardList.querySelector(".card")).not.toBeNull();
+  });
+
+  it("makes sortable headers and ticket rows keyboard-operable", async () => {
+    vi.spyOn(api, "getRequesters").mockResolvedValue([ARI]);
+    vi.spyOn(api, "getCategories").mockResolvedValue([]);
+    const getTicketsSpy = vi
+      .spyOn(api, "getTickets")
+      .mockResolvedValue(listResult([ticket({ summary: "Keyboard ticket" })]));
+
+    renderAtTickets();
+    await screen.findAllByText("Keyboard ticket");
+
+    const summaryHeader = screen.getByRole("columnheader", { name: /^summary/i });
+    expect(summaryHeader).toHaveAttribute("tabindex", "0");
+    getTicketsSpy.mockClear();
+    fireEvent.keyDown(summaryHeader, { key: "Enter" });
+    await waitFor(() =>
+      expect(getTicketsSpy).toHaveBeenCalledWith(expect.objectContaining({ sort: "summary" })),
+    );
+
+    const rows = screen.getAllByText("Keyboard ticket").map((el) => el.closest('[role="button"]'));
+    for (const row of rows) {
+      expect(row).toHaveAttribute("tabindex", "0");
+    }
   });
 
   // UI-09
@@ -171,7 +246,7 @@ describe("My Tickets", () => {
     });
 
     renderAtTickets(ARI);
-    expect(await screen.findByText("Ari's ticket")).toBeInTheDocument();
+    expect((await screen.findAllByText("Ari's ticket"))[0]).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: /change requester/i }));
     await screen.findByText(/select development requester/i);
@@ -188,6 +263,6 @@ describe("My Tickets", () => {
     expect(screen.queryByText("Ari's ticket")).not.toBeInTheDocument();
 
     resolveBenFetch(listResult([ticket({ summary: "Ben's ticket" })]));
-    expect(await screen.findByText("Ben's ticket")).toBeInTheDocument();
+    expect((await screen.findAllByText("Ben's ticket"))[0]).toBeInTheDocument();
   });
 });

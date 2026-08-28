@@ -23,7 +23,7 @@ export default function Shell() {
         <div className="d-flex align-items-center gap-4">
           <span className="fw-semibold">TokTickIT</span>
           <nav className="d-flex gap-3" aria-label="Main">
-            <NavLink to="/tickets" className={navLinkClass}>
+            <NavLink to="/tickets" end className={navLinkClass}>
               My Tickets
             </NavLink>
             <NavLink to="/tickets/new" className={navLinkClass}>

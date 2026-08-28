@@ -66,8 +66,23 @@ export default function MyTickets() {
       })
       .catch(() => {
         if (requestIdRef.current !== requestId) return;
+        // Never leave a previous request's rows on screen next to a failure:
+        // a failed search/filter/page request must not look like it partly
+        // succeeded.
+        setItems([]);
+        setTotal(0);
+        setTotalPages(0);
         setListState("error");
       });
+  }
+
+  function handleActivateKey(handler: () => void) {
+    return (event: React.KeyboardEvent) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        handler();
+      }
+    };
   }
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -127,78 +142,97 @@ export default function MyTickets() {
         </div>
       )}
 
-      {hasLoadedOnce && total === 0 && !anyFilterActive && (
-        <div className="text-center py-5">
-          <p className="text-muted">You haven't submitted any tickets yet.</p>
-          <button type="button" className="btn zg-btn-primary" onClick={() => navigate("/tickets/new")}>
-            Create Ticket
-          </button>
-        </div>
-      )}
-
-      {hasLoadedOnce && (total > 0 || anyFilterActive) && (
+      {hasLoadedOnce && (
         <>
-          <div className="row g-2 mb-3">
-            <div className="col-md-4">
-              <input
-                type="search"
-                className="form-control"
-                placeholder="Search by ticket number or summary…"
-                value={search}
-                onChange={(e) => {
-                  setSearch(e.target.value);
-                  resetToFirstPage();
-                }}
-              />
+          {/* Hidden only for the one confirmed, genuinely-empty, no-filter
+              case (AC-21); visible for every other state including a
+              failed request, so the user is never stuck without a way to
+              adjust filters or retry. */}
+          {!(listState === "ready" && total === 0 && !anyFilterActive) && (
+            <div className="row g-2 mb-3">
+              <div className="col-md-4">
+                <input
+                  type="search"
+                  className="form-control"
+                  placeholder="Search by ticket number or summary…"
+                  value={search}
+                  onChange={(e) => {
+                    setSearch(e.target.value);
+                    resetToFirstPage();
+                  }}
+                />
+              </div>
+              <div className="col-md-3">
+                <select
+                  className="form-select"
+                  value={categoryId}
+                  onChange={(e) => {
+                    setCategoryId(e.target.value);
+                    resetToFirstPage();
+                  }}
+                >
+                  <option value="">All Categories</option>
+                  {categories.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="col-md-2">
+                <select
+                  className="form-select"
+                  value={requestedPriority}
+                  onChange={(e) => {
+                    setRequestedPriority(e.target.value as TicketPriority | "");
+                    resetToFirstPage();
+                  }}
+                >
+                  <option value="">All Priorities</option>
+                  <option value="LOW">Low</option>
+                  <option value="MEDIUM">Medium</option>
+                  <option value="HIGH">High</option>
+                </select>
+              </div>
+              <div className="col-md-3">
+                <select
+                  className="form-select"
+                  value={currentStatus}
+                  onChange={(e) => {
+                    setCurrentStatus(e.target.value);
+                    resetToFirstPage();
+                  }}
+                >
+                  <option value="">All Statuses</option>
+                  <option value="NEW">New</option>
+                </select>
+              </div>
             </div>
-            <div className="col-md-3">
-              <select
-                className="form-select"
-                value={categoryId}
-                onChange={(e) => {
-                  setCategoryId(e.target.value);
-                  resetToFirstPage();
-                }}
-              >
-                <option value="">All Categories</option>
-                {categories.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="col-md-2">
-              <select
-                className="form-select"
-                value={requestedPriority}
-                onChange={(e) => {
-                  setRequestedPriority(e.target.value as TicketPriority | "");
-                  resetToFirstPage();
-                }}
-              >
-                <option value="">All Priorities</option>
-                <option value="LOW">Low</option>
-                <option value="MEDIUM">Medium</option>
-                <option value="HIGH">High</option>
-              </select>
-            </div>
-            <div className="col-md-3">
-              <select
-                className="form-select"
-                value={currentStatus}
-                onChange={(e) => {
-                  setCurrentStatus(e.target.value);
-                  resetToFirstPage();
-                }}
-              >
-                <option value="">All Statuses</option>
-                <option value="NEW">New</option>
-              </select>
-            </div>
-          </div>
+          )}
 
-          {total === 0 && anyFilterActive && (
+          {listState === "error" && (
+            <div className="zg-alert-error rounded p-3" role="alert">
+              <p className="mb-2">Unable to load your tickets.</p>
+              <button type="button" className="btn zg-btn-primary btn-sm" onClick={load}>
+                Retry
+              </button>
+            </div>
+          )}
+
+          {listState !== "error" && total === 0 && !anyFilterActive && (
+            <div className="text-center py-5">
+              <p className="text-muted">You haven't submitted any tickets yet.</p>
+              <button
+                type="button"
+                className="btn zg-btn-primary"
+                onClick={() => navigate("/tickets/new")}
+              >
+                Create Ticket
+              </button>
+            </div>
+          )}
+
+          {listState !== "error" && total === 0 && anyFilterActive && (
             <div className="text-center py-5">
               <p className="text-muted">No tickets match your filters or search.</p>
               <button type="button" className="btn btn-outline-secondary" onClick={clearFilters}>
@@ -207,22 +241,62 @@ export default function MyTickets() {
             </div>
           )}
 
-          {total > 0 && (
+          {listState !== "error" && total > 0 && (
             <>
-              <div className="table-responsive">
+              {/* Desktop (>=992px) and tablet (768-991px): a table, with
+                  Created Date/Category hidden below the lg breakpoint per
+                  ui-spec.md §7's tablet 5-column layout. Hidden below 768px
+                  in favor of the card list. */}
+              <div className="d-none d-md-block table-responsive">
                 <table className="table align-middle">
                   <thead>
                     <tr>
-                      <th role="button" onClick={() => toggleSort("ticketNumber")}>
+                      {/* No role="button" here: a <th> already has an
+                          implicit columnheader role that assistive tech
+                          relies on for table navigation, and setting an
+                          explicit role would replace it, not add to it.
+                          tabIndex + onKeyDown + aria-sort are enough to make
+                          these keyboard-operable without losing that. */}
+                      <th
+                        tabIndex={0}
+                        aria-sort={
+                          sort === "ticketNumber"
+                            ? "ascending"
+                            : sort === "-ticketNumber"
+                              ? "descending"
+                              : "none"
+                        }
+                        onClick={() => toggleSort("ticketNumber")}
+                        onKeyDown={handleActivateKey(() => toggleSort("ticketNumber"))}
+                      >
                         Ticket No.{sortIndicator("ticketNumber")}
                       </th>
-                      <th role="button" onClick={() => toggleSort("createdAt")}>
+                      <th
+                        tabIndex={0}
+                        className="d-none d-lg-table-cell"
+                        aria-sort={
+                          sort === "createdAt"
+                            ? "ascending"
+                            : sort === "-createdAt"
+                              ? "descending"
+                              : "none"
+                        }
+                        onClick={() => toggleSort("createdAt")}
+                        onKeyDown={handleActivateKey(() => toggleSort("createdAt"))}
+                      >
                         Created Date{sortIndicator("createdAt")}
                       </th>
-                      <th role="button" onClick={() => toggleSort("summary")}>
+                      <th
+                        tabIndex={0}
+                        aria-sort={
+                          sort === "summary" ? "ascending" : sort === "-summary" ? "descending" : "none"
+                        }
+                        onClick={() => toggleSort("summary")}
+                        onKeyDown={handleActivateKey(() => toggleSort("summary"))}
+                      >
                         Summary{sortIndicator("summary")}
                       </th>
-                      <th>Category</th>
+                      <th className="d-none d-lg-table-cell">Category</th>
                       <th>Requested Priority</th>
                       <th>Current Status</th>
                       <th>Last Updated</th>
@@ -233,12 +307,14 @@ export default function MyTickets() {
                       <tr
                         key={ticket.id}
                         role="button"
+                        tabIndex={0}
                         onClick={() => navigate(`/tickets/${ticket.id}`)}
+                        onKeyDown={handleActivateKey(() => navigate(`/tickets/${ticket.id}`))}
                       >
                         <td>{ticket.ticketNumber}</td>
-                        <td>{formatDate(ticket.createdAt)}</td>
+                        <td className="d-none d-lg-table-cell">{formatDate(ticket.createdAt)}</td>
                         <td>{ticket.summary}</td>
-                        <td>{ticket.categoryName}</td>
+                        <td className="d-none d-lg-table-cell">{ticket.categoryName}</td>
                         <td>
                           <PriorityBadge value={ticket.requestedPriority} />
                         </td>
@@ -250,6 +326,35 @@ export default function MyTickets() {
                     ))}
                   </tbody>
                 </table>
+              </div>
+
+              {/* Mobile (<768px): card list, ui-spec.md §7. */}
+              <div className="d-md-none" aria-label="Tickets">
+                {items.map((ticket) => (
+                  <div
+                    key={ticket.id}
+                    className="card mb-2"
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => navigate(`/tickets/${ticket.id}`)}
+                    onKeyDown={handleActivateKey(() => navigate(`/tickets/${ticket.id}`))}
+                  >
+                    <div className="card-body">
+                      <div className="d-flex justify-content-between">
+                        <span className="fw-semibold">{ticket.ticketNumber}</span>
+                        <span className="text-muted small">{formatDate(ticket.createdAt)}</span>
+                      </div>
+                      <div className="fw-semibold">{ticket.summary}</div>
+                      <div className="d-flex gap-2 mt-1">
+                        <PriorityBadge value={ticket.requestedPriority} />
+                        <StatusBadge value={ticket.currentStatus} />
+                      </div>
+                      <div className="text-muted small mt-1">
+                        Updated {formatDate(ticket.updatedAt)}
+                      </div>
+                    </div>
+                  </div>
+                ))}
               </div>
 
               <div className="d-flex justify-content-between align-items-center mt-3">
