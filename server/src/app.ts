@@ -33,7 +33,7 @@ app.get("/api/categories", async (_req: Request, res: Response) => {
     });
     res.status(200).json(categories);
   } catch {
-    res.status(500).json({ error: "Unable to load categories" });
+    res.status(500).json({ error: "INTERNAL_ERROR", message: "Unable to load categories." });
   }
 });
 
