@@ -11,6 +11,67 @@ export interface Requester {
   email: string;
 }
 
+export interface RelatedSystem {
+  id: number;
+  name: string;
+}
+
+export type TicketPriority = "LOW" | "MEDIUM" | "HIGH";
+
+export interface Ticket {
+  id: number;
+  ticketNumber: string;
+  requesterId: number;
+  categoryId: number;
+  relatedSystemId: number;
+  summary: string;
+  description: string;
+  requestedPriority: TicketPriority;
+  currentStatus: string;
+  createdAt: string;
+}
+
+export interface CreateTicketInput {
+  requesterId: number;
+  categoryId: number;
+  relatedSystemId: number;
+  summary: string;
+  description: string;
+  requestedPriority: TicketPriority;
+}
+
+export type AttachmentRejectReason = "UNSUPPORTED_TYPE" | "FILE_TOO_LARGE" | "MAX_ATTACHMENTS_EXCEEDED";
+
+export interface UploadedAttachment {
+  id: number;
+  originalFilename: string;
+  mimeType: string;
+  sizeBytes: number;
+  uploadedAt: string;
+  isRemoved: boolean;
+}
+
+export interface FailedAttachment {
+  originalFilename: string;
+  reason: AttachmentRejectReason;
+  message: string;
+}
+
+export interface UploadAttachmentsResult {
+  uploaded: UploadedAttachment[];
+  failed: FailedAttachment[];
+}
+
+// BR-18: thrown on a 400 VALIDATION_ERROR so the form can show per-field
+// errors and keep the entered values, per the API's { fields } shape.
+export class ValidationError extends Error {
+  fields: Record<string, string>;
+  constructor(message: string, fields: Record<string, string>) {
+    super(message);
+    this.fields = fields;
+  }
+}
+
 // Lab 2 — Development Requester Selection (api-spec.md §3).
 export async function getRequesters(): Promise<Requester[]> {
   const res = await fetch(`${API_URL}/api/requesters`);
@@ -18,5 +79,63 @@ export async function getRequesters(): Promise<Requester[]> {
     throw new Error("Unable to load Development Requesters.");
   }
   return res.json();
+}
+
+// Lab 2 — Create Ticket reference data (api-spec.md §1).
+export async function getCategories(): Promise<Category[]> {
+  const res = await fetch(`${API_URL}/api/categories`);
+  if (!res.ok) {
+    throw new Error("Unable to load Categories.");
+  }
+  return res.json();
+}
+
+// Lab 2 — Create Ticket reference data (api-spec.md §2).
+export async function getRelatedSystems(): Promise<RelatedSystem[]> {
+  const res = await fetch(`${API_URL}/api/related-systems`);
+  if (!res.ok) {
+    throw new Error("Unable to load Related Systems.");
+  }
+  return res.json();
+}
+
+// Lab 2 — Create Ticket (api-spec.md §4).
+export async function createTicket(input: CreateTicketInput): Promise<Ticket> {
+  const res = await fetch(`${API_URL}/api/tickets`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  const body = await res.json();
+  if (!res.ok) {
+    if (body?.error === "VALIDATION_ERROR") {
+      throw new ValidationError(body.message ?? "Validation failed.", body.fields ?? {});
+    }
+    throw new Error(body?.message ?? "Unable to create the Ticket.");
+  }
+  return body;
+}
+
+// Lab 2 — Attachment upload during/after creation (api-spec.md §7, BR-25).
+// A 400 ALL_FILES_REJECTED is not thrown: it carries the same
+// { uploaded, failed } shape as a 201, so the caller handles both uniformly.
+export async function uploadAttachments(
+  ticketId: number,
+  requesterId: number,
+  files: File[],
+): Promise<UploadAttachmentsResult> {
+  const formData = new FormData();
+  formData.append("requesterId", String(requesterId));
+  files.forEach((file) => formData.append("files", file));
+
+  const res = await fetch(`${API_URL}/api/tickets/${ticketId}/attachments`, {
+    method: "POST",
+    body: formData,
+  });
+  const body = await res.json();
+  if (!res.ok && body?.error !== "ALL_FILES_REJECTED") {
+    throw new Error(body?.message ?? "Unable to upload attachments.");
+  }
+  return { uploaded: body.uploaded ?? [], failed: body.failed ?? [] };
 }
 

@@ -14,6 +14,8 @@ client/tests/**/*.js
 server/prisma/**/*.js
 # prisma
 server/prisma/*.db
+# uploaded attachments (Lab 2, dev-only local disk storage)
+server/uploads/
 # logs & OS
 *.log
 .DS_Store
