@@ -15,7 +15,7 @@ export default function Shell() {
 
   return (
     <div>
-      <header className="d-flex justify-content-between align-items-center bg-success text-white px-3 py-2">
+      <header className="zg-header d-flex justify-content-between align-items-center text-white px-3">
         <span className="fw-semibold">TokTickIT</span>
         <div className="d-flex align-items-center gap-3">
           <span>{requester?.name}</span>

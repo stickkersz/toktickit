@@ -1,0 +1,53 @@
+/* Zen Green design tokens (ui-spec.md §1). Fixed by the handout, not
+   negotiable in Lab 2. Shared across every screen. */
+:root {
+  --color-primary: #006b3c;
+  --color-secondary: #0b7a46;
+  --color-pale: #eaf6ef;
+  --color-bg: #f5f7f6;
+  --color-surface: #ffffff;
+  --color-text: #1b2b23;
+  --color-text-muted: #5b6b62;
+  --color-field-editable-bg: #ffffff;
+  --color-field-editable-border: #c7d2cc;
+  --color-field-readonly-bg: #f1f3ef;
+  --color-error: #b3261e;
+  --color-error-bg: #fbeae9;
+  --color-warning: #b8860b;
+  --color-warning-bg: #fcf3d9;
+  --color-success: #0b7a46;
+}
+
+body {
+  background-color: var(--color-bg);
+  color: var(--color-text);
+}
+
+/* ui-spec.md §4 — application shell header. */
+.zg-header {
+  background-color: var(--color-primary);
+  height: 56px;
+}
+
+/* ui-spec.md §3 — Primary button. */
+.zg-btn-primary {
+  background-color: var(--color-primary);
+  border-color: var(--color-primary);
+  color: #ffffff;
+}
+.zg-btn-primary:hover:not(:disabled),
+.zg-btn-primary:focus:not(:disabled) {
+  background-color: var(--color-secondary);
+  border-color: var(--color-secondary);
+  color: #ffffff;
+}
+.zg-btn-primary:disabled {
+  opacity: 0.5;
+}
+
+/* ui-spec.md §3 — error/failure callout. */
+.zg-alert-error {
+  background-color: var(--color-error-bg);
+  color: var(--color-error);
+  border: 1px solid var(--color-error);
+}

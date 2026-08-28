@@ -42,7 +42,11 @@ export default function RequesterSelection() {
       </p>
 
       {state === "loading" && (
-        <select className="form-select mb-3" disabled aria-label="Development Requester">
+        <select
+          className="form-select mb-3"
+          disabled
+          aria-label="Development Requester (loading)"
+        >
           <option>Loading Requesters…</option>
         </select>
       )}
@@ -54,9 +58,9 @@ export default function RequesterSelection() {
       )}
 
       {state === "error" && (
-        <div className="alert alert-danger" role="alert">
+        <div className="zg-alert-error rounded p-3" role="alert">
           <p className="mb-2">Unable to load Development Requesters.</p>
-          <button type="button" className="btn btn-outline-danger btn-sm" onClick={load}>
+          <button type="button" className="btn zg-btn-primary btn-sm" onClick={load}>
             Retry
           </button>
         </div>
@@ -94,7 +98,7 @@ export default function RequesterSelection() {
       <div className="d-flex justify-content-end gap-2 mt-4">
         <button
           type="button"
-          className="btn btn-primary"
+          className="btn zg-btn-primary"
           disabled={state !== "ready" || selectedId === ""}
           onClick={handleContinue}
         >
