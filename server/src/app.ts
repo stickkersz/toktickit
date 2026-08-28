@@ -8,6 +8,7 @@ import { validateSummary, validateDescription, validateRequestedPriority } from 
 import { formatTicketNumber } from "./ticketNumber.js";
 import { validateAttachment, ATTACHMENT_REJECT_MESSAGES } from "./attachmentValidation.js";
 import { UPLOAD_DIR, ensureUploadDir, generateStoredFilename } from "./attachmentStorage.js";
+import { parseTicketListQuery } from "./ticketListQuery.js";
 
 const upload = multer({
   storage: multer.diskStorage({
@@ -291,5 +292,66 @@ app.post(
     }
   },
 );
+
+// ---------------------------------------------------------------------------
+// Lab 2 — My Tickets
+// GET /api/tickets (api-spec.md §5, FR-04, BR-20..24a).
+// ---------------------------------------------------------------------------
+app.get("/api/tickets", async (req: Request, res: Response) => {
+  try {
+    const requesterId = Number(req.query.requesterId);
+    if (
+      !isValidId(requesterId) ||
+      !(await getPrisma().requesterUser.findFirst({ where: { id: requesterId, isActive: true } }))
+    ) {
+      return res.status(400).json({
+        error: "VALIDATION_ERROR",
+        message: "requesterId is required and must reference an active Requester.",
+      });
+    }
+
+    const query = parseTicketListQuery(req.query as Record<string, unknown>);
+
+    const where: Record<string, unknown> = { requesterId };
+    if (query.search) {
+      where.OR = [
+        { ticketNumber: { contains: query.search, mode: "insensitive" } },
+        { summary: { contains: query.search, mode: "insensitive" } },
+      ];
+    }
+    if (query.categoryId !== null) where.categoryId = query.categoryId;
+    if (query.requestedPriority !== null) where.requestedPriority = query.requestedPriority;
+    if (query.currentStatus !== null) where.currentStatus = query.currentStatus;
+
+    const { page, pageSize, sortField, sortDirection } = query;
+
+    const [total, tickets] = await Promise.all([
+      getPrisma().ticket.count({ where }),
+      getPrisma().ticket.findMany({
+        where,
+        orderBy: [{ [sortField]: sortDirection }, { id: sortDirection }],
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+        include: { category: { select: { name: true } } },
+      }),
+    ]);
+
+    res.status(200).json({
+      data: tickets.map((ticket) => ({
+        id: ticket.id,
+        ticketNumber: ticket.ticketNumber,
+        summary: ticket.summary,
+        categoryName: ticket.category.name,
+        requestedPriority: ticket.requestedPriority,
+        currentStatus: ticket.currentStatus,
+        createdAt: ticket.createdAt,
+        updatedAt: ticket.updatedAt,
+      })),
+      pagination: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) },
+    });
+  } catch {
+    res.status(500).json({ error: "INTERNAL_ERROR", message: "Unable to load tickets." });
+  }
+});
 
 export default app;

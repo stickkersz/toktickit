@@ -51,3 +51,26 @@ body {
   color: var(--color-error);
   border: 1px solid var(--color-error);
 }
+
+/* ui-spec.md §7 — Requested Priority / Current Status badges. Color is
+   always paired with text, never a bare colored dot. */
+.zg-badge {
+  display: inline-block;
+  padding: 0.15em 0.6em;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+.zg-badge-low,
+.zg-badge-new {
+  background-color: var(--color-pale);
+  color: var(--color-secondary);
+}
+.zg-badge-medium {
+  background-color: var(--color-warning-bg);
+  color: var(--color-warning);
+}
+.zg-badge-high {
+  background-color: var(--color-error-bg);
+  color: var(--color-error);
+}

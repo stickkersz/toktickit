@@ -89,7 +89,7 @@ describe("Development Requester Selection", () => {
     );
     await userEvent.click(screen.getByRole("button", { name: /continue/i }));
 
-    expect(await screen.findByText(/my tickets/i)).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: /my tickets/i })).toBeInTheDocument();
     expect(localStorage.getItem(STORAGE_KEY)).toBe(String(BEN.id));
   });
 
@@ -103,7 +103,7 @@ describe("Development Requester Selection", () => {
       </MemoryRouter>,
     );
 
-    expect(await screen.findByText(/my tickets/i)).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: /my tickets/i })).toBeInTheDocument();
   });
 
   // BR-05: an id left over from a since-removed or deactivated Requester must
