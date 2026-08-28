@@ -30,7 +30,7 @@ All non-2xx responses share one envelope:
 }
 ```
 
-`fields` is present only for 400 responses tied to a specific form field; other error kinds omit it.
+`fields` is present only for 400 responses tied to a specific form field; other error kinds omit it. One documented exception: endpoint 7's all-files-rejected 400 (`ALL_FILES_REJECTED`) replaces `fields` with `uploaded`/`failed` instead, since a per-file batch result does not fit a single-field map; see endpoint 7 for that shape.
 
 ### HTTP status codes used
 
@@ -237,7 +237,7 @@ Auth/ownership: `requesterId` (body field, required, `multipart/form-data`); Tic
 
 Request: `multipart/form-data` with fields `requesterId` and one or more `files` parts.
 
-A multi-file request has exactly one response-level HTTP status (201 or 400, see below); per-file outcomes never set their own HTTP status. Each rejected file instead carries one of these three `reason` codes in the response body's `failed[]` array (BR-31), independent of the others in the same request:
+A multi-file request has exactly one response-level HTTP status (201, 400, or 404, see below); per-file outcomes never set their own HTTP status. Each rejected file instead carries one of these three `reason` codes in the response body's `failed[]` array (BR-31), independent of the others in the same request:
 - extension/MIME must be JPG, JPEG, PNG, WEBP, or PDF, else `reason: "UNSUPPORTED_TYPE"`;
 - size ≤ 5 MB, else `reason: "FILE_TOO_LARGE"`;
 - rejected only if accepting it would exceed 5 **active** attachments on the Ticket (BR-26), counted against the Ticket's current active count plus files already accepted earlier in the same request, else `reason: "MAX_ATTACHMENTS_EXCEEDED"`.
@@ -255,12 +255,28 @@ Response 201 (at least one file accepted):
 }
 ```
 
-Response 400 (all files rejected, or `requesterId`/Ticket ownership check failed before any file processing; see errors below): same `failed` array shape, empty `uploaded`.
+Response 400, all-files-rejected case only (at least one file was present and went through per-file validation, but every one of them failed it): this is this endpoint's one documented departure from the plain `### Error shape` envelope. It extends that envelope with `uploaded`/`failed` in place of `fields`, since a per-file batch result does not fit the single-field `fields` map:
+
+```json
+{
+  "error": "ALL_FILES_REJECTED",
+  "message": "No files could be attached.",
+  "uploaded": [],
+  "failed": [
+    { "originalFilename": "notes.docx", "reason": "UNSUPPORTED_TYPE", "message": "Only JPG, JPEG, PNG, WEBP, and PDF files are allowed." }
+  ]
+}
+```
+
+Response 400, `VALIDATION_ERROR` case (nothing was there to process, so there is no `failed[]` to report): `requesterId` missing/non-numeric, or no `files` parts present in the request at all. Uses the plain `### Error shape` envelope exactly as defined at the top of this document, no `uploaded`/`failed` keys.
+
+A Ticket-ownership failure (not found, not owned, or `requesterId` unresolved, per the single-resource rule above) is always 404, never 400, before any file is looked at; it also uses the plain `### Error shape` envelope, not the `failed[]` shape.
 
 Errors:
-- 400 `VALIDATION_ERROR`: `requesterId` missing or non-numeric, or no files present in the request.
-- 404: Ticket not found, not owned by `requesterId`, or `requesterId` does not resolve to a real Requester (single-resource rule above).
-- `UNSUPPORTED_TYPE`/`FILE_TOO_LARGE`/`MAX_ATTACHMENTS_EXCEEDED` are reported inside the response body's `failed` array, never as the HTTP status of the whole request, whenever at least one other file in the same batch succeeds (201), per BR-31; if **every** file in the batch fails, the endpoint returns 400 with the same `failed` array so a fully-failed batch is distinguishable from a partial one. These three reason codes are documented in the status-code table above purely as a cross-reference to their conceptual HTTP meaning (413/415/409); the wire-level status of this endpoint is always 201 or 400, never those three.
+- 400 `VALIDATION_ERROR`: `requesterId` missing or non-numeric, or no files present in the request (plain envelope, see above).
+- 400 `ALL_FILES_REJECTED`: at least one file was submitted and every one failed per-file validation (extended envelope with `uploaded`/`failed`, see above); this is distinguishable from the 201 partial-success case, which also carries a `failed[]` array but only when at least one other file in the same batch succeeded (BR-31).
+- 404: Ticket not found, not owned by `requesterId`, or `requesterId` does not resolve to a real Requester (single-resource rule above; plain envelope, never the `failed[]` shape).
+- `UNSUPPORTED_TYPE`/`FILE_TOO_LARGE`/`MAX_ATTACHMENTS_EXCEEDED` are per-file `reason` codes inside `failed[]`, never the HTTP status of the whole request; they are documented in the status-code table above purely as a cross-reference to their conceptual HTTP meaning (413/415/409). The wire-level status of this endpoint is always 201, 400, 404, or 500, never those three.
 - 500.
 
 ## 8. GET /api/attachments/:id
