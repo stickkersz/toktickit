@@ -36,3 +36,12 @@ export function validateRequestedPriority(raw: unknown): PriorityValidationResul
   }
   return { error: "Requested priority must be one of LOW, MEDIUM, HIGH." };
 }
+
+// BR-29: required, trimmed, 5-200 characters.
+export function validateRemovalReason(raw: unknown): FieldValidationResult {
+  const value = typeof raw === "string" ? raw.trim() : "";
+  if (value.length < 5 || value.length > 200) {
+    return { error: "Reason must be between 5 and 200 characters." };
+  }
+  return { value };
+}

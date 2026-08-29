@@ -62,6 +62,35 @@ export interface UploadAttachmentsResult {
   failed: FailedAttachment[];
 }
 
+export interface Attachment {
+  id: number;
+  originalFilename: string;
+  mimeType: string;
+  sizeBytes: number;
+  uploadedAt: string;
+  isRemoved: boolean;
+  removedAt?: string;
+  removalReason?: string;
+}
+
+export interface TicketDetail {
+  id: number;
+  ticketNumber: string;
+  requesterId: number;
+  requesterName: string;
+  categoryId: number;
+  categoryName: string;
+  relatedSystemId: number;
+  relatedSystemName: string;
+  summary: string;
+  description: string;
+  requestedPriority: TicketPriority;
+  currentStatus: string;
+  createdAt: string;
+  updatedAt: string;
+  attachments: Attachment[];
+}
+
 export interface TicketListItem {
   id: number;
   ticketNumber: string;
@@ -105,6 +134,11 @@ export class ValidationError extends Error {
     this.fields = fields;
   }
 }
+
+// BR-35: a 404 (not found / not owned / requester unresolved) is never
+// distinguishable from the other two, so Ticket Detail treats all three as
+// one "not found" screen state, never a generic retryable error.
+export class NotFoundError extends Error {}
 
 // Lab 2 — Development Requester Selection (api-spec.md §3).
 export async function getRequesters(): Promise<Requester[]> {
@@ -190,5 +224,42 @@ export async function uploadAttachments(
     throw new Error(body?.message ?? "Unable to upload attachments.");
   }
   return { uploaded: body.uploaded ?? [], failed: body.failed ?? [] };
+}
+
+// Lab 2 — Requester Ticket Detail (api-spec.md §6, FR-05).
+export async function getTicketDetail(ticketId: number, requesterId: number): Promise<TicketDetail> {
+  const res = await fetch(`${API_URL}/api/tickets/${ticketId}?requesterId=${requesterId}`);
+  if (res.status === 404) {
+    throw new NotFoundError("Ticket not found.");
+  }
+  if (!res.ok) {
+    throw new Error("Unable to load the Ticket.");
+  }
+  return res.json();
+}
+
+// Lab 2 — Attachment removal (api-spec.md §10, FR-07, BR-29).
+export async function removeAttachment(
+  attachmentId: number,
+  requesterId: number,
+  reason: string,
+): Promise<Attachment> {
+  const res = await fetch(`${API_URL}/api/attachments/${attachmentId}`, {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ requesterId, reason }),
+  });
+  const body = await res.json();
+  if (!res.ok) {
+    throw new Error(body?.message ?? "Unable to remove the attachment.");
+  }
+  return body;
+}
+
+// Lab 2 — Attachment download (api-spec.md §9, FR-08). A plain URL, not a
+// fetch: the server sets Content-Disposition so the browser handles the
+// save itself.
+export function getAttachmentDownloadUrl(attachmentId: number, requesterId: number): string {
+  return `${API_URL}/api/attachments/${attachmentId}/download?requesterId=${requesterId}`;
 }
 

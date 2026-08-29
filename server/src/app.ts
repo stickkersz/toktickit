@@ -4,7 +4,12 @@ import express, { Request, Response } from "express";
 import cors from "cors";
 import multer from "multer";
 import { getPrisma } from "./prisma.js";
-import { validateSummary, validateDescription, validateRequestedPriority } from "./validation.js";
+import {
+  validateSummary,
+  validateDescription,
+  validateRequestedPriority,
+  validateRemovalReason,
+} from "./validation.js";
 import { formatTicketNumber } from "./ticketNumber.js";
 import { validateAttachment, ATTACHMENT_REJECT_MESSAGES } from "./attachmentValidation.js";
 import { UPLOAD_DIR, ensureUploadDir, generateStoredFilename } from "./attachmentStorage.js";
@@ -95,6 +100,30 @@ app.get("/api/requesters", async (_req: Request, res: Response) => {
 // ---------------------------------------------------------------------------
 function isValidId(value: number): boolean {
   return Number.isInteger(value) && value > 0;
+}
+
+// Shared shape for endpoints 6, 8, 10 (api-spec.md): removedAt/removalReason
+// are only present once BR-30 actually applies (isRemoved: true).
+function serializeAttachment(attachment: {
+  id: number;
+  originalFilename: string;
+  mimeType: string;
+  sizeBytes: number;
+  uploadedAt: Date;
+  isRemoved: boolean;
+  removedAt: Date | null;
+  removalReason: string | null;
+}) {
+  const base = {
+    id: attachment.id,
+    originalFilename: attachment.originalFilename,
+    mimeType: attachment.mimeType,
+    sizeBytes: attachment.sizeBytes,
+    uploadedAt: attachment.uploadedAt,
+    isRemoved: attachment.isRemoved,
+  };
+  if (!attachment.isRemoved) return base;
+  return { ...base, removedAt: attachment.removedAt, removalReason: attachment.removalReason };
 }
 
 app.post("/api/tickets", async (req: Request, res: Response) => {
@@ -351,6 +380,190 @@ app.get("/api/tickets", async (req: Request, res: Response) => {
     });
   } catch {
     res.status(500).json({ error: "INTERNAL_ERROR", message: "Unable to load tickets." });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Lab 2 — Requester Ticket Detail
+// GET /api/tickets/:id (api-spec.md §6, FR-05).
+// ---------------------------------------------------------------------------
+app.get("/api/tickets/:id", async (req: Request, res: Response) => {
+  try {
+    const ticketId = Number(req.params.id);
+    const requesterId = Number(req.query.requesterId);
+
+    if (!isValidId(requesterId)) {
+      return res
+        .status(400)
+        .json({ error: "VALIDATION_ERROR", message: "A valid requesterId is required." });
+    }
+
+    if (!isValidId(ticketId)) {
+      return res.status(404).json({ error: "NOT_FOUND", message: "Ticket not found." });
+    }
+
+    const ticket = await getPrisma().ticket.findFirst({
+      where: { id: ticketId, requesterId },
+      include: {
+        requester: { select: { name: true } },
+        category: { select: { name: true } },
+        relatedSystem: { select: { name: true } },
+        attachments: { orderBy: { uploadedAt: "desc" } },
+      },
+    });
+
+    if (!ticket) {
+      return res.status(404).json({ error: "NOT_FOUND", message: "Ticket not found." });
+    }
+
+    res.status(200).json({
+      id: ticket.id,
+      ticketNumber: ticket.ticketNumber,
+      requesterId: ticket.requesterId,
+      requesterName: ticket.requester.name,
+      categoryId: ticket.categoryId,
+      categoryName: ticket.category.name,
+      relatedSystemId: ticket.relatedSystemId,
+      relatedSystemName: ticket.relatedSystem.name,
+      summary: ticket.summary,
+      description: ticket.description,
+      requestedPriority: ticket.requestedPriority,
+      currentStatus: ticket.currentStatus,
+      createdAt: ticket.createdAt,
+      updatedAt: ticket.updatedAt,
+      attachments: ticket.attachments.map(serializeAttachment),
+    });
+  } catch {
+    res.status(500).json({ error: "INTERNAL_ERROR", message: "Unable to load the Ticket." });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Lab 2 — Attachment metadata/download/removal
+// GET /api/attachments/:id, GET /api/attachments/:id/download,
+// DELETE /api/attachments/:id (api-spec.md §8-10, FR-07/FR-08, BR-29/BR-30).
+// ---------------------------------------------------------------------------
+app.get("/api/attachments/:id", async (req: Request, res: Response) => {
+  try {
+    const attachmentId = Number(req.params.id);
+    const requesterId = Number(req.query.requesterId);
+
+    if (!isValidId(requesterId)) {
+      return res
+        .status(400)
+        .json({ error: "VALIDATION_ERROR", message: "A valid requesterId is required." });
+    }
+
+    if (!isValidId(attachmentId)) {
+      return res.status(404).json({ error: "NOT_FOUND", message: "Attachment not found." });
+    }
+
+    const attachment = await getPrisma().attachment.findFirst({
+      where: { id: attachmentId, ticket: { requesterId } },
+    });
+
+    if (!attachment) {
+      return res.status(404).json({ error: "NOT_FOUND", message: "Attachment not found." });
+    }
+
+    res.status(200).json(serializeAttachment(attachment));
+  } catch {
+    res.status(500).json({ error: "INTERNAL_ERROR", message: "Unable to load the attachment." });
+  }
+});
+
+app.get("/api/attachments/:id/download", async (req: Request, res: Response) => {
+  try {
+    const attachmentId = Number(req.params.id);
+    const requesterId = Number(req.query.requesterId);
+
+    if (!isValidId(requesterId)) {
+      return res
+        .status(400)
+        .json({ error: "VALIDATION_ERROR", message: "A valid requesterId is required." });
+    }
+
+    if (!isValidId(attachmentId)) {
+      return res.status(404).json({ error: "NOT_FOUND", message: "Attachment not found." });
+    }
+
+    const attachment = await getPrisma().attachment.findFirst({
+      where: { id: attachmentId, ticket: { requesterId } },
+    });
+
+    if (!attachment) {
+      return res.status(404).json({ error: "NOT_FOUND", message: "Attachment not found." });
+    }
+
+    if (attachment.isRemoved) {
+      return res
+        .status(410)
+        .json({ error: "ATTACHMENT_REMOVED", message: "This attachment has been removed." });
+    }
+
+    res.setHeader("Content-Type", attachment.mimeType);
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${attachment.originalFilename.replace(/"/g, "")}"`,
+    );
+    res.sendFile(path.join(UPLOAD_DIR, attachment.storedFilename), (err) => {
+      if (err && !res.headersSent) {
+        res.status(500).json({ error: "INTERNAL_ERROR", message: "Unable to download the file." });
+      }
+    });
+  } catch {
+    res.status(500).json({ error: "INTERNAL_ERROR", message: "Unable to download the file." });
+  }
+});
+
+app.delete("/api/attachments/:id", async (req: Request, res: Response) => {
+  try {
+    const attachmentId = Number(req.params.id);
+    const requesterId = Number(req.body?.requesterId);
+
+    if (!isValidId(requesterId)) {
+      return res.status(400).json({
+        error: "VALIDATION_ERROR",
+        message: "A valid requesterId is required.",
+        fields: { requesterId: "A valid requesterId is required." },
+      });
+    }
+
+    const reasonResult = validateRemovalReason(req.body?.reason);
+    if (reasonResult.error) {
+      return res.status(400).json({
+        error: "VALIDATION_ERROR",
+        message: reasonResult.error,
+        fields: { reason: reasonResult.error },
+      });
+    }
+
+    if (!isValidId(attachmentId)) {
+      return res.status(404).json({ error: "NOT_FOUND", message: "Attachment not found." });
+    }
+
+    const attachment = await getPrisma().attachment.findFirst({
+      where: { id: attachmentId, ticket: { requesterId } },
+    });
+
+    if (!attachment) {
+      return res.status(404).json({ error: "NOT_FOUND", message: "Attachment not found." });
+    }
+
+    if (attachment.isRemoved) {
+      return res
+        .status(409)
+        .json({ error: "ALREADY_REMOVED", message: "This attachment is already removed." });
+    }
+
+    const updated = await getPrisma().attachment.update({
+      where: { id: attachmentId },
+      data: { isRemoved: true, removedAt: new Date(), removalReason: reasonResult.value },
+    });
+
+    res.status(200).json(serializeAttachment(updated));
+  } catch {
+    res.status(500).json({ error: "INTERNAL_ERROR", message: "Unable to remove the attachment." });
   }
 });
 
