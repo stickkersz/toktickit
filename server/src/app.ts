@@ -3,6 +3,7 @@ import path from "node:path";
 import express, { Request, Response } from "express";
 import cors from "cors";
 import multer from "multer";
+import type { Attachment } from "@prisma/client";
 import { getPrisma } from "./prisma.js";
 import {
   validateSummary,
@@ -247,8 +248,8 @@ app.post(
 
     try {
       const ticket = await getPrisma().ticket.findFirst({
-        where: { id: ticketId, requesterId },
-        include: { attachments: { where: { isRemoved: false } } },
+        // BR-38: same deactivated-Requester-loses-access rule as Ticket Detail.
+        where: { id: ticketId, requesterId, requester: { isActive: true } },
       });
 
       if (!ticket) {
@@ -264,45 +265,56 @@ app.post(
 
       const uploaded: Record<string, unknown>[] = [];
       const failed: { originalFilename: string; reason: string; message: string }[] = [];
-      let activeCount = ticket.attachments.length;
 
       for (const file of files) {
-        const reason = validateAttachment(
-          { originalFilename: file.originalname, mimeType: file.mimetype, sizeBytes: file.size },
-          activeCount,
-        );
+        // BR-39: the active-count check and the insert must be atomic against
+        // a concurrent upload to the same Ticket, or two simultaneous
+        // requests could each read count=4 and both push past the 5-file
+        // limit. pg_advisory_xact_lock serializes only requests touching this
+        // one ticketId; it is released automatically when the transaction
+        // ends, win or lose. Each file gets its own transaction (not one
+        // transaction for the whole batch) so an earlier file's already-
+        // committed row is never rolled back by a later file's failure.
+        type UploadOutcome =
+          | { rejected: true; reason: NonNullable<ReturnType<typeof validateAttachment>> }
+          | { rejected: false; attachment: Attachment };
 
-        if (reason) {
+        const outcome = await getPrisma().$transaction(async (tx): Promise<UploadOutcome> => {
+          await tx.$executeRaw`SELECT pg_advisory_xact_lock(${ticket.id}::bigint)`;
+          const activeCount = await tx.attachment.count({
+            where: { ticketId: ticket.id, isRemoved: false },
+          });
+          const reason = validateAttachment(
+            { originalFilename: file.originalname, mimeType: file.mimetype, sizeBytes: file.size },
+            activeCount,
+          );
+          if (reason) return { rejected: true, reason };
+
+          const attachment = await tx.attachment.create({
+            data: {
+              ticketId: ticket.id,
+              originalFilename: file.originalname,
+              storedFilename: file.filename,
+              mimeType: file.mimetype,
+              sizeBytes: file.size,
+            },
+          });
+          return { rejected: false, attachment };
+        });
+
+        if (outcome.rejected) {
           await unlink(path.join(UPLOAD_DIR, file.filename)).catch(() => {});
           settledFilenames.add(file.filename);
           failed.push({
             originalFilename: file.originalname,
-            reason,
-            message: ATTACHMENT_REJECT_MESSAGES[reason],
+            reason: outcome.reason,
+            message: ATTACHMENT_REJECT_MESSAGES[outcome.reason],
           });
           continue;
         }
 
-        const attachment = await getPrisma().attachment.create({
-          data: {
-            ticketId: ticket.id,
-            originalFilename: file.originalname,
-            storedFilename: file.filename,
-            mimeType: file.mimetype,
-            sizeBytes: file.size,
-          },
-        });
         settledFilenames.add(file.filename);
-        activeCount += 1;
-
-        uploaded.push({
-          id: attachment.id,
-          originalFilename: attachment.originalFilename,
-          mimeType: attachment.mimeType,
-          sizeBytes: attachment.sizeBytes,
-          uploadedAt: attachment.uploadedAt,
-          isRemoved: attachment.isRemoved,
-        });
+        uploaded.push(serializeAttachment(outcome.attachment));
       }
 
       if (uploaded.length === 0) {
@@ -403,7 +415,9 @@ app.get("/api/tickets/:id", async (req: Request, res: Response) => {
     }
 
     const ticket = await getPrisma().ticket.findFirst({
-      where: { id: ticketId, requesterId },
+      // BR-38: a Requester deactivated after creating a Ticket loses access to
+      // it too, same 404 as any other ownership failure.
+      where: { id: ticketId, requesterId, requester: { isActive: true } },
       include: {
         requester: { select: { name: true } },
         category: { select: { name: true } },
@@ -459,7 +473,8 @@ app.get("/api/attachments/:id", async (req: Request, res: Response) => {
     }
 
     const attachment = await getPrisma().attachment.findFirst({
-      where: { id: attachmentId, ticket: { requesterId } },
+      // BR-38: same deactivated-Requester-loses-access rule as Ticket Detail.
+      where: { id: attachmentId, ticket: { requesterId, requester: { isActive: true } } },
     });
 
     if (!attachment) {
@@ -488,7 +503,8 @@ app.get("/api/attachments/:id/download", async (req: Request, res: Response) => 
     }
 
     const attachment = await getPrisma().attachment.findFirst({
-      where: { id: attachmentId, ticket: { requesterId } },
+      // BR-38: same deactivated-Requester-loses-access rule as Ticket Detail.
+      where: { id: attachmentId, ticket: { requesterId, requester: { isActive: true } } },
     });
 
     if (!attachment) {
@@ -543,7 +559,8 @@ app.delete("/api/attachments/:id", async (req: Request, res: Response) => {
     }
 
     const attachment = await getPrisma().attachment.findFirst({
-      where: { id: attachmentId, ticket: { requesterId } },
+      // BR-38: same deactivated-Requester-loses-access rule as Ticket Detail.
+      where: { id: attachmentId, ticket: { requesterId, requester: { isActive: true } } },
     });
 
     if (!attachment) {

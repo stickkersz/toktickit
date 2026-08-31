@@ -24,7 +24,7 @@ Companion to `docs/lab-02/specification.md`, `docs/lab-02/api-spec.md`, and `doc
 | API-05 | API | BR-20, BR-21 | `GET /api/tickets` with `search` and combined filters | Matches only tickets satisfying all params (AND) | `server/tests/lab-02/my-tickets.api.test.ts` | Pass |
 | API-06 | API | AC-12 | `GET /api/tickets` with a filter matching zero tickets | 200, `data: []`, valid `pagination.total = 0` (not an error) | `server/tests/lab-02/my-tickets.api.test.ts` | Pass |
 | API-07 | API | AC-13, BR-23 | `GET /api/tickets` pagination across multiple pages, plus out-of-range `page`/`pageSize` | Correct slicing, no duplicates/gaps across pages; invalid params fall back to defaults instead of erroring | `server/tests/lab-02/my-tickets.api.test.ts` | Pass |
-| API-08 | API | FR-05 | `GET /api/tickets/:id` for an owned Ticket | 200, full detail payload including `attachments[]` | `server/tests/lab-02/ticket-detail.api.test.ts` | Pending |
+| API-08 | API | FR-05 | `GET /api/tickets/:id` for an owned Ticket | 200, full detail payload including `attachments[]` | `server/tests/lab-02/ticket-detail.api.test.ts` | Pass |
 | API-09 | API | AC-03 | `GET /api/tickets/:id` for a nonexistent id, and for one owned by a different Requester | Both return 404 (never 403); existence not leaked (BR-35) | `server/tests/lab-02/ticket-detail.api.test.ts` | Pass |
 | API-10 | API | AC-14 | `POST /api/tickets/:id/attachments` with one valid file | 201, file appears in `uploaded[]` and in a subsequent `GET /api/tickets/:id` | `server/tests/lab-02/attachments.api.test.ts` | Pass |
 | API-11 | API | AC-07 | Upload a 6 MB file as the only file in the request | 400 `ALL_FILES_REJECTED`; file reported in `failed[]` with `reason: "FILE_TOO_LARGE"`; not stored | `server/tests/lab-02/attachments.api.test.ts` | Pass |
@@ -35,6 +35,9 @@ Companion to `docs/lab-02/specification.md`, `docs/lab-02/api-spec.md`, and `doc
 | API-16 | API | AC-20 | Ticket created successfully, then its one attachment upload fails | Ticket still exists and is retrievable with its `ticketNumber`; failure reported per-file, not rolled back | `server/tests/lab-02/attachments.api.test.ts` | Pass |
 | API-17 | API | BR-11, BR-28 | As Requester B, call `GET /api/attachments/:id`, `GET /api/attachments/:id/download`, `DELETE /api/attachments/:id`, and `POST /api/tickets/:id/attachments` (a valid file) against a Ticket/attachment owned by Requester A | All four return 404, never 403; no metadata or file bytes leaked and the uploaded file is not stored or appended to Requester A's ticket (mirrors AC-03's ticket-level check, applied to attachments specifically, including upload) | `server/tests/lab-02/attachments.api.test.ts` | Pass |
 | API-18 | API | BR-15 | `POST /api/tickets` with an inactive `categoryId` and, separately, an inactive `relatedSystemId` (seeded per BR-37) | Both rejected with 400 `VALIDATION_ERROR`, same as an unknown id | `server/tests/lab-02/create-ticket.api.test.ts` | Pending |
+| API-19 | API | AC-22 | `GET /api/tickets/:id` for a Ticket whose owning Requester is deactivated after creation | 404 (BR-38), same as any other ownership failure | `server/tests/lab-02/ticket-detail.api.test.ts` | Pass |
+| API-20 | API | AC-22 | `GET /api/attachments/:id`, `GET /api/attachments/:id/download`, `DELETE /api/attachments/:id`, and `POST /api/tickets/:id/attachments` for a deactivated Requester's own Ticket/attachment | All four return 404 (BR-38) | `server/tests/lab-02/attachments.api.test.ts` | Pass |
+| API-21 | API | AC-23 | 5 concurrent `POST /api/tickets/:id/attachments` requests (1 file each) against a Ticket already at 4 active attachments | Exactly 1 succeeds (201), 4 rejected with `MAX_ATTACHMENTS_EXCEEDED`; active count never exceeds 5 (BR-39) | `server/tests/lab-02/attachments.api.test.ts` | Pass |
 | UI-01 | UI | BR-13, BR-16 | Create Ticket form: required-field asterisks render; Submit disabled until required fields are valid | Asterisks present on Category/Related System/Priority/Summary/Description; Submit `disabled` attr reflects validity | `client/tests/lab-02/CreateTicket.test.tsx` | Pending |
 | UI-02 | UI | AC-04 | Submit with Summary empty | Field-level error shown under Summary; no `fetch`/API call made | `client/tests/lab-02/CreateTicket.test.tsx` | Pending |
 | UI-03 | UI | AC-10 | Click Submit, then click again before the first request resolves | Submit shows busy state and is `disabled` on the second click; only one POST is sent | `client/tests/lab-02/CreateTicket.test.tsx` | Pending |
@@ -49,7 +52,7 @@ Companion to `docs/lab-02/specification.md`, `docs/lab-02/api-spec.md`, and `doc
 | UI-10 | UI | handout §8.5 scope | Render Ticket Detail with mock data | No Public Comments, Internal Notes, Actions Taken, or status-change control is present in the DOM | `client/tests/lab-02/RequesterTicketDetail.test.tsx` | Pass |
 | UI-11 | UI | AC-14 | Add a valid attachment via the Ticket Detail Add Attachment control | New attachment appears in the active list immediately after the mocked response resolves | `client/tests/lab-02/AttachmentSection.test.tsx` | Pass |
 | UI-12 | UI | AC-15 | Click Remove on an active attachment | Reason prompt appears; Confirm disabled until 5–200 chars entered; on success the row updates to removed state without a full reload | `client/tests/lab-02/AttachmentSection.test.tsx` | Pass |
-| UI-13 | UI | BR-30 | Render an attachment with `isRemoved: true` | Row is visually muted, shows "Removed" tag + reason/date, Download/Remove replaced by a disabled "Unavailable" control (not a clickable disabled-looking one) | `client/tests/lab-02/AttachmentSection.test.tsx` | Pending |
+| UI-13 | UI | BR-30 | Render an attachment with `isRemoved: true` | Row is visually muted, shows "Removed" tag + reason/date, Download/Remove replaced by a disabled "Unavailable" control (not a clickable disabled-looking one) | `client/tests/lab-02/RequesterTicketDetail.test.tsx` | Pass |
 | UI-14 | UI | AC-17 | Mock `GET /api/requesters` returning `[]` | Empty-state message shown; Continue stays disabled | `client/tests/lab-02/RequesterSelection.test.tsx` | Pending |
 | UI-15 | UI | AC-02 | Render the app shell with no current Requester selected, attempt to reach `/tickets`, `/tickets/new`, or `/tickets/:id` | Redirected to the Requester Selection screen in all three cases | `client/tests/lab-02/RequesterSelection.test.tsx` | Pending |
 | STYLE-01 | UI style | ui-spec §7 | Render each `requestedPriority`/`currentStatus` value through the Badge component | Correct color class **and** correct text content for every value (never color-only) | `client/tests/lab-02/Badges.test.tsx` | Pass |
@@ -82,6 +85,8 @@ Companion to `docs/lab-02/specification.md`, `docs/lab-02/api-spec.md`, and `doc
 | AC-19 | RESP-01 |
 | AC-20 | API-16 |
 | AC-21 | UI-07 |
+| AC-22 | API-19, API-20 |
+| AC-23 | API-21 |
 
 Every AC has at least one covering test; the higher-risk ones (ownership, attachment lifecycle, duplicate-submission) are covered at more than one level on purpose.
 

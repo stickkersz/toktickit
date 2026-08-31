@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import request from "supertest";
 import { app } from "../../src/app.js";
@@ -133,15 +134,21 @@ describe("POST /api/tickets/:id/attachments", () => {
 
     vi.spyOn(prismaModule, "getPrisma").mockReturnValue({
       ticket: realPrisma.ticket,
-      attachment: {
-        create: (args: Parameters<(typeof realPrisma)["attachment"]["create"]>[0]) => {
-          createCalls += 1;
-          if (createCalls === 2) {
-            return Promise.reject(new Error("simulated database failure"));
-          }
-          return realPrisma.attachment.create(args);
-        },
-      },
+      $transaction: async (fn: (tx: unknown) => unknown) =>
+        fn({
+          $executeRaw: async () => 0,
+          attachment: {
+            count: (args: unknown) =>
+              (realPrisma.attachment.count as (a: unknown) => unknown)(args),
+            create: (args: unknown) => {
+              createCalls += 1;
+              if (createCalls === 2) {
+                return Promise.reject(new Error("simulated database failure"));
+              }
+              return (realPrisma.attachment.create as (a: unknown) => unknown)(args);
+            },
+          },
+        }),
     } as unknown as ReturnType<typeof prismaModule.getPrisma>);
 
     const res = await request(app)
@@ -294,6 +301,76 @@ describe("DELETE /api/attachments/:id", () => {
 
     const stillActive = await getPrisma().attachment.findUnique({ where: { id: attachmentId } });
     expect(stillActive?.isRemoved).toBe(false);
+  });
+});
+
+// API-20 / BR-38
+describe("Attachment endpoints — deactivated Requester", () => {
+  it("returns 404 on GET metadata, GET download, DELETE, and POST upload once the Requester is inactive", async () => {
+    const requester = await getPrisma().requesterUser.create({
+      data: { name: "Temp Requester", email: `temp-${randomUUID()}@example.com`, isActive: true },
+    });
+    const { ticketId, attachmentId } = await createTicketWithAttachment(requester.id);
+
+    await getPrisma().requesterUser.update({
+      where: { id: requester.id },
+      data: { isActive: false },
+    });
+
+    const getMeta = await request(app)
+      .get(`/api/attachments/${attachmentId}`)
+      .query({ requesterId: requester.id });
+    expect(getMeta.status).toBe(404);
+
+    const download = await request(app)
+      .get(`/api/attachments/${attachmentId}/download`)
+      .query({ requesterId: requester.id });
+    expect(download.status).toBe(404);
+
+    const del = await request(app)
+      .delete(`/api/attachments/${attachmentId}`)
+      .send({ requesterId: requester.id, reason: "Attempt after deactivation" });
+    expect(del.status).toBe(404);
+
+    const upload = await request(app)
+      .post(`/api/tickets/${ticketId}/attachments`)
+      .field("requesterId", String(requester.id))
+      .attach("files", Buffer.from("x"), { filename: "after-deactivation.jpg", contentType: "image/jpeg" });
+    expect(upload.status).toBe(404);
+  });
+});
+
+// API-21 / BR-39
+describe("POST /api/tickets/:id/attachments — concurrent uploads at the active-attachment limit", () => {
+  it("never lets concurrent requests push active attachments past 5", async () => {
+    const ticketId = await createTicket();
+
+    for (let i = 0; i < 4; i++) {
+      const res = await request(app)
+        .post(`/api/tickets/${ticketId}/attachments`)
+        .field("requesterId", "1")
+        .attach("files", Buffer.from("x"), { filename: `pre-${i}.jpg`, contentType: "image/jpeg" });
+      expect(res.status).toBe(201);
+    }
+
+    const attempts = await Promise.all(
+      Array.from({ length: 5 }, (_, i) =>
+        request(app)
+          .post(`/api/tickets/${ticketId}/attachments`)
+          .field("requesterId", "1")
+          .attach("files", Buffer.from("x"), { filename: `race-${i}.jpg`, contentType: "image/jpeg" }),
+      ),
+    );
+
+    const succeeded = attempts.filter((r) => r.status === 201);
+    const rejected = attempts.filter(
+      (r) => r.status === 400 && r.body.error === "ALL_FILES_REJECTED",
+    );
+    expect(succeeded).toHaveLength(1);
+    expect(rejected).toHaveLength(4);
+
+    const active = await getPrisma().attachment.count({ where: { ticketId, isRemoved: false } });
+    expect(active).toBe(5);
   });
 });
 

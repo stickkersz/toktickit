@@ -34,6 +34,32 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+// ui-spec.md §8: each attachment row shows a file-type icon.
+function fileTypeLabel(mimeType: string): string {
+  switch (mimeType) {
+    case "application/pdf":
+      return "PDF";
+    case "image/jpeg":
+      return "JPG";
+    case "image/png":
+      return "PNG";
+    case "image/webp":
+      return "WEBP";
+    default:
+      return "FILE";
+  }
+}
+
+// Long filenames are truncated with an ellipsis; the full name stays
+// available via the native `title` tooltip rather than being lost.
+function TruncatedFilename({ name }: { name: string }) {
+  return (
+    <span className="text-truncate d-inline-block align-bottom" style={{ maxWidth: 320 }} title={name}>
+      {name}
+    </span>
+  );
+}
+
 export default function TicketDetail() {
   const { id } = useParams();
   const ticketId = Number(id);
@@ -194,23 +220,23 @@ export default function TicketDetail() {
       <div className="row g-3 mb-4">
         <div className="col-md-3">
           <label className="form-label fw-semibold">Ticket No.</label>
-          <input className="form-control" disabled value={ticket.ticketNumber} />
+          <input className="form-control" readOnly value={ticket.ticketNumber} />
         </div>
         <div className="col-md-3">
           <label className="form-label fw-semibold">Ticket Date</label>
-          <input className="form-control" disabled value={formatDate(ticket.createdAt)} />
+          <input className="form-control" readOnly value={formatDate(ticket.createdAt)} />
         </div>
         <div className="col-md-3">
           <label className="form-label fw-semibold">Category</label>
-          <input className="form-control" disabled value={ticket.categoryName} />
+          <input className="form-control" readOnly value={ticket.categoryName} />
         </div>
         <div className="col-md-3">
           <label className="form-label fw-semibold">Related System</label>
-          <input className="form-control" disabled value={ticket.relatedSystemName} />
+          <input className="form-control" readOnly value={ticket.relatedSystemName} />
         </div>
         <div className="col-md-3">
           <label className="form-label fw-semibold">Requester</label>
-          <input className="form-control" disabled value={ticket.requesterName} />
+          <input className="form-control" readOnly value={ticket.requesterName} />
         </div>
         <div className="col-md-3">
           <label className="form-label fw-semibold">Requested Priority</label>
@@ -226,13 +252,13 @@ export default function TicketDetail() {
         </div>
         <div className="col-12">
           <label className="form-label fw-semibold">Summary</label>
-          <input className="form-control" disabled value={ticket.summary} />
+          <input className="form-control" readOnly value={ticket.summary} />
         </div>
         <div className="col-12">
           <label className="form-label fw-semibold">Description</label>
           <textarea
             className="form-control"
-            disabled
+            readOnly
             rows={4}
             value={ticket.description}
             style={{ whiteSpace: "pre-wrap" }}
@@ -290,7 +316,10 @@ export default function TicketDetail() {
         <ul className="list-group">
           {pendingUploads.map((file, i) => (
             <li key={`pending-${i}`} className="list-group-item d-flex justify-content-between align-items-center">
-              <span>{file.name}</span>
+              <span>
+                <span className="badge text-bg-light border me-1">{fileTypeLabel(file.type)}</span>
+                <TruncatedFilename name={file.name} />
+              </span>
               <span className="spinner-border spinner-border-sm text-secondary" role="status" aria-label="Uploading" />
             </li>
           ))}
@@ -299,7 +328,10 @@ export default function TicketDetail() {
               <div className="d-flex justify-content-between align-items-start">
                 <div className={attachment.isRemoved ? "text-muted" : ""}>
                   <div>
-                    {attachment.originalFilename}{" "}
+                    <span className="badge text-bg-light border me-1">
+                      {fileTypeLabel(attachment.mimeType)}
+                    </span>
+                    <TruncatedFilename name={attachment.originalFilename} />{" "}
                     <span className="text-muted small">({formatFileSize(attachment.sizeBytes)})</span>
                     {attachment.isRemoved && <span className="badge text-bg-secondary ms-2">Removed</span>}
                   </div>

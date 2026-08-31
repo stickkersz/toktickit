@@ -1,6 +1,8 @@
+import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import request from "supertest";
 import { app } from "../../src/app.js";
+import { getPrisma } from "../../src/prisma.js";
 
 async function createTicket(requesterId = 1) {
   const res = await request(app)
@@ -82,5 +84,28 @@ describe("GET /api/tickets/:id", () => {
     const res = await request(app).get(`/api/tickets/${ticket.id}`).query({ requesterId: 2 });
     expect(res.status).toBe(404);
     expect(res.body.summary).toBeUndefined();
+  });
+
+  // API-19 / BR-38
+  it("returns 404 once the owning Requester has been deactivated", async () => {
+    const requester = await getPrisma().requesterUser.create({
+      data: { name: "Temp Requester", email: `temp-${randomUUID()}@example.com`, isActive: true },
+    });
+    const ticket = await createTicket(requester.id);
+
+    const before = await request(app)
+      .get(`/api/tickets/${ticket.id}`)
+      .query({ requesterId: requester.id });
+    expect(before.status).toBe(200);
+
+    await getPrisma().requesterUser.update({
+      where: { id: requester.id },
+      data: { isActive: false },
+    });
+
+    const after = await request(app)
+      .get(`/api/tickets/${ticket.id}`)
+      .query({ requesterId: requester.id });
+    expect(after.status).toBe(404);
   });
 });

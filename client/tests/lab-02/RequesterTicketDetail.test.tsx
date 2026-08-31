@@ -51,7 +51,12 @@ describe("Requester Ticket Detail", () => {
 
     renderAtDetail();
 
-    expect(await screen.findByDisplayValue("Laptop battery drains quickly")).toBeInTheDocument();
+    const summaryField = await screen.findByDisplayValue("Laptop battery drains quickly");
+    expect(summaryField).toBeInTheDocument();
+    // readOnly (not disabled): still keyboard-reachable per ui-spec.md §3's
+    // read-only field state, unlike a disabled control.
+    expect(summaryField).toHaveAttribute("readonly");
+    expect(summaryField).not.toBeDisabled();
     expect(screen.queryByText(/public comment/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/internal note/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/actions taken/i)).not.toBeInTheDocument();
@@ -68,14 +73,15 @@ describe("Requester Ticket Detail", () => {
     expect(screen.getByRole("button", { name: /back to my tickets/i })).toBeInTheDocument();
   });
 
-  it("shows the active attachment count and both active and removed rows", async () => {
+  it("shows the active attachment count and both active and removed rows, with file-type icons and a truncation tooltip", async () => {
+    const longName = "a-very-long-original-filename-that-should-be-truncated-in-the-row.pdf";
     vi.spyOn(api, "getRequesters").mockResolvedValue([ARI]);
     vi.spyOn(api, "getTicketDetail").mockResolvedValue(
       ticketDetail({
         attachments: [
           {
             id: 7,
-            originalFilename: "battery-report.pdf",
+            originalFilename: longName,
             mimeType: "application/pdf",
             sizeBytes: 204800,
             uploadedAt: new Date().toISOString(),
@@ -98,9 +104,14 @@ describe("Requester Ticket Detail", () => {
     renderAtDetail();
 
     expect(await screen.findByText("Attachments (1 active)")).toBeInTheDocument();
-    expect(screen.getByText("battery-report.pdf")).toBeInTheDocument();
+    const longNameEl = screen.getByText(longName);
+    expect(longNameEl).toBeInTheDocument();
+    expect(longNameEl).toHaveClass("text-truncate");
+    expect(longNameEl).toHaveAttribute("title", longName);
+    expect(screen.getByText("PDF")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Remove" })).toBeInTheDocument();
     expect(screen.getByText("old-screenshot.png")).toBeInTheDocument();
+    expect(screen.getByText("PNG")).toBeInTheDocument();
     expect(screen.getByText(/wrong file attached by mistake/i)).toBeInTheDocument();
     expect(screen.getByText("Unavailable")).toBeInTheDocument();
   });

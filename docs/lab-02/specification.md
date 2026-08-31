@@ -102,6 +102,8 @@ IT wants a real intake channel before staff tooling exists. End users need a cle
 - BR-33 If zero active Development Requesters exist, the Selection screen shows an explicit empty state and Continue is disabled.
 - BR-34 If the Requester/Category/Related System reference APIs fail to load, Create Ticket shows a safe failure state and disables submission rather than allowing a request with missing reference data.
 - BR-35 Requesting a Ticket Detail id that does not exist returns 404; requesting one owned by a different Requester returns 404 (not 403), so ticket existence is not leaked across Requesters.
+- BR-38 Every Ticket/Attachment endpoint scoped to a single resource (Ticket Detail, attachment metadata, download, removal, and upload) independently verifies that the requesting `requesterId` is currently an active Requester, not just that it matches the owning row. A Requester deactivated after creating a Ticket loses access to that Ticket and its Attachments; the response is the same 404 as any other ownership failure (BR-35), never a distinguishable code.
+- BR-39 The 5-active-attachment limit (BR-26) is enforced atomically against concurrent upload requests targeting the same Ticket: the active-count check and the resulting insert happen as one atomic unit per file (a Postgres transaction-scoped advisory lock keyed on the Ticket id), so two simultaneous uploads can never together push a Ticket past 5 active attachments.
 
 ### Transition to Lab 3
 - BR-36 The Development Requester selector, its session storage, and its ownership checks are all replaced (not extended) in Lab 3 by real authentication; no password, session-token, or role field is added to `RequesterUser` in Lab 2.
@@ -238,6 +240,8 @@ Since Lab 2 has no session/auth layer, `requesterId` travels as an explicit requ
 - AC-19 Given any of the three main screens is viewed at a mobile viewport (<768px), when rendered, then no horizontal page scrolling occurs and all controls remain reachable and legible.
 - AC-20 Given a Ticket is created but its one attached file fails to upload, when creation completes, then the Ticket still exists with its Ticket Number, and the failed attachment is reported so it can be retried from Ticket Detail.
 - AC-21 Given the current Requester owns zero Tickets and no search/filter is applied, when My Tickets loads, then a "create your first ticket" empty state is shown, distinct from the no-results state in AC-12.
+- AC-22 Given a Requester who owns a Ticket is later deactivated, when that Requester's id is used to request the Ticket, its attachments, or attachment download/removal/upload, then the server responds 404 (BR-38).
+- AC-23 Given a Ticket already has 4 active attachments, when two upload requests each adding one file are submitted concurrently, then at most one succeeds in bringing the count to 5, the other is rejected with `MAX_ATTACHMENTS_EXCEEDED`, and the Ticket never ends up with more than 5 active attachments (BR-39).
 
 ## 10. Definition of Done
 
