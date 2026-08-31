@@ -16,7 +16,7 @@ One consistent rule, applied the same way at every endpoint that takes `requeste
 
 - **Creating a new Ticket** (`POST /api/tickets`): `requesterId` is validated like any other input field, since no existing resource exists yet to hide behind a 404. Missing, non-numeric, or referencing an unknown/inactive Requester is 400 `VALIDATION_ERROR` (same treatment as `categoryId`/`relatedSystemId`, BR-15's pattern).
 - **Listing** (`GET /api/tickets`, no single resource in play): `requesterId` missing, non-numeric, or not resolving to an active Requester is 400, for the same reason as creation.
-- **Every endpoint scoped to one existing Ticket or Attachment** (`GET /api/tickets/:id`, `POST /api/tickets/:id/attachments`, `GET /api/attachments/:id`, `GET /api/attachments/:id/download`, `DELETE /api/attachments/:id`): `requesterId` missing or non-numeric is 400 (malformed request, nothing to look up yet). Everything else, resource not found, resource owned by a different Requester, or `requesterId` not resolving to any real Requester at all, collapses into the same 404 (BR-35: existence and ownership are never distinguishable in the response, and neither is "that Requester doesn't exist").
+- **Every endpoint scoped to one existing Ticket or Attachment** (`GET /api/tickets/:id`, `POST /api/tickets/:id/attachments`, `GET /api/attachments/:id`, `GET /api/attachments/:id/download`, `DELETE /api/attachments/:id`): `requesterId` missing or non-numeric is 400 (malformed request, nothing to look up yet). Everything else, resource not found, resource owned by a different Requester, `requesterId` not resolving to any real Requester at all, or resolving to a Requester who is no longer active (BR-38), collapses into the same 404 (BR-35: existence and ownership are never distinguishable in the response, and neither is "that Requester doesn't exist" or "that Requester was deactivated").
 
 ### Error shape
 
@@ -240,7 +240,7 @@ Request: `multipart/form-data` with fields `requesterId` and one or more `files`
 A multi-file request has exactly one response-level HTTP status (201, 400, or 404, see below); per-file outcomes never set their own HTTP status. Each rejected file instead carries one of these three `reason` codes in the response body's `failed[]` array (BR-31), independent of the others in the same request:
 - extension/MIME must be JPG, JPEG, PNG, WEBP, or PDF, else `reason: "UNSUPPORTED_TYPE"`;
 - size ≤ 5 MB, else `reason: "FILE_TOO_LARGE"`;
-- rejected only if accepting it would exceed 5 **active** attachments on the Ticket (BR-26), counted against the Ticket's current active count plus files already accepted earlier in the same request, else `reason: "MAX_ATTACHMENTS_EXCEEDED"`.
+- rejected only if accepting it would exceed 5 **active** attachments on the Ticket (BR-26), counted against the Ticket's current active count plus files already accepted earlier in the same request, else `reason: "MAX_ATTACHMENTS_EXCEEDED"`. This count-then-insert step is atomic per file against concurrent requests to the same Ticket (BR-39), so two simultaneous uploads can never together exceed the limit.
 
 Response 201 (at least one file accepted):
 
