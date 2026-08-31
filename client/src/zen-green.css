@@ -23,10 +23,63 @@ body {
   color: var(--color-text);
 }
 
-/* ui-spec.md §4 — application shell header. */
+/* ui-spec.md §4 — application shell header. 56px is the resting height; it is
+   a min-height rather than a fixed height so the mobile nav menu (§10) can
+   expand below the bar instead of being clipped by it. */
 .zg-header {
   background-color: var(--color-primary);
-  height: 56px;
+  min-height: 56px;
+}
+
+/* ui-spec.md §10 — touch targets stay at least 44px tall on mobile. Bootstrap's
+   default .nav-link and .btn-sm both land just under that. */
+.zg-navbar-toggler {
+  min-height: 44px;
+  min-width: 44px;
+}
+
+@media (max-width: 767.98px) {
+  .zg-nav-link,
+  .zg-touch-target {
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+  }
+}
+
+/* ui-spec.md §3 — field states. Bootstrap's defaults are a neutral grey border
+   and a blue focus ring, so the Zen Green tokens have to be applied explicitly
+   or read-only fields look identical to editable ones. */
+.form-control,
+.form-select {
+  background-color: var(--color-field-editable-bg);
+  border-color: var(--color-field-editable-border);
+}
+
+/* Read-only and disabled fields share the soft gray-green shading; read-only
+   stays keyboard-reachable, disabled does not (see §3's state table). */
+.form-control[readonly],
+.form-control:disabled,
+.form-select:disabled {
+  background-color: var(--color-field-readonly-bg);
+  cursor: default;
+}
+
+.form-control:disabled,
+.form-select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Focus uses the Zen Green accent, never Bootstrap blue (§3, §11). */
+.form-control:focus,
+.form-select:focus,
+.btn:focus-visible,
+.nav-link:focus-visible,
+a:focus-visible {
+  border-color: var(--color-secondary);
+  outline: none;
+  box-shadow: 0 0 0 0.2rem rgba(11, 122, 70, 0.35);
 }
 
 /* ui-spec.md §3 — Primary button. */
