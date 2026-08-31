@@ -16,6 +16,11 @@ server/prisma/**/*.js
 server/prisma/*.db
 # uploaded attachments (Lab 2, dev-only local disk storage)
 server/uploads/
+# playwright
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
 # logs & OS
 *.log
 .DS_Store
