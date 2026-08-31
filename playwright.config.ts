@@ -37,6 +37,11 @@ export default defineConfig({
       url: `${API_URL}/api/health`,
       reuseExistingServer: !process.env.CI,
       timeout: 60_000,
+      // Explicit, not inherited: server/src/index.ts defaults PORT to 3000
+      // (server/.env.example agrees), and a developer's own local server/.env
+      // may set it to anything. Pinning it here means this config's own
+      // API_PORT is what actually starts, regardless of either.
+      env: { PORT: String(API_PORT) },
     },
     {
       // --host 127.0.0.1 is required: Vite otherwise binds only the IPv6
