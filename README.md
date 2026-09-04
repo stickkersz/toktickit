@@ -75,9 +75,9 @@ traceability matrix, and the final results (`docs/lab-01/tests.md` for Lab 1).
 
 ## Project docs
 
-- `docs/lab-02/specification.md`, `api-spec.md`, `ui-spec.md`, `tests.md` — Lab 2 engineering contract
-- `docs/lab-02/reviewer.md` — Lab 2 peer review record, both directions
-- `docs/lab-02/ai-use.md` — Lab 2 AI tool usage and reflection
-- `docs/lab-01/tests.md` — Lab 1 test plan and passing evidence
-- `docs/lab-01/ai_use.md` — AI tool usage and reflection
-- `docs/lab-01/reviewer.md` — peer review record
+- `docs/lab-02/specification.md`, `api-spec.md`, `ui-spec.md`, `tests.md`: Lab 2 engineering contract
+- `docs/lab-02/reviewer.md`: Lab 2 peer review record, both directions
+- `docs/lab-02/ai-use.md`: Lab 2 AI tool usage and reflection
+- `docs/lab-01/tests.md`: Lab 1 test plan and passing evidence
+- `docs/lab-01/ai_use.md`: AI tool usage and reflection
+- `docs/lab-01/reviewer.md`: peer review record

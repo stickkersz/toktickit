@@ -1,4 +1,4 @@
-# Lab 2 — AI Use and Reflection
+# Lab 2: AI Use and Reflection
 
 **LLM/agent used:** Claude Code (Sonnet 5), Anthropic's CLI coding agent, run interactively in this repo's working directory across the whole Lab 2 sprint.
 
