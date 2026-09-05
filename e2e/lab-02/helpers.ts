@@ -1,10 +1,14 @@
-import { expect, Page } from "@playwright/test";
+import { APIRequestContext, expect, Page } from "@playwright/test";
 
 export const VIEWPORTS = {
   desktop: { width: 1280, height: 900 },
   tablet: { width: 768, height: 1024 },
   mobile: { width: 375, height: 812 },
 } as const;
+
+// Matches playwright.config.ts's own API_PORT. Not exported from there, so
+// pinned here too rather than threading it through every spec's imports.
+export const API_URL = "http://127.0.0.1:3001";
 
 // Picks a Development Requester by its position in the seeded active list, so
 // the specs do not hard-code seed names that BR-37 lets us change.
@@ -70,6 +74,38 @@ export async function createTicket(
   expect(match, `expected a Ticket Number in "${panelText}"`).not.toBeNull();
 
   return { ticketNumber: match![0], summary };
+}
+
+export interface SeedTicketSpec {
+  summary: string;
+  categoryId: number;
+  relatedSystemId: number;
+  requestedPriority: "LOW" | "MEDIUM" | "HIGH";
+}
+
+// Creates Tickets directly through the API rather than the UI: My Tickets'
+// pagination (PAGE_SIZE = 10) and its filter/sort/search evidence need more
+// rows than driving the Create Ticket form that many times is worth.
+export async function seedTickets(
+  request: APIRequestContext,
+  requesterId: number,
+  tickets: SeedTicketSpec[],
+): Promise<void> {
+  for (const t of tickets) {
+    const response = await request.post(`${API_URL}/api/tickets`, {
+      data: {
+        requesterId,
+        categoryId: t.categoryId,
+        relatedSystemId: t.relatedSystemId,
+        summary: t.summary,
+        description: "Seeded directly via the API for Lab 2 submission-evidence screenshots.",
+        requestedPriority: t.requestedPriority,
+      },
+    });
+    if (!response.ok()) {
+      throw new Error(`seedTickets: POST /api/tickets failed (${response.status()}): ${await response.text()}`);
+    }
+  }
 }
 
 // True when the page fits its viewport horizontally (ui-spec.md §10, AC-19).

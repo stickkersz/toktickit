@@ -130,18 +130,16 @@ npx playwright test
 
 ## 6. Final Results
 
-To be filled in once implementation is complete and the commands above are run against `main`:
-
 | Suite | Command | Pass/Fail | Notes |
 |---|---|---|---|
 | Server unit + API | `cd server && npm test` | Pass | 12 files, 80 tests, 0 skipped |
 | Client UI | `cd client && npm test` | Pass | 7 files, 39 tests, 0 skipped |
 | E2E + responsive | `npx playwright test` | Pass | 5 tests (E2E-01, E2E-02, RESP-01 across 3 screens); 18 screenshots written to `artifacts/lab-02/screenshots/` |
 
-Run from the branch on 2026-09-01 against a migrated and seeded local database.
-The Playwright run starts the API and client dev servers itself (see
-`playwright.config.ts`); the counts above must be re-confirmed from `main`
-after the release pull request is merged.
+Confirmed from `main` at commit `b0a999f` (the merged release pull request,
+#27) on 2026-09-05 against a migrated and seeded local database. The
+Playwright run starts the API and client dev servers itself (see
+`playwright.config.ts`).
 
 ## 7. Known Limitations or Deferred Tests
 
