@@ -107,6 +107,24 @@ export default function CreateTicket() {
     setAttachmentWarnings([]);
   }
 
+  // AC-04 asks for a field-level message near the offending field, while
+  // ui-spec.md §6 keeps Submit disabled until the form is valid. Those two
+  // only reconcile if the message can appear without a submit attempt, so
+  // each required field validates when the Requester leaves it and clears
+  // its own message as soon as the value becomes valid.
+  function handleFieldBlur(field: "summary" | "description" | "categoryId" | "relatedSystemId" | "requestedPriority") {
+    const errors = validateClientSide();
+    setFieldErrors((prev) => {
+      const next = { ...prev };
+      if (errors[field]) {
+        next[field] = errors[field];
+      } else {
+        delete next[field];
+      }
+      return next;
+    });
+  }
+
   function validateClientSide(): Record<string, string> {
     const errors: Record<string, string> = {};
     const trimmedSummary = summary.trim();
@@ -293,6 +311,7 @@ export default function CreateTicket() {
             className="form-select"
             value={categoryId}
             disabled={submitting}
+            onBlur={() => handleFieldBlur("categoryId")}
             onChange={(e) => setCategoryId(e.target.value)}
           >
             <option value="">Select…</option>
@@ -313,6 +332,7 @@ export default function CreateTicket() {
             className="form-select"
             value={relatedSystemId}
             disabled={submitting}
+            onBlur={() => handleFieldBlur("relatedSystemId")}
             onChange={(e) => setRelatedSystemId(e.target.value)}
           >
             <option value="">Select…</option>
@@ -335,6 +355,7 @@ export default function CreateTicket() {
             className="form-select"
             value={requestedPriority}
             disabled={submitting}
+            onBlur={() => handleFieldBlur("requestedPriority")}
             onChange={(e) => setRequestedPriority(e.target.value as TicketPriority)}
           >
             <option value="">Select…</option>
@@ -359,6 +380,7 @@ export default function CreateTicket() {
           className="form-control"
           value={summary}
           disabled={submitting}
+          onBlur={() => handleFieldBlur("summary")}
           onChange={(e) => setSummary(e.target.value)}
         />
         <div className="d-flex justify-content-between">
@@ -381,6 +403,7 @@ export default function CreateTicket() {
           rows={6}
           value={description}
           disabled={submitting}
+          onBlur={() => handleFieldBlur("description")}
           onChange={(e) => setDescription(e.target.value)}
         />
         <div className="d-flex justify-content-between">
