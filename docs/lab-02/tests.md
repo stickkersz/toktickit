@@ -134,12 +134,26 @@ npx playwright test
 |---|---|---|---|
 | Server unit + API | `cd server && npm test` | Pass | 12 files, 80 tests, 0 skipped |
 | Client UI | `cd client && npm test` | Pass | 7 files, 39 tests, 0 skipped |
-| E2E + responsive | `npx playwright test` | Pass | 5 tests (E2E-01, E2E-02, RESP-01 across 3 screens); 18 screenshots written to `artifacts/lab-02/screenshots/` |
+| E2E + responsive | `npx playwright test` | Pass | 9 tests total: the 5 planned tests below, plus 4 supplementary evidence captures |
 
-Confirmed from `main` at commit `b0a999f` (the merged release pull request,
-#27) on 2026-09-05 against a migrated and seeded local database. The
-Playwright run starts the API and client dev servers itself (see
-`playwright.config.ts`).
+The 5 planned tests in the table above are E2E-01, E2E-02, and RESP-01
+across its 3 screens, in `e2e/lab-02/requester-ticket-flow.spec.ts` and
+`e2e/lab-02/responsive-visual.spec.ts`. Those two files are the graded
+suite: they are idempotent and pass whether the database is freshly seeded
+or already holds Tickets from an earlier run.
+
+`npx playwright test` also picks up `e2e/lab-02/submission-evidence.spec.ts`,
+whose 4 tests are not planned tests and have no row in §2's traceability
+table. They exist only to capture screenshots the submission PDF requires
+(handout §14 Parts 6-8) beyond what the planned tests already produce, so
+the total the command reports is 9, not 5. Unlike the graded suite, that
+file seeds an exact number of Tickets and asserts exact counts, so rerunning
+it without first clearing Tickets and Attachments will fail its totals; see
+the comment at the top of the file.
+
+Confirmed from `main` on 2026-09-05 against a migrated and seeded local
+database. The Playwright run starts the API and client dev servers itself
+(see `playwright.config.ts`).
 
 ## 7. Known Limitations or Deferred Tests
 

@@ -1,11 +1,21 @@
 import { randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
-import { changeRequester, createTicket, seedTickets, selectRequester } from "./helpers.js";
+import { API_URL, changeRequester, createTicket, seedTickets, selectRequester } from "./helpers.js";
 
 // Additional evidence for the Lab 2 submission PDF (handout §14 Parts 6-8)
 // beyond what tests.md's own planned tests already require. These states are
 // not separately named in tests.md's traceability table; they exist purely to
 // produce readable, real screenshots for the PDF's evidence requirements.
+//
+// Unlike requester-ticket-flow.spec.ts and responsive-visual.spec.ts (tests.md's
+// actual graded suite, idempotent and safe to rerun without touching the
+// database), the "My Tickets" test below seeds an exact number of Tickets and
+// asserts exact counts and page totals. Run it once against a freshly wiped
+// database (`TRUNCATE TABLE "Attachment", "Ticket" RESTART IDENTITY CASCADE;`
+// on toktickit-pg); running it again without wiping first will double the
+// count and fail the exact-total assertions. It uses Requester indices 2/3
+// specifically so it can run alongside the other two specs in one
+// `npx playwright test` without their Tickets (on indices 0/1) affecting it.
 const SHOTS = "artifacts/lab-02/screenshots";
 
 function shot(screen: string, name: string): string {
@@ -63,15 +73,78 @@ test.describe("Submission evidence: Requester Selection", () => {
   });
 });
 
+test.describe("Submission evidence: Create Ticket submit failure", () => {
+  // Handout §14 Part 6, item 5: "Stop the backend or simulate failure and show
+  // the safe error state with form values preserved." The existing
+  // create-ticket/api-failure-desktop.png covers a *reference-data* load
+  // failure, where the form never renders and so has no values to preserve.
+  // This captures the other half: a backend failure during submit, with what
+  // the Requester typed still in the form.
+  test("keeps the typed values when the create request fails", async ({ page }) => {
+    await selectRequester(page, 2);
+    await page.goto("/tickets/new");
+
+    const summary = "Projector in room 401 will not power on";
+    const description =
+      "The projector shows no power light at all, and swapping the cable and wall socket changed nothing.";
+
+    await page.getByLabel(/^category \*/i).selectOption({ index: 1 });
+    await page.getByLabel(/^related system \*/i).selectOption({ index: 1 });
+    await page.getByLabel(/^requested priority \*/i).selectOption("HIGH");
+    await page.getByLabel(/^summary \*/i).fill(summary);
+    await page.getByLabel(/^description \*/i).fill(description);
+
+    // Read back what the two reference-data selects actually resolved to, so
+    // the assertions below compare against real ids rather than assuming what
+    // the seed happens to order first.
+    const categoryValue = await page.getByLabel(/^category \*/i).inputValue();
+    const relatedSystemValue = await page.getByLabel(/^related system \*/i).inputValue();
+    expect(categoryValue).not.toBe("");
+    expect(relatedSystemValue).not.toBe("");
+
+    // Simulate the backend being unreachable at submit time.
+    await page.route("**/api/tickets", async (route) => {
+      if (route.request().method() !== "POST") return route.fallback();
+      await route.abort("failed");
+    });
+
+    await page.getByRole("button", { name: "Submit Ticket" }).click();
+    await expect(page.getByRole("alert")).toBeVisible();
+
+    // The point of the evidence: nothing the Requester entered was lost
+    // (BR-19), including the two reference-data selects, not just the free
+    // text and the priority.
+    await expect(page.getByLabel(/^category \*/i)).toHaveValue(categoryValue);
+    await expect(page.getByLabel(/^related system \*/i)).toHaveValue(relatedSystemValue);
+    await expect(page.getByLabel(/^requested priority \*/i)).toHaveValue("HIGH");
+    await expect(page.getByLabel(/^summary \*/i)).toHaveValue(summary);
+    await expect(page.getByLabel(/^description \*/i)).toHaveValue(description);
+
+    await page.screenshot({
+      path: shot("create-ticket", "submit-failure-values-preserved-desktop"),
+      fullPage: true,
+    });
+    await page.unroute("**/api/tickets");
+  });
+});
+
 test.describe("Submission evidence: My Tickets search, filter, sort, pagination, ownership", () => {
   test("search, filter, sort, page 2, and a Requester switch that hides the list", async ({
     page,
     request,
   }) => {
-    const name = await selectRequester(page, 0);
+    // Requester indices 2/3, not 0/1: requester-ticket-flow.spec.ts and
+    // responsive-visual.spec.ts both act on indices 0/1, and this test's
+    // exact-count assertions (search "1 of 1", filter "3 of 3", pagination)
+    // would otherwise pick up whatever Tickets those specs created first,
+    // breaking when the full suite runs together in file order. Using
+    // untouched indices makes this test's counts independent of run order.
+    const name = await selectRequester(page, 2);
+    const requesters = await (await request.get(`${API_URL}/api/requesters`)).json();
+    const requesterId = requesters[2].id;
 
     const uniqueTerm = `Findme${randomUUID().slice(0, 6)}`;
-    await seedTickets(request, 1, [
+    await seedTickets(request, requesterId, [
       { summary: `${uniqueTerm} network drop`, categoryId: 4, relatedSystemId: 1, requestedPriority: "HIGH" },
       { summary: "Printer will not respond", categoryId: 2, relatedSystemId: 2, requestedPriority: "LOW" },
       { summary: "Password reset needed", categoryId: 1, relatedSystemId: 3, requestedPriority: "MEDIUM" },
@@ -125,7 +198,7 @@ test.describe("Submission evidence: My Tickets search, filter, sort, pagination,
     await page.screenshot({ path: shot("my-tickets", "page-2-desktop"), fullPage: true });
 
     // Requester switch: Requester B must never see Requester A's 11 tickets.
-    await changeRequester(page, 1);
+    await changeRequester(page, 3);
     await expect(page.getByText(/haven't submitted any tickets yet/i)).toBeVisible();
     await expect(page.getByText(uniqueTerm)).toHaveCount(0);
     await page.screenshot({
@@ -141,7 +214,9 @@ test.describe("Submission evidence: Ticket Detail attachment add, download, and 
   test("adds an attachment after creation, downloads it, and blocks a foreign Requester", async ({
     page,
   }) => {
-    await selectRequester(page, 0);
+    // Indices 2/3 for the same reason as the My Tickets test above: stay off
+    // the 0/1 slots the other specs use.
+    await selectRequester(page, 2);
     const { ticketNumber } = await createTicket(
       page,
       `Add-attachment-after-creation ${randomUUID().slice(0, 8)}`,
@@ -173,7 +248,7 @@ test.describe("Submission evidence: Ticket Detail attachment add, download, and 
 
     // A different Requester must not reach this Ticket (or its attachment)
     // by direct URL (handout Part 8's unauthorized-access requirement).
-    await changeRequester(page, 1);
+    await changeRequester(page, 3);
     await page.goto(ownedTicketUrl);
     await expect(page.getByText("Ticket not found.")).toBeVisible();
     await expect(page.getByText("added-after-creation.png")).toHaveCount(0);
