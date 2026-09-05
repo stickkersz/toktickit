@@ -168,20 +168,44 @@ export async function getRelatedSystems(): Promise<RelatedSystem[]> {
 }
 
 // Lab 2 — Create Ticket (api-spec.md §4).
+//
+// Create Ticket is the one screen that renders a thrown error's own message to
+// the Requester, so the two failure modes below have to produce something
+// readable rather than whatever the browser or a non-JSON response happens to
+// say. BR-34 asks for a safe failure state; "Failed to fetch" is the raw
+// TypeError text from fetch and means nothing to a Requester, so the technical
+// detail goes to the console and the UI gets a stable, documented message.
 export async function createTicket(input: CreateTicketInput): Promise<Ticket> {
-  const res = await fetch(`${API_URL}/api/tickets`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(input),
-  });
-  const body = await res.json();
-  if (!res.ok) {
-    if (body?.error === "VALIDATION_ERROR") {
-      throw new ValidationError(body.message ?? "Validation failed.", body.fields ?? {});
-    }
-    throw new Error(body?.message ?? "Unable to create the Ticket.");
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}/api/tickets`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    });
+  } catch (cause) {
+    console.error("createTicket: request did not reach the API", cause);
+    throw new Error("Unable to reach the TokTickIT API. Check your connection and try again.");
   }
-  return body;
+
+  let body: unknown;
+  try {
+    body = await res.json();
+  } catch (cause) {
+    // A non-JSON body means the request failed before any route handler ran,
+    // so there is no documented error envelope to read.
+    console.error("createTicket: response body was not JSON", cause);
+    throw new Error("The server returned an unexpected response. Please try again.");
+  }
+
+  const payload = body as { error?: string; message?: string; fields?: Record<string, string> };
+  if (!res.ok) {
+    if (payload?.error === "VALIDATION_ERROR") {
+      throw new ValidationError(payload.message ?? "Validation failed.", payload.fields ?? {});
+    }
+    throw new Error(payload?.message ?? "Unable to create the Ticket.");
+  }
+  return body as Ticket;
 }
 
 // Lab 2 — My Tickets (api-spec.md §5, FR-04).
