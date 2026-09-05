@@ -7,8 +7,20 @@ node_modules/
 # build output
 dist/
 build/
+*.tsbuildinfo
+# TypeScript compiler output next to source files (tsconfig has no outDir)
+client/src/**/*.js
+client/tests/**/*.js
+server/prisma/**/*.js
 # prisma
 server/prisma/*.db
+# uploaded attachments (Lab 2, dev-only local disk storage)
+server/uploads/
+# playwright
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
 # logs & OS
 *.log
 .DS_Store

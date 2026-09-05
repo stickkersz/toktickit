@@ -1,0 +1,135 @@
+/* Zen Green design tokens (ui-spec.md §1). Fixed by the handout, not
+   negotiable in Lab 2. Shared across every screen. */
+:root {
+  --color-primary: #006b3c;
+  --color-secondary: #0b7a46;
+  --color-pale: #eaf6ef;
+  --color-bg: #f5f7f6;
+  --color-surface: #ffffff;
+  --color-text: #1b2b23;
+  --color-text-muted: #5b6b62;
+  --color-field-editable-bg: #ffffff;
+  --color-field-editable-border: #c7d2cc;
+  --color-field-readonly-bg: #f1f3ef;
+  --color-error: #b3261e;
+  --color-error-bg: #fbeae9;
+  --color-warning: #b8860b;
+  --color-warning-bg: #fcf3d9;
+  --color-success: #0b7a46;
+}
+
+body {
+  background-color: var(--color-bg);
+  color: var(--color-text);
+}
+
+/* ui-spec.md §4 — application shell header. 56px is the resting height; it is
+   a min-height rather than a fixed height so the mobile nav menu (§10) can
+   expand below the bar instead of being clipped by it. */
+.zg-header {
+  background-color: var(--color-primary);
+  min-height: 56px;
+}
+
+/* ui-spec.md §10 — touch targets stay at least 44px tall on mobile. Bootstrap's
+   default .nav-link and .btn-sm both land just under that. */
+.zg-navbar-toggler {
+  min-height: 44px;
+  min-width: 44px;
+  /* Bootstrap's default toggler-icon SVG stroke is rgba(33,37,41,0.75), meant
+     for a light navbar; against --color-primary (#006B3C) it is close to
+     invisible. This overrides it with a fully opaque white stroke, giving a
+     contrast ratio of roughly 6.6:1 against the header, well past the 3:1 a
+     non-text graphic needs. */
+  --bs-navbar-toggler-icon-bg: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 30 30'%3e%3cpath stroke='rgba(255, 255, 255, 1)' stroke-linecap='round' stroke-miterlimit='10' stroke-width='2' d='M4 7h22M4 15h22M4 23h22'/%3e%3c/svg%3e");
+}
+
+@media (max-width: 767.98px) {
+  .zg-nav-link,
+  .zg-touch-target {
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+  }
+}
+
+/* ui-spec.md §3 — field states. Bootstrap's defaults are a neutral grey border
+   and a blue focus ring, so the Zen Green tokens have to be applied explicitly
+   or read-only fields look identical to editable ones. */
+.form-control,
+.form-select {
+  background-color: var(--color-field-editable-bg);
+  border-color: var(--color-field-editable-border);
+}
+
+/* Read-only and disabled fields share the soft gray-green shading; read-only
+   stays keyboard-reachable, disabled does not (see §3's state table). */
+.form-control[readonly],
+.form-control:disabled,
+.form-select:disabled {
+  background-color: var(--color-field-readonly-bg);
+  cursor: default;
+}
+
+.form-control:disabled,
+.form-select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Focus uses the Zen Green accent, never Bootstrap blue (§3, §11). */
+.form-control:focus,
+.form-select:focus,
+.btn:focus-visible,
+.nav-link:focus-visible,
+a:focus-visible {
+  border-color: var(--color-secondary);
+  outline: none;
+  box-shadow: 0 0 0 0.2rem rgba(11, 122, 70, 0.35);
+}
+
+/* ui-spec.md §3 — Primary button. */
+.zg-btn-primary {
+  background-color: var(--color-primary);
+  border-color: var(--color-primary);
+  color: #ffffff;
+}
+.zg-btn-primary:hover:not(:disabled),
+.zg-btn-primary:focus:not(:disabled) {
+  background-color: var(--color-secondary);
+  border-color: var(--color-secondary);
+  color: #ffffff;
+}
+.zg-btn-primary:disabled {
+  opacity: 0.5;
+}
+
+/* ui-spec.md §3 — error/failure callout. */
+.zg-alert-error {
+  background-color: var(--color-error-bg);
+  color: var(--color-error);
+  border: 1px solid var(--color-error);
+}
+
+/* ui-spec.md §7 — Requested Priority / Current Status badges. Color is
+   always paired with text, never a bare colored dot. */
+.zg-badge {
+  display: inline-block;
+  padding: 0.15em 0.6em;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+.zg-badge-low,
+.zg-badge-new {
+  background-color: var(--color-pale);
+  color: var(--color-secondary);
+}
+.zg-badge-medium {
+  background-color: var(--color-warning-bg);
+  color: var(--color-warning);
+}
+.zg-badge-high {
+  background-color: var(--color-error-bg);
+  color: var(--color-error);
+}

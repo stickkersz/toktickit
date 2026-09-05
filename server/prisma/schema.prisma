@@ -13,5 +13,72 @@ datasource db {
 model Category {
   id        Int      @id @default(autoincrement())
   name      String   @unique
+  isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
+  tickets   Ticket[]
+}
+
+model RequesterUser {
+  id        Int      @id @default(autoincrement())
+  name      String
+  email     String   @unique
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  tickets   Ticket[]
+}
+
+model RelatedSystem {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  tickets   Ticket[]
+}
+
+enum TicketPriority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum TicketStatus {
+  NEW // only status reachable in Lab 2; Lab 3+ extends this enum
+}
+
+model Ticket {
+  id                Int             @id @default(autoincrement())
+  ticketNumber      String          @unique
+  requesterId       Int
+  requester         RequesterUser   @relation(fields: [requesterId], references: [id])
+  categoryId        Int
+  category          Category        @relation(fields: [categoryId], references: [id])
+  relatedSystemId   Int
+  relatedSystem     RelatedSystem   @relation(fields: [relatedSystemId], references: [id])
+  summary           String
+  description       String
+  requestedPriority TicketPriority
+  itPriority        TicketPriority? // reserved, unused in Lab 2
+  currentStatus     TicketStatus    @default(NEW)
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  attachments       Attachment[]
+
+  @@index([requesterId, createdAt])
+  @@index([requesterId, currentStatus])
+}
+
+model Attachment {
+  id               Int       @id @default(autoincrement())
+  ticketId         Int
+  ticket           Ticket    @relation(fields: [ticketId], references: [id])
+  originalFilename String
+  storedFilename   String    @unique
+  mimeType         String
+  sizeBytes        Int
+  uploadedAt       DateTime  @default(now())
+  isRemoved        Boolean   @default(false)
+  removedAt        DateTime?
+  removalReason    String?
+
+  @@index([ticketId, isRemoved])
 }

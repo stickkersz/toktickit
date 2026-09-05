@@ -1,0 +1,21 @@
+{
+  "name": "toktickit",
+  "version": "1.0.0",
+  "private": true,
+  "description": "IT service desk application. Lab 1 proved React/Vite/Bootstrap -> Express -> Prisma -> PostgreSQL work together; Lab 2 builds the Requester-facing ticketing MVP on top of that (see docs/lab-02/specification.md).",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test:e2e": "playwright test",
+    "test:e2e:install": "playwright install chromium"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.61.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/stickkersz/toktickit.git"
+  },
+  "license": "ISC"
+}
