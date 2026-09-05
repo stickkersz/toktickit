@@ -94,6 +94,14 @@ test.describe("Submission evidence: Create Ticket submit failure", () => {
     await page.getByLabel(/^summary \*/i).fill(summary);
     await page.getByLabel(/^description \*/i).fill(description);
 
+    // Read back what the two reference-data selects actually resolved to, so
+    // the assertions below compare against real ids rather than assuming what
+    // the seed happens to order first.
+    const categoryValue = await page.getByLabel(/^category \*/i).inputValue();
+    const relatedSystemValue = await page.getByLabel(/^related system \*/i).inputValue();
+    expect(categoryValue).not.toBe("");
+    expect(relatedSystemValue).not.toBe("");
+
     // Simulate the backend being unreachable at submit time.
     await page.route("**/api/tickets", async (route) => {
       if (route.request().method() !== "POST") return route.fallback();
@@ -103,10 +111,14 @@ test.describe("Submission evidence: Create Ticket submit failure", () => {
     await page.getByRole("button", { name: "Submit Ticket" }).click();
     await expect(page.getByRole("alert")).toBeVisible();
 
-    // The point of the evidence: nothing the Requester typed was lost (BR-19).
+    // The point of the evidence: nothing the Requester entered was lost
+    // (BR-19), including the two reference-data selects, not just the free
+    // text and the priority.
+    await expect(page.getByLabel(/^category \*/i)).toHaveValue(categoryValue);
+    await expect(page.getByLabel(/^related system \*/i)).toHaveValue(relatedSystemValue);
+    await expect(page.getByLabel(/^requested priority \*/i)).toHaveValue("HIGH");
     await expect(page.getByLabel(/^summary \*/i)).toHaveValue(summary);
     await expect(page.getByLabel(/^description \*/i)).toHaveValue(description);
-    await expect(page.getByLabel(/^requested priority \*/i)).toHaveValue("HIGH");
 
     await page.screenshot({
       path: shot("create-ticket", "submit-failure-values-preserved-desktop"),
