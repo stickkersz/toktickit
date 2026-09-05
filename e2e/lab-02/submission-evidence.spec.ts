@@ -73,6 +73,49 @@ test.describe("Submission evidence: Requester Selection", () => {
   });
 });
 
+test.describe("Submission evidence: Create Ticket submit failure", () => {
+  // Handout §14 Part 6, item 5: "Stop the backend or simulate failure and show
+  // the safe error state with form values preserved." The existing
+  // create-ticket/api-failure-desktop.png covers a *reference-data* load
+  // failure, where the form never renders and so has no values to preserve.
+  // This captures the other half: a backend failure during submit, with what
+  // the Requester typed still in the form.
+  test("keeps the typed values when the create request fails", async ({ page }) => {
+    await selectRequester(page, 2);
+    await page.goto("/tickets/new");
+
+    const summary = "Projector in room 401 will not power on";
+    const description =
+      "The projector shows no power light at all, and swapping the cable and wall socket changed nothing.";
+
+    await page.getByLabel(/^category \*/i).selectOption({ index: 1 });
+    await page.getByLabel(/^related system \*/i).selectOption({ index: 1 });
+    await page.getByLabel(/^requested priority \*/i).selectOption("HIGH");
+    await page.getByLabel(/^summary \*/i).fill(summary);
+    await page.getByLabel(/^description \*/i).fill(description);
+
+    // Simulate the backend being unreachable at submit time.
+    await page.route("**/api/tickets", async (route) => {
+      if (route.request().method() !== "POST") return route.fallback();
+      await route.abort("failed");
+    });
+
+    await page.getByRole("button", { name: "Submit Ticket" }).click();
+    await expect(page.getByRole("alert")).toBeVisible();
+
+    // The point of the evidence: nothing the Requester typed was lost (BR-19).
+    await expect(page.getByLabel(/^summary \*/i)).toHaveValue(summary);
+    await expect(page.getByLabel(/^description \*/i)).toHaveValue(description);
+    await expect(page.getByLabel(/^requested priority \*/i)).toHaveValue("HIGH");
+
+    await page.screenshot({
+      path: shot("create-ticket", "submit-failure-values-preserved-desktop"),
+      fullPage: true,
+    });
+    await page.unroute("**/api/tickets");
+  });
+});
+
 test.describe("Submission evidence: My Tickets search, filter, sort, pagination, ownership", () => {
   test("search, filter, sort, page 2, and a Requester switch that hides the list", async ({
     page,
