@@ -39,7 +39,8 @@ Companion to `docs/lab-02/specification.md`, `docs/lab-02/api-spec.md`, and `doc
 | API-20 | API | AC-22 | `GET /api/attachments/:id`, `GET /api/attachments/:id/download`, `DELETE /api/attachments/:id`, and `POST /api/tickets/:id/attachments` for a deactivated Requester's own Ticket/attachment | All four return 404 (BR-38) | `server/tests/lab-02/attachments.api.test.ts` | Pass |
 | API-21 | API | AC-23 | 5 concurrent `POST /api/tickets/:id/attachments` requests (1 file each) against a Ticket already at 4 active attachments | Exactly 1 succeeds (201), 4 rejected with `MAX_ATTACHMENTS_EXCEEDED`; active count never exceeds 5 (BR-39) | `server/tests/lab-02/attachments.api.test.ts` | Pass |
 | UI-01 | UI | BR-13, BR-16 | Create Ticket form: required-field asterisks render; Submit disabled until required fields are valid | Asterisks present on Category/Related System/Priority/Summary/Description; Submit `disabled` attr reflects validity | `client/tests/lab-02/CreateTicket.test.tsx` | Pass |
-| UI-02 | UI | AC-04 | Submit with Summary empty | Field-level error shown under Summary; no `fetch`/API call made | `client/tests/lab-02/CreateTicket.test.tsx` | Pass |
+| UI-02 | UI | AC-04 | Leave Summary empty and move focus away, with every other required field valid | Field-level error shown under Summary, Submit stays disabled, no `fetch`/API call made, and the message clears once Summary becomes valid | `client/tests/lab-02/CreateTicket.test.tsx` | Pass |
+| UI-17 | UI | BR-34 | `createTicket` when the request never reaches the API, and when the response body is not JSON | A readable message is thrown in both cases, never the browser's raw `TypeError` or a parser error; the technical detail goes to the console; a documented `VALIDATION_ERROR` envelope and a documented server message still pass through unchanged | `client/tests/lab-02/api-errors.test.ts` | Pass |
 | UI-03 | UI | AC-10 | Click Submit, then click again before the first request resolves | Submit shows busy state and is `disabled` on the second click; only one POST is sent | `client/tests/lab-02/CreateTicket.test.tsx` | Pass |
 | UI-04 | UI | AC-07, AC-08, AC-09 | Select an oversized file, a wrong-type file, and a 6th file with 5 already selected | Each shows its own inline error; other valid files remain in the list and selectable | `client/tests/lab-02/CreateTicket.test.tsx` | Pass |
 | UI-05 | UI | BR-18, BR-19 | Mock `POST /api/tickets` to fail after filling the form | Error banner shown; all entered field values remain in the form unchanged | `client/tests/lab-02/CreateTicket.test.tsx` | Pass |
@@ -68,6 +69,7 @@ Companion to `docs/lab-02/specification.md`, `docs/lab-02/api-spec.md`, and `doc
 | AC-02 | UI-15 |
 | AC-03 | API-09, E2E-02 |
 | AC-04 | API-02, UI-02 |
+| BR-34 (safe failure state) | UI-16, UI-17 |
 | AC-05 | API-02, UI-05 |
 | AC-06 | UI-16 |
 | AC-07 | UNIT-03, API-11, UI-04 |
@@ -133,7 +135,7 @@ npx playwright test
 | Suite | Command | Pass/Fail | Notes |
 |---|---|---|---|
 | Server unit + API | `cd server && npm test` | Pass | 12 files, 80 tests, 0 skipped |
-| Client UI | `cd client && npm test` | Pass | 7 files, 39 tests, 0 skipped |
+| Client UI | `cd client && npm test` | Pass | 8 files, 44 tests, 0 skipped |
 | E2E + responsive | `npx playwright test` | Pass | 9 tests total: the 5 planned tests below, plus 4 supplementary evidence captures |
 
 The 5 planned tests in the table above are E2E-01, E2E-02, and RESP-01
@@ -160,3 +162,24 @@ database. The Playwright run starts the API and client dev servers itself
 - Load/performance testing is out of scope for Lab 2 (not required by the handout).
 - Cross-browser testing is limited to Playwright's default Chromium project; Firefox/WebKit runs are not required for Lab 2.
 - Duplicate-submission prevention (BR-17) is tested only client-side (UI-03); per `specification.md` §5, the backend intentionally does not deduplicate identical payloads in Lab 2, so no server-side idempotency test exists. This is a documented, not accidental, gap.
+
+### Defects found in a pre-submission code review
+
+A full review of the Lab 2 diff was run before submission. Every acceptance criterion and planned test still passes; the issues below are real but none of them break a documented behaviour, so they are recorded here rather than fixed under time pressure at the end of the sprint. Each names the file and line so it can be picked up in Lab 3.
+
+**Fixed before submission**
+
+- `client/src/api.ts` — a network-level failure threw the browser's raw `TypeError`, and Create Ticket renders a thrown error's own message, so the safe-failure state required by BR-34 displayed the literal text "Failed to fetch". Now the technical detail goes to the console and the Requester sees a stable message. A non-JSON response body is handled the same way, which matters because a multer-level failure returns Express's default HTML rather than the documented error envelope. Covered directly by UI-17, which asserts the message text in both cases and checks that the documented `VALIDATION_ERROR` envelope still passes through.
+- `client/src/screens/CreateTicket.tsx` — AC-04 asks for a field-level message near the offending field, but `ui-spec.md` §6 keeps Submit disabled until the form is valid, so the messages inside the submit handler could not be reached through the interface at all. UI-02 had been reaching them by dispatching a `submit` event directly, which a Requester cannot do, so the test passed while exercising a path the UI never took. Required fields now validate when focus leaves them and clear as soon as the value becomes valid, which satisfies both the acceptance criterion and the UI spec. UI-02 was rewritten to drive that real path.
+- `client/vite.config.ts` — the Vitest `include` matched only `tests/**/*.test.tsx`, so a test file with no JSX was silently never collected. Widened to `.{ts,tsx}`. This is why the new `api-errors.test.ts` initially reported no change in the totals.
+
+**Recorded, not fixed**
+
+- `server/src/app.ts:19` — multer is configured without `limits` and the app registers no error-handling middleware, so an upload is written to disk in full before BR-26's 5 MB check runs, and a multer-level failure bypasses `cleanupUnsettledFiles()`, orphaning partly written files in `server/uploads/`. Only reachable by a client crafting requests directly, not through the UI.
+- `server/src/attachmentStorage.ts:14` — the stored filename's extension is taken from the untrusted `originalname` before validation, so a crafted filename can produce a path segment or an extension outside the BR-26 allowlist. The file is still rejected and unlinked afterwards, and `storedFilename` is never returned to the client, but the extension should be restricted at generation time.
+- `server/src/app.ts:570` — the soft-removal `isRemoved` check and its update are not atomic, unlike the upload path which uses `pg_advisory_xact_lock` for BR-39. Two concurrent removals of the same attachment both succeed and the second overwrites `removedAt`/`removalReason` instead of returning the 409 `ALREADY_REMOVED` in `api-spec.md`. No acceptance criterion covers concurrent removal, so no test exercises it.
+- `server/src/app.ts:331` — if one file in a multi-file upload fails after an earlier file has already been persisted, the handler returns a bare 500 with no `uploaded` array, and `client/src/screens/TicketDetail.tsx:133` then reports every file in the batch as failed. The attachment that did save is real but invisible until the screen is reloaded. BR-25's partial-success guarantee holds in the database; only the reporting is wrong.
+- `client/src/screens/CreateTicket.tsx:93` — removing one rejected attachment row does not re-validate the rows that remain, so a `MAX_ATTACHMENTS_EXCEEDED` message can persist on a file that would now fit.
+- `client/src/screens/CreateTicket.tsx` — the character counters use the untrimmed length while validation uses the trimmed length, so trailing whitespace can show `121/120` on a form that is actually valid. Cosmetic; the Submit gate and the field messages both use the trimmed length.
+- `client/src/screens/TicketDetail.tsx:106` — the client-side active-attachment count is seeded from the last rendered value, so selecting a second batch while the first upload is still in flight can let the client-side check pass when the ticket is already at the limit. The server still rejects it correctly under BR-39.
+- `e2e/lab-02/submission-evidence.spec.ts` — the seeded tickets hard-code category ids and assume id 4 is "Network", which contradicts the note in `e2e/lab-02/helpers.ts` about not hard-coding seed values that BR-37 permits changing. Reordering the seed's category array would break this file's exact-count assertions. The graded suite in `requester-ticket-flow.spec.ts` and `responsive-visual.spec.ts` does not have this coupling.

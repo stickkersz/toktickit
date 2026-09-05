@@ -8,6 +8,9 @@ export default defineConfig({
     environment: "jsdom",
     globals: true,
     setupFiles: "./tests/setup.ts",
-    include: ["tests/**/*.test.tsx"],
+    // Both extensions: component tests are .tsx, but a test with no JSX (the
+    // api.ts error-message tests) is plain .ts and was silently not collected
+    // while this only matched .tsx.
+    include: ["tests/**/*.test.{ts,tsx}"],
   },
 });
