@@ -40,7 +40,16 @@ export interface CreateTicketInput {
   requestedPriority: TicketPriority;
 }
 
-export type AttachmentRejectReason = "UNSUPPORTED_TYPE" | "FILE_TOO_LARGE" | "MAX_ATTACHMENTS_EXCEEDED";
+// The first three are per-file validation outcomes and are mirrored by the
+// client-side check in attachmentValidation.ts. UPLOAD_FAILED is server-only:
+// it names a file the server never reached a decision on because the batch
+// failed part-way through (api-spec.md §7), so it has no client-side
+// equivalent and is never produced by validateAttachmentFile.
+export type AttachmentRejectReason =
+  | "UNSUPPORTED_TYPE"
+  | "FILE_TOO_LARGE"
+  | "MAX_ATTACHMENTS_EXCEEDED"
+  | "UPLOAD_FAILED";
 
 export interface UploadedAttachment {
   id: number;

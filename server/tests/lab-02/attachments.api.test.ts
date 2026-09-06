@@ -164,6 +164,63 @@ describe("POST /api/tickets/:id/attachments", () => {
     expect(saved[0].originalFilename).toBe("a.jpg");
     expect(existsSync(path.join(UPLOAD_DIR, saved[0].storedFilename))).toBe(true);
   });
+
+  // API-23 / BR-25, BR-31, api-spec.md §7
+  it("accounts for every submitted file when the batch fails part-way through", async () => {
+    const ticketId = await createTicket();
+    const realPrisma = getPrisma();
+    let createCalls = 0;
+
+    // Three files: the first commits, the second throws, and the third is
+    // never reached at all. The third is the one that used to disappear
+    // from the response entirely, leaving the Requester with no way to know
+    // it still needed retrying.
+    vi.spyOn(prismaModule, "getPrisma").mockReturnValue({
+      ticket: realPrisma.ticket,
+      $transaction: async (fn: (tx: unknown) => unknown) =>
+        fn({
+          $executeRaw: async () => 0,
+          attachment: {
+            count: (args: unknown) =>
+              (realPrisma.attachment.count as (a: unknown) => unknown)(args),
+            create: (args: unknown) => {
+              createCalls += 1;
+              if (createCalls === 2) {
+                return Promise.reject(new Error("simulated database failure"));
+              }
+              return (realPrisma.attachment.create as (a: unknown) => unknown)(args);
+            },
+          },
+        }),
+    } as unknown as ReturnType<typeof prismaModule.getPrisma>);
+
+    const res = await request(app)
+      .post(`/api/tickets/${ticketId}/attachments`)
+      .field("requesterId", "1")
+      .attach("files", Buffer.from("a"), { filename: "first.jpg", contentType: "image/jpeg" })
+      .attach("files", Buffer.from("b"), { filename: "second.jpg", contentType: "image/jpeg" })
+      .attach("files", Buffer.from("c"), { filename: "third.jpg", contentType: "image/jpeg" });
+
+    expect(res.status).toBe(500);
+
+    // The committed file is reported as uploaded, not silently lost.
+    expect(res.body.uploaded).toHaveLength(1);
+    expect(res.body.uploaded[0].originalFilename).toBe("first.jpg");
+
+    // Both the file that threw and the one never reached are named, so the
+    // response accounts for all three files the Requester submitted.
+    const failedNames = (res.body.failed as { originalFilename: string; reason: string }[])
+      .map((f) => f.originalFilename)
+      .sort();
+    expect(failedNames).toEqual(["second.jpg", "third.jpg"]);
+    for (const entry of res.body.failed) {
+      expect(entry.reason).toBe("UPLOAD_FAILED");
+      expect(entry.message).toMatch(/retry/i);
+    }
+
+    const reported = res.body.uploaded.length + res.body.failed.length;
+    expect(reported).toBe(3);
+  });
 });
 
 describe("GET /api/attachments/:id", () => {

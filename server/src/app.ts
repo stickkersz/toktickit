@@ -330,12 +330,23 @@ app.post(
 
       res.status(201).json({ uploaded, failed });
     } catch {
-      await cleanupUnsettledFiles();
-      // BR-25 and BR-31 require per-file reporting, and any Attachment rows
+      // BR-25 and BR-31 require per-file reporting. Any Attachment rows
       // committed before the failure are real and already visible on the
-      // Ticket. Dropping them here would tell the client every file failed,
-      // so a Requester would re-upload one that actually saved. The partial
-      // result travels with the 500 for that reason; see api-spec.md §7.
+      // Ticket, and every file that never reached a decision still has to be
+      // named, or the Requester cannot tell which of the files they chose
+      // need retrying. Report both before cleaning up: the file that threw
+      // and any the loop never reached are all still unsettled at this point.
+      for (const file of files) {
+        if (settledFilenames.has(file.filename)) continue;
+        failed.push({
+          originalFilename: file.originalname,
+          reason: "UPLOAD_FAILED",
+          message: "The upload failed before this file was stored. Retry it from Ticket Detail.",
+        });
+      }
+
+      await cleanupUnsettledFiles();
+
       res.status(500).json({
         error: "INTERNAL_ERROR",
         message: "Unable to process the upload.",
