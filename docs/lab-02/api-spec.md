@@ -30,7 +30,7 @@ All non-2xx responses share one envelope:
 }
 ```
 
-`fields` is present only for 400 responses tied to a specific form field; other error kinds omit it. One documented exception: endpoint 7's all-files-rejected 400 (`ALL_FILES_REJECTED`) replaces `fields` with `uploaded`/`failed` instead, since a per-file batch result does not fit a single-field map; see endpoint 7 for that shape.
+`fields` is present only for 400 responses tied to a specific form field; other error kinds omit it. Two documented exceptions, both on endpoint 7 and both for the same reason, that a per-file batch result does not fit a single-field map: the all-files-rejected 400 (`ALL_FILES_REJECTED`) replaces `fields` with `uploaded`/`failed`, and a mid-batch 500 (`INTERNAL_ERROR`) carries `uploaded`/`failed` alongside `error`/`message` so that files already committed before the failure are still reported (BR-25, BR-31). See endpoint 7 for both shapes.
 
 ### HTTP status codes used
 
@@ -277,7 +277,7 @@ Errors:
 - 400 `ALL_FILES_REJECTED`: at least one file was submitted and every one failed per-file validation (extended envelope with `uploaded`/`failed`, see above); this is distinguishable from the 201 partial-success case, which also carries a `failed[]` array but only when at least one other file in the same batch succeeded (BR-31).
 - 404: Ticket not found, not owned by `requesterId`, or `requesterId` does not resolve to a real Requester (single-resource rule above; plain envelope, never the `failed[]` shape).
 - `UNSUPPORTED_TYPE`/`FILE_TOO_LARGE`/`MAX_ATTACHMENTS_EXCEEDED` are per-file `reason` codes inside `failed[]`, never the HTTP status of the whole request; they are documented in the status-code table above purely as a cross-reference to their conceptual HTTP meaning (413/415/409). The wire-level status of this endpoint is always 201, 400, 404, or 500, never those three.
-- 500.
+- 500 `INTERNAL_ERROR`: an unexpected failure part-way through the batch. This response also carries `uploaded`/`failed` alongside `error`/`message`, the second documented departure from the plain `### Error shape` envelope. Any Attachment rows committed before the failure are real and already attached to the Ticket, so BR-25 and BR-31 require them to be reported rather than discarded; without them the client would tell the Requester that every file failed and invite a re-upload of one that actually saved. Either array may be empty.
 
 ## 8. GET /api/attachments/:id
 

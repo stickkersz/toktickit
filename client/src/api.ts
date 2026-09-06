@@ -244,7 +244,12 @@ export async function uploadAttachments(
     body: formData,
   });
   const body = await res.json();
-  if (!res.ok && body?.error !== "ALL_FILES_REJECTED") {
+  // A mid-batch 500 still carries whatever was committed before the failure
+  // (api-spec.md §7). Throwing it away would report files as failed that are
+  // already attached to the Ticket, so the Requester would re-upload them.
+  const carriesBatchResult =
+    body?.error === "ALL_FILES_REJECTED" || Array.isArray(body?.uploaded);
+  if (!res.ok && !carriesBatchResult) {
     throw new Error(body?.message ?? "Unable to upload attachments.");
   }
   return { uploaded: body.uploaded ?? [], failed: body.failed ?? [] };

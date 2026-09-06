@@ -374,6 +374,42 @@ describe("POST /api/tickets/:id/attachments — concurrent uploads at the active
   });
 });
 
+// API-22 / BR-30, api-spec.md §10
+describe("DELETE /api/attachments/:id — concurrent removals of the same attachment", () => {
+  it("removes it once and returns the documented 409 to the loser, keeping the first reason", async () => {
+    const ticketId = await createTicket();
+    const uploadRes = await request(app)
+      .post(`/api/tickets/${ticketId}/attachments`)
+      .field("requesterId", "1")
+      .attach("files", Buffer.from("x"), { filename: "race.jpg", contentType: "image/jpeg" });
+    const attachmentId = uploadRes.body.uploaded[0].id as number;
+
+    // Both requests read an active row before either writes, which is exactly
+    // the interleaving that previously let the second overwrite the first's
+    // removedAt/removalReason and still answer 200.
+    const [first, second] = await Promise.all([
+      request(app)
+        .delete(`/api/attachments/${attachmentId}`)
+        .send({ requesterId: 1, reason: "First removal reason" }),
+      request(app)
+        .delete(`/api/attachments/${attachmentId}`)
+        .send({ requesterId: 1, reason: "Second removal reason" }),
+    ]);
+
+    const statuses = [first.status, second.status].sort();
+    expect(statuses).toEqual([200, 409]);
+
+    const loser = first.status === 409 ? first : second;
+    expect(loser.body.error).toBe("ALREADY_REMOVED");
+
+    // BR-30: the surviving audit trail is the winner's, not a later overwrite.
+    const stored = await getPrisma().attachment.findUniqueOrThrow({ where: { id: attachmentId } });
+    expect(stored.isRemoved).toBe(true);
+    const winner = first.status === 200 ? first : second;
+    expect(stored.removalReason).toBe(winner.body.removalReason);
+  });
+});
+
 // API-16
 describe("Ticket creation is independent of a later attachment failure (BR-25)", () => {
   it("keeps the Ticket queryable by its ticketNumber even if its one attachment upload fails", async () => {
