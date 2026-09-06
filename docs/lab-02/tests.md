@@ -40,7 +40,7 @@ Companion to `docs/lab-02/specification.md`, `docs/lab-02/api-spec.md`, and `doc
 | API-21 | API | AC-23 | 5 concurrent `POST /api/tickets/:id/attachments` requests (1 file each) against a Ticket already at 4 active attachments | Exactly 1 succeeds (201), 4 rejected with `MAX_ATTACHMENTS_EXCEEDED`; active count never exceeds 5 (BR-39) | `server/tests/lab-02/attachments.api.test.ts` | Pass |
 | UI-01 | UI | BR-13, BR-16 | Create Ticket form: required-field asterisks render; Submit disabled until required fields are valid | Asterisks present on Category/Related System/Priority/Summary/Description; Submit `disabled` attr reflects validity | `client/tests/lab-02/CreateTicket.test.tsx` | Pass |
 | UI-02 | UI | AC-04 | Leave Summary empty and move focus away, with every other required field valid | Field-level error shown under Summary, Submit stays disabled, no `fetch`/API call made, and the message clears once Summary becomes valid | `client/tests/lab-02/CreateTicket.test.tsx` | Pass |
-| UI-17 | UI | BR-34 | `createTicket` when the request never reaches the API, and when the response body is not JSON | A readable message is thrown in both cases, never the browser's raw `TypeError` or a parser error; the technical detail goes to the console; a documented `VALIDATION_ERROR` envelope and a documented server message still pass through unchanged | `client/tests/lab-02/api-errors.test.ts` | Pass |
+| UI-18 | UI | BR-34 | `createTicket` when the request never reaches the API, and when the response body is not JSON | A readable message is thrown in both cases, never the browser's raw `TypeError` or a parser error; the technical detail goes to the console; a documented `VALIDATION_ERROR` envelope and a documented server message still pass through unchanged | `client/tests/lab-02/api-errors.test.ts` | Pass |
 | UI-03 | UI | AC-10 | Click Submit, then click again before the first request resolves | Submit shows busy state and is `disabled` on the second click; only one POST is sent | `client/tests/lab-02/CreateTicket.test.tsx` | Pass |
 | UI-04 | UI | AC-07, AC-08, AC-09 | Select an oversized file, a wrong-type file, and a 6th file with 5 already selected | Each shows its own inline error; other valid files remain in the list and selectable | `client/tests/lab-02/CreateTicket.test.tsx` | Pass |
 | UI-05 | UI | BR-18, BR-19 | Mock `POST /api/tickets` to fail after filling the form | Error banner shown; all entered field values remain in the form unchanged | `client/tests/lab-02/CreateTicket.test.tsx` | Pass |
@@ -69,7 +69,7 @@ Companion to `docs/lab-02/specification.md`, `docs/lab-02/api-spec.md`, and `doc
 | AC-02 | UI-15 |
 | AC-03 | API-09, E2E-02 |
 | AC-04 | API-02, UI-02 |
-| BR-34 (safe failure state) | UI-16, UI-17 |
+| BR-34 (safe failure state) | UI-16, UI-18 |
 | AC-05 | API-02, UI-05 |
 | AC-06 | UI-16 |
 | AC-07 | UNIT-03, API-11, UI-04 |
@@ -169,7 +169,7 @@ A full review of the Lab 2 diff was run before submission. Every acceptance crit
 
 **Fixed before submission**
 
-- `client/src/api.ts` — a network-level failure threw the browser's raw `TypeError`, and Create Ticket renders a thrown error's own message, so the safe-failure state required by BR-34 displayed the literal text "Failed to fetch". Now the technical detail goes to the console and the Requester sees a stable message. A non-JSON response body is handled the same way, which matters because a multer-level failure returns Express's default HTML rather than the documented error envelope. Covered directly by UI-17, which asserts the message text in both cases and checks that the documented `VALIDATION_ERROR` envelope still passes through.
+- `client/src/api.ts` — a network-level failure threw the browser's raw `TypeError`, and Create Ticket renders a thrown error's own message, so the safe-failure state required by BR-34 displayed the literal text "Failed to fetch". Now the technical detail goes to the console and the Requester sees a stable message. A non-JSON response body is handled the same way, which matters because a multer-level failure returns Express's default HTML rather than the documented error envelope. Covered directly by UI-18, which asserts the message text in both cases and checks that the documented `VALIDATION_ERROR` envelope still passes through.
 - `client/src/screens/CreateTicket.tsx` — AC-04 asks for a field-level message near the offending field, but `ui-spec.md` §6 keeps Submit disabled until the form is valid, so the messages inside the submit handler could not be reached through the interface at all. UI-02 had been reaching them by dispatching a `submit` event directly, which a Requester cannot do, so the test passed while exercising a path the UI never took. Required fields now validate when focus leaves them and clear as soon as the value becomes valid, which satisfies both the acceptance criterion and the UI spec. UI-02 was rewritten to drive that real path.
 - `client/vite.config.ts` — the Vitest `include` matched only `tests/**/*.test.tsx`, so a test file with no JSX was silently never collected. Widened to `.{ts,tsx}`. This is why the new `api-errors.test.ts` initially reported no change in the totals.
 

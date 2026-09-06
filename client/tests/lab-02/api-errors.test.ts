@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ValidationError, createTicket } from "../../src/api.js";
 
-// UI-17: Create Ticket is the only screen that renders a thrown error's own
+// UI-18: Create Ticket is the only screen that renders a thrown error's own
 // message to the Requester, so createTicket must never let a raw browser or
 // non-JSON failure reach the interface. The Playwright evidence test only
 // asserts that an alert appears; these assert the actual text.
