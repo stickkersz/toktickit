@@ -69,7 +69,7 @@ describe("Create Ticket", () => {
   it("shows a field error under Summary and makes no API call when Summary is empty", async () => {
     mockReferenceData();
     const createSpy = vi.spyOn(api, "createTicket");
-    const { container } = renderScreen();
+    renderScreen();
 
     await userEvent.selectOptions(await screen.findByLabelText(/category \*/i), String(CATEGORY.id));
     await userEvent.selectOptions(
@@ -78,12 +78,25 @@ describe("Create Ticket", () => {
     );
     await userEvent.selectOptions(screen.getByLabelText(/requested priority \*/i), "MEDIUM");
     await userEvent.type(screen.getByLabelText(/description \*/i), VALID_DESCRIPTION);
-    // Summary left empty: Submit stays disabled, so exercise the form's
-    // guard directly rather than clicking a disabled button.
-    fireEvent.submit(container.querySelector("form")!);
+
+    // Drive the path a Requester can actually reach. Submit stays disabled
+    // while Summary is invalid (ui-spec.md §6), so the AC-04 message has to
+    // come from leaving the field, not from a submit attempt.
+    const summaryInput = screen.getByLabelText(/summary \*/i);
+    await userEvent.click(summaryInput);
+    await userEvent.tab();
 
     expect(await screen.findByText(/summary must be between 5 and 120 characters/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /submit ticket/i })).toBeDisabled();
     expect(createSpy).not.toHaveBeenCalled();
+
+    // And it clears itself once the value becomes valid, so the message is
+    // never left behind on a field the Requester has already fixed.
+    await userEvent.type(summaryInput, "Projector will not power on");
+    await userEvent.tab();
+    expect(
+      screen.queryByText(/summary must be between 5 and 120 characters/i),
+    ).not.toBeInTheDocument();
   });
 
   // UI-03

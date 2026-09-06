@@ -246,6 +246,11 @@ app.post(
       return res.status(404).json({ error: "NOT_FOUND", message: "Ticket not found." });
     }
 
+    // Declared outside the try so the catch can still report which files
+    // were already committed before an unexpected failure (BR-25, BR-31).
+    const uploaded: Record<string, unknown>[] = [];
+    const failed: { originalFilename: string; reason: string; message: string }[] = [];
+
     try {
       const ticket = await getPrisma().ticket.findFirst({
         // BR-38: same deactivated-Requester-loses-access rule as Ticket Detail.
@@ -262,9 +267,6 @@ app.post(
           .status(400)
           .json({ error: "VALIDATION_ERROR", message: "At least one file is required." });
       }
-
-      const uploaded: Record<string, unknown>[] = [];
-      const failed: { originalFilename: string; reason: string; message: string }[] = [];
 
       for (const file of files) {
         // BR-39: the active-count check and the insert must be atomic against
@@ -328,8 +330,29 @@ app.post(
 
       res.status(201).json({ uploaded, failed });
     } catch {
+      // BR-25 and BR-31 require per-file reporting. Any Attachment rows
+      // committed before the failure are real and already visible on the
+      // Ticket, and every file that never reached a decision still has to be
+      // named, or the Requester cannot tell which of the files they chose
+      // need retrying. Report both before cleaning up: the file that threw
+      // and any the loop never reached are all still unsettled at this point.
+      for (const file of files) {
+        if (settledFilenames.has(file.filename)) continue;
+        failed.push({
+          originalFilename: file.originalname,
+          reason: "UPLOAD_FAILED",
+          message: "The upload failed before this file was stored. Retry it from Ticket Detail.",
+        });
+      }
+
       await cleanupUnsettledFiles();
-      res.status(500).json({ error: "INTERNAL_ERROR", message: "Unable to process the upload." });
+
+      res.status(500).json({
+        error: "INTERNAL_ERROR",
+        message: "Unable to process the upload.",
+        uploaded,
+        failed,
+      });
     }
   },
 );
@@ -573,10 +596,23 @@ app.delete("/api/attachments/:id", async (req: Request, res: Response) => {
         .json({ error: "ALREADY_REMOVED", message: "This attachment is already removed." });
     }
 
-    const updated = await getPrisma().attachment.update({
-      where: { id: attachmentId },
+    // The check above is only a fast path. The write itself is conditional on
+    // the row still being active, so two concurrent removals cannot both
+    // succeed: exactly one updates a row, and the loser gets the documented
+    // 409 rather than silently overwriting the first one's removedAt and
+    // removalReason, which BR-30 requires be retained.
+    const removal = await getPrisma().attachment.updateMany({
+      where: { id: attachmentId, isRemoved: false },
       data: { isRemoved: true, removedAt: new Date(), removalReason: reasonResult.value },
     });
+
+    if (removal.count === 0) {
+      return res
+        .status(409)
+        .json({ error: "ALREADY_REMOVED", message: "This attachment is already removed." });
+    }
+
+    const updated = await getPrisma().attachment.findUniqueOrThrow({ where: { id: attachmentId } });
 
     res.status(200).json(serializeAttachment(updated));
   } catch {
