@@ -50,6 +50,10 @@ _Avoid_: reference, ID, case number
 The single IT Staff or Administrator User currently responsible for working a Ticket. A Ticket may have none.
 _Avoid_: assignee, handler, responsible party
 
+**Ineligible Owner**:
+A Ticket Owner who has since been deactivated or is no longer IT Staff or an Administrator. The Ticket keeps naming them, is treated as having no owner for claiming and for moving to In Progress, Resolved, or Closed, and is listed under Needs an owner until someone takes it over. Derived at read time, never stored.
+_Avoid_: orphaned ticket, stale owner
+
 **Requested Priority**:
 The urgency the Requester selected when submitting. Fixed at creation and never changed afterwards.
 _Avoid_: user priority, reported priority
@@ -89,7 +93,7 @@ A message on a Ticket visible only to IT Staff and Administrators, never to the 
 _Avoid_: private comment, staff note, internal comment
 
 **Attachment**:
-A file a Requester adds to their Ticket as evidence.
+A file a Requester adds to their Ticket as evidence. IT Staff and Administrators can read and download it but never add or remove one.
 _Avoid_: file, upload, document
 
 **Removed Attachment**:

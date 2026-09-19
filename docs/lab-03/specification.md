@@ -22,7 +22,8 @@ Authorization is a backend property. Hiding a button is feedback for the user, n
 - Mandatory password change for any account flagged as holding an initial password.
 - Three roles, exactly one per user: Requester, IT Staff, Administrator.
 - Server-side authorization and ownership checks on every protected endpoint.
-- Migration of the Lab 2 `RequesterUser` records into the real `User` model with ownership preserved.
+- Migration of the Lab 2 `RequesterUser` records into the real `User` model with ownership preserved, including the ordered migrate-then-seed sequence that gives every migrated account a credential.
+- The effect of deactivating a user or changing their role on the Tickets, Comments, Notes, and Attachments that user owns or authored.
 - Removal of the Development Requester selector, its stored client state, and the `requesterId` request parameter.
 - All Lab 2 Requester functions, re-driven by the authenticated identity.
 - Public Comments and Internal Notes, append only.
@@ -62,10 +63,11 @@ Editing and deleting a Public Comment or Internal Note are also excluded: both a
 
 - FR-10 IT Staff view a shared Ticket Queue across all Requesters, with search, filters, sorting, and pagination.
 - FR-11 IT Staff open the Ticket Detail of any Ticket in the queue.
-- FR-12 IT Staff claim an unassigned Ticket, or assign and reassign the Ticket Owner to another active IT Staff or Administrator.
+- FR-12 IT Staff claim a Ticket that has no eligible Ticket Owner, or assign and reassign the Ticket Owner to another active IT Staff or Administrator.
 - FR-13 IT Staff set the IT Priority of a Ticket independently of the Requested Priority.
 - FR-14 IT Staff move a Ticket through the permitted status transitions defined in BR-25.
 - FR-15 IT Staff post Public Comments and create Internal Notes on a Ticket.
+- FR-21 IT Staff and Administrators read Attachment metadata and download Attachment files on any Ticket they can open. Adding and removing Attachments is not available to them.
 
 ### Administrator
 
@@ -74,6 +76,7 @@ Editing and deleting a Public Comment or Internal Note are also excluded: both a
 - FR-18 An Administrator updates a user's name, email address, role, and activation state.
 - FR-19 An Administrator activates or deactivates an account, subject to the safety rules in BR-42 and BR-43.
 - FR-20 An Administrator sets a new initial password for a user, which that user must change at their next login.
+- FR-22 Deactivating a user or changing their role leaves every Ticket, Comment, Note, and Attachment intact, and surfaces the open Tickets that no longer have an eligible Ticket Owner so staff can reassign them.
 
 ## 5. Business Rules
 
@@ -102,8 +105,8 @@ Editing and deleting a Public Comment or Internal Note are also excluded: both a
 ### Ticket ownership and priority
 
 - BR-17 A Ticket has zero or one Ticket Owner. A Ticket created by a Requester starts unassigned.
-- BR-18 A Ticket Owner must be a user who is currently active and holds the IT Staff or Administrator role.
-- BR-19 Claiming assigns the acting IT Staff or Administrator as Ticket Owner. Claiming is permitted only while the Ticket is unassigned.
+- BR-18 A Ticket Owner must be a user who is currently active and holds the IT Staff or Administrator role. This is checked when the owner is set and stays true afterwards only while it remains true of that user: BR-56 to BR-58 define what happens when it stops being true.
+- BR-19 Claiming assigns the acting IT Staff or Administrator as Ticket Owner. Claiming is permitted only while the Ticket has no eligible Ticket Owner: it is unassigned, or its owner is ineligible under BR-57.
 - BR-20 Reassigning changes the Ticket Owner to any other eligible user under BR-18, and is permitted whether or not the Ticket is currently assigned. Unassigning a Ticket back to no owner is permitted.
 - BR-21 Requested Priority is the value submitted by the Requester and is immutable after creation. No role may change it.
 - BR-22 IT Priority is set to the Requested Priority at creation and may afterwards be changed only by IT Staff or an Administrator. A Requester never sees an editable IT Priority control and cannot set it through the API.
@@ -127,7 +130,7 @@ Editing and deleting a Public Comment or Internal Note are also excluded: both a
 
 - BR-26 A transition that is not in BR-25, including a transition to the Ticket's current status, is rejected with 409 and the Ticket is left unchanged.
 - BR-27 Moving a Ticket to `RESOLVED` requires a Resolution Summary of 10 to 2000 characters, trimmed. It is stored on the Ticket and is visible to the Requester.
-- BR-28 A Ticket must have a Ticket Owner before it can move to `IN_PROGRESS`, `RESOLVED`, or `CLOSED`. Work that is formally in progress or complete is always attributable to a named owner.
+- BR-28 A Ticket must have an eligible Ticket Owner (BR-57) before it can move to `IN_PROGRESS`, `RESOLVED`, or `CLOSED`. Work that is formally in progress or complete is always attributable to a named owner who can still act on it.
 - BR-29 A Requester may indicate that the problem appears resolved while the Ticket is in any non-terminal status. The indication records a timestamp on the Ticket and never changes `currentStatus`; formally resolving or closing remains an IT Staff action (handout section 3). Repeating the indication refreshes the timestamp and is not an error.
 
 ### Public Comments and Internal Notes
@@ -156,9 +159,26 @@ Editing and deleting a Public Comment or Internal Note are also excluded: both a
 ### Migration and seed
 
 - BR-47 The Lab 2 `RequesterUser` table is renamed to `User` in place. Every primary key is preserved, so `Ticket.requesterId` continues to identify the same person and no existing Ticket ownership changes.
-- BR-48 Every migrated record receives the `REQUESTER` role, `mustChangePassword = true`, and an initial password issued by the seed script. These are local development credentials only and are documented as such in the README; no real personal password or secret is committed.
+- BR-48 Every migrated record receives the `REQUESTER` role and `mustChangePassword = true` from the column defaults applied by the migration itself. It cannot receive a real password at that moment (BR-51), so its initial password is issued afterwards by the seed (BR-52). These are local development credentials only and are documented as such in the README; no real personal password or secret is committed.
 - BR-49 The Development Requester selector, the `GET /api/requesters` endpoint, and the `toktickit.currentRequesterId` client storage key are removed rather than deprecated, completing `L2-BR-36`.
 - BR-50 The seed remains idempotent, upserting on email, and produces at least: 4 active Requesters and 1 inactive Requester, 3 active IT Staff and 1 inactive IT Staff, 1 active Administrator, Tickets spread across Requesters, statuses, priorities, and both assigned and unassigned ownership, and example Public Comments and Internal Notes that contain no sensitive content.
+- BR-51 SQL inside the migration cannot compute a `scrypt` hash, so the migration backfills `passwordHash` for every existing row with the fixed marker value `!`, which is not a well-formed `scrypt$N$r$p$salt$hash` string. `verifyPassword` returns false, without throwing, for any stored value that is not well formed, so a backfilled account cannot authenticate with any password, including the marker itself. The account is not deactivated: `isActive` is untouched, it simply holds no usable credential until BR-52 issues one.
+- BR-52 Credentials are issued by the seed, which is a separate step that runs after the migration. For each user the seed sets `passwordHash` to a `scrypt` hash of the documented development initial password, and `mustChangePassword` to true, only when the row is being created or its stored hash is still the BR-51 marker. It never overwrites a well-formed hash, so re-running the seed cannot reset a password that a user has chosen or that an Administrator has issued. It continues to re-assert the fixture rows' `name`, `role`, and `isActive` by upserting on email.
+- BR-53 For any database that already holds Lab 2 data the required order is migrate, then seed, and between the two no migrated account can sign in. The README states both commands in that order. Because the only Administrator account comes from the seed, running the seed is also the sole recovery from the between-steps state.
+
+### Attachment access
+
+- BR-54 Reading an Attachment is a separate permission from changing one. Reading covers listing Attachment metadata on a Ticket Detail, `GET /api/attachments/:id`, and the file download. It is permitted to a Requester on their own Tickets and to IT Staff and Administrators on any Ticket. A Removed Attachment's metadata stays readable by the same roles, and its download returns 410 to every role, unchanged from Lab 2.
+- BR-55 Adding and removing Attachments are Requester-only operations on their own Tickets. IT Staff and Administrators calling `POST /api/tickets/:id/attachments` or `DELETE /api/attachments/:id` receive 403 `FORBIDDEN`. The decision uses the role alone and is made before any Ticket or Attachment lookup, so the response is the same whether or not the target exists (BR-14) and no file or row is touched. The rule follows the role, not the history: a user whose role changed from Requester to IT Staff or Administrator also loses these operations on the Tickets they once created.
+
+### Account changes and Tickets
+
+- BR-56 Deactivating a user, or changing their role, never modifies a Ticket, Public Comment, Internal Note, or Attachment. There is no automatic unassignment, reassignment, status change, or deletion. `ownerId`, `requesterId`, and `authorId` keep pointing at the same person, consistent with BR-44. The only side effect is the session revocation in BR-45. Deactivation is never blocked because the user still owns open Tickets: refusing to deactivate a leaver's account until their workload is cleared would leave that account able to sign in for as long as the workload exists.
+- BR-57 A Ticket Owner is eligible only while their account is active and their role is IT Staff or Administrator. Eligibility is evaluated from the owner's current `User` row every time a Ticket is read or changed and is never stored on the Ticket, so reactivating the user or restoring their role makes them eligible again with no data repair.
+- BR-58 A Ticket whose owner is ineligible is treated as having no owner for BR-19 and BR-28. Claiming it is permitted, and `ALREADY_ASSIGNED` is returned only when the current owner is eligible. A move to `IN_PROGRESS`, `RESOLVED`, or `CLOSED` is rejected with 409 `OWNER_REQUIRED` until an eligible owner is set. Changing IT Priority, moving to any status BR-28 does not list, Public Comments, and Internal Notes all stay permitted, so work is never frozen by the owner's departure.
+- BR-59 Every Ticket returned to IT Staff or an Administrator reports `ownerEligible` (`true`, `false`, or `null` when unassigned) and `requesterIsActive`. The client marks an ineligible owner and an inactive Requester by name. The queue Owner filter gains a `needs-owner` option that returns Tickets that are not `CLOSED` or `CANCELLED` and are either unassigned or have an ineligible owner. A `CLOSED` or `CANCELLED` Ticket keeps its marker but is excluded from that filter, because nothing further is expected of it.
+- BR-60 A deactivated Requester's Tickets remain, unchanged, and stay fully visible to IT Staff and Administrators. The Requester cannot authenticate (BR-01), so cannot comment or signal resolution. IT Staff may still post Public Comments on those Tickets, since BR-34 restricts only Requesters, and the comments are waiting if the account is reactivated. A Requester whose role changes to IT Staff or Administrator keeps `requesterId` on every Ticket they created. They lose every Requester-only operation, receiving 403, and see those Tickets only as any staff member does.
+- BR-61 `PublicComment` and `InternalNote` store `authorRole` when they are created, so the role badge shows the role the author held when writing and a later role change does not relabel history. An Internal Note by a user who is no longer IT Staff stays visible to current staff, and its former author can no longer read it, because BR-35 evaluates the reader's current role.
 
 ## 6. Authorization matrix
 
@@ -171,7 +191,10 @@ Every protected operation, against each role. `own` means the operation is addit
 | Create Ticket | yes | no | no |
 | List own Tickets | own | no | no |
 | View Ticket Detail | own | any | any |
-| Add, download, remove Attachment | own | own view only | own view only |
+| Read Attachment metadata | own | any | any |
+| Download Attachment file | own | any | any |
+| Add Attachment | own | no | no |
+| Remove Attachment | own | no | no |
 | Indicate problem appears resolved | own | no | no |
 | View IT Staff Ticket Queue | no | yes | yes |
 | Claim, assign, reassign Ticket Owner | no | yes | yes |
@@ -182,7 +205,7 @@ Every protected operation, against each role. `own` means the operation is addit
 | Read or create Internal Note | no | yes | yes |
 | List, create, edit users, set activation or initial password | no | no | yes |
 
-IT Staff and Administrators read Attachment metadata and download files on any Ticket they can open in the queue. They do not add or remove Attachments in Lab 3: Attachment mutation stays a Requester capability, unchanged from Lab 2.
+IT Staff and Administrators read Attachment metadata and download files on any Ticket they can open in the queue (BR-54). They cannot add or remove Attachments in Lab 3: Attachment mutation stays a Requester capability, unchanged from Lab 2, and a direct API call from either role returns 403 (BR-55).
 
 ## 7. UI Specification Summary
 
@@ -245,6 +268,7 @@ model PublicComment {
   ticket    Ticket   @relation(fields: [ticketId], references: [id])
   authorId  Int
   author    User     @relation(fields: [authorId], references: [id])
+  authorRole UserRole
   body      String
   createdAt DateTime @default(now())
 
@@ -257,6 +281,7 @@ model InternalNote {
   ticket    Ticket   @relation(fields: [ticketId], references: [id])
   authorId  Int
   author    User     @relation(fields: [authorId], references: [id])
+  authorRole UserRole
   body      String
   createdAt DateTime @default(now())
 
@@ -272,8 +297,18 @@ model InternalNote {
 - `requesterResolutionFlaggedAt DateTime?`: the BR-29 indication.
 - New indexes `@@index([currentStatus, createdAt])` and `@@index([ownerId, currentStatus])` to serve the queue's default ordering and the assigned-to-me filter.
 - Existing indexes on `requesterId` are kept: the Requester's own list is unchanged.
+- No eligibility column is added: `ownerEligible` in BR-59 is derived from the owner's `User` row at read time (BR-57).
 
-**Justified decision, migration strategy.** Prisma renders a model rename as a drop and a create, which would destroy every Lab 2 row. The migration is therefore generated with `prisma migrate dev --create-only` and the generated SQL is hand-edited to `ALTER TABLE "RequesterUser" RENAME TO "User"` before it is applied, followed by additive `ALTER TABLE ... ADD COLUMN` statements. This is the same manual-SQL approach the Lab 2 migration used for `ticket_number_seq`. `passwordHash` is added nullable, backfilled by the seed, then set `NOT NULL` in the same migration, because an existing row cannot satisfy a `NOT NULL` column that has no default. Row counts and Ticket-to-requester mapping are compared before and after as migration evidence.
+**Justified decision, migration strategy.** Prisma renders a model rename as a drop and a create, which would destroy every Lab 2 row. The migration is therefore generated with `prisma migrate dev --create-only` and the generated SQL is hand-edited, as the same manual-SQL approach the Lab 2 migration used for `ticket_number_seq`. Inside the one migration file the statements run in this order, and the order is the point:
+
+1. `CREATE TYPE "UserRole"`, so the role column can reference it.
+2. `ALTER TABLE "RequesterUser" RENAME TO "User"`, followed by renames of the primary key index, the email unique index, and the id sequence to their `User_*` names, so Prisma sees the names it expects and `migrate dev` reports no drift.
+3. `ADD COLUMN "passwordHash" TEXT` as **nullable**, `ADD COLUMN "role" "UserRole" NOT NULL DEFAULT 'REQUESTER'`, `ADD COLUMN "mustChangePassword" BOOLEAN NOT NULL DEFAULT true`, and `ADD COLUMN "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP`. Postgres applies each default to every existing row, which is what gives each migrated Requester its role and its `mustChangePassword` flag (BR-48).
+4. `UPDATE "User" SET "passwordHash" = '!' WHERE "passwordHash" IS NULL`, the marker backfill of BR-51.
+5. `ALTER COLUMN "passwordHash" SET NOT NULL`, which now succeeds because step 4 left no NULL. Then `ALTER COLUMN "updatedAt" DROP DEFAULT`, because `@updatedAt` is maintained by Prisma and has no database default.
+6. The additive changes for `Session`, `PublicComment`, `InternalNote`, the `Ticket` columns and indexes, and the new `TicketStatus` values.
+
+The seed is not part of this file and runs afterwards (BR-52, BR-53). It cannot be a step in the sequence, because it only starts once the migration has finished, so a `SET NOT NULL` that depended on the seed having run first would fail on any database that already holds rows. Row counts, the marker count before seeding, and the Ticket-to-requester mapping are compared before and after as migration evidence.
 
 ## 9. API Contract
 
@@ -288,8 +323,9 @@ Full shapes, statuses, and error bodies are in `docs/lab-03/api-spec.md`. Every 
 | GET `/api/tickets` | own Ticket list | Requester, own |
 | POST `/api/tickets` | create a Ticket | Requester |
 | GET `/api/tickets/:id` | Ticket Detail | Requester own, IT Staff and Administrator any |
-| POST `/api/tickets/:id/attachments` | upload Attachments | Requester, own |
-| GET `/api/attachments/:id`, `/download`, DELETE `/api/attachments/:id` | Attachment metadata, bytes, soft removal | as in Lab 2, session-derived |
+| POST `/api/tickets/:id/attachments` | upload Attachments | Requester, own only (BR-55) |
+| GET `/api/attachments/:id` and `/download` | Attachment metadata and bytes | Requester own, IT Staff and Administrator any (BR-54) |
+| DELETE `/api/attachments/:id` | soft removal | Requester, own only (BR-55) |
 | POST `/api/tickets/:id/resolution-indication` | Requester marks problem as appearing resolved | Requester, own |
 | GET `/api/staff/tickets` | Ticket Queue, search, filter, sort, paginate | IT Staff, Administrator |
 | PATCH `/api/staff/tickets/:id/owner` | claim, assign, reassign, unassign | IT Staff, Administrator |
@@ -341,6 +377,15 @@ Full shapes, statuses, and error bodies are in `docs/lab-03/api-spec.md`. Every 
 - AC-33 Given a non-Administrator session, when any user-management endpoint is called, then the response is 403.
 - AC-34 Given the migration is applied to a seeded Lab 2 database, when it completes, then the row count is unchanged and every existing Ticket still resolves to its original requester.
 - AC-35 Given any Lab 3 screen at a mobile viewport below 768px, when rendered, then no horizontal page scrolling occurs and all controls remain reachable and legible.
+- AC-36 Given a Lab 2 database after the migration and before the seed, when it is inspected and any migrated user tries to sign in with any password, then every row has role `REQUESTER`, `mustChangePassword` true, and a non-null `passwordHash` holding only the BR-51 marker, and sign-in fails with the generic failure and creates no session.
+- AC-37 Given a migrated database after the seed, when a migrated Requester signs in with the documented initial password, then they are forced to change it, and when the seed is run again after they have changed it, then the new password still works and `mustChangePassword` stays false.
+- AC-38 Given an IT Staff or Administrator session, when they list Attachment metadata or download a file on a Ticket owned by any Requester, then both succeed.
+- AC-39 Given an IT Staff or Administrator session, when they call the Attachment upload or remove endpoint directly, then the response is 403 and no file is written and no row changes.
+- AC-40 Given an IT Staff owner who is then deactivated or changed to the Requester role, when the queue is read, then every Ticket they owned still names them as owner with `ownerEligible` false and no Ticket field has changed.
+- AC-41 Given a Ticket whose owner is ineligible, when IT Staff claim it it succeeds, when a move to `IN_PROGRESS`, `RESOLVED`, or `CLOSED` is attempted before an eligible owner is set it is rejected with 409 `OWNER_REQUIRED`, and when the queue is filtered to `needs-owner` it is listed.
+- AC-42 Given a Requester who is deactivated, when IT Staff view the queue, then their Tickets remain and are marked as belonging to an inactive Requester, they cannot sign in, and after reactivation they see their Tickets and any staff comments posted meanwhile.
+- AC-43 Given a Requester whose role is changed to IT Staff, when they use the application afterwards, then their Tickets keep them as requester, every Requester-only operation returns 403, and they can open those Tickets only as staff do.
+- AC-44 Given a Public Comment written by IT Staff who is later changed to the Requester role, when the Ticket is read, then the comment still shows the `IT_STAFF` badge it was written with.
 
 ## 11. Definition of Done
 
@@ -369,5 +414,7 @@ Full shapes, statuses, and error bodies are in `docs/lab-03/api-spec.md`. Every 
 - No new runtime dependency is added for authentication. Cookie parsing is a small first-party helper rather than the `cookie-parser` package, keeping the Lab 2 dependency list unchanged apart from nothing at all.
 - Public Comments and Internal Notes are two tables rather than one table with a visibility flag. A Requester-facing query physically cannot reach the Internal Note table, so the failure that AC-04 guards against is prevented structurally instead of relying on a `where` clause being remembered at every call site.
 - Login attempt throttling and account lockout are not implemented: account unlocking is explicitly excluded by the handout, and a lockout without an unlock path would strand a user. Brute-force resistance rests on the scrypt work factor and the generic failure message in BR-09.
+- Ticket ownership is left alone when an account changes, and eligibility is derived rather than the Ticket being unassigned automatically. Automatic unassignment would leave `IN_PROGRESS` Tickets with no owner, breaking the BR-28 invariant, and would silently rewrite history. Deactivation is not blocked by owned Tickets (BR-56), because a leaver's account has to be closable at once.
+- Lab 3 adds no conflict-of-interest rule: a user promoted from Requester to IT Staff may work a Ticket they originally requested. The handout does not ask for one, and it is recorded here as a known limitation rather than left implicit.
 - The Administrator role is granted the IT Staff Ticket operations through the section 6 matrix so that a single seeded Administrator can exercise and demonstrate the whole workflow. The two responsibilities remain conceptually separate as the handout requires, and no Ticket operation is available to an Administrator implicitly.
 - Existing Lab 2 route handlers keep their current shape and only change identity source, so the 82 passing server tests move to session-based fixtures without their ownership assertions being rewritten.

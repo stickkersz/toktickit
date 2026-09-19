@@ -88,9 +88,9 @@ Nothing on this screen lets a Requester change status, owner, or IT Priority, an
 
 Route `/staff/tickets`. The working surface for IT Staff and Administrators.
 
-Toolbar: a search box ("Search by ticket number or summary"), and filters for Status, IT Priority, Category, and Owner, where Owner offers "Anyone", "Unassigned", and "Assigned to me". One filter row, wrapping on narrow viewports. A result count reads "Showing 1 to 10 of 87 tickets".
+Toolbar: a search box ("Search by ticket number or summary"), and filters for Status, IT Priority, Category, and Owner, where Owner offers "Anyone", "Unassigned", "Assigned to me", and "Needs an owner". "Needs an owner" lists open Tickets that are unassigned or whose owner is inactive or no longer IT Staff (BR-59). One filter row, wrapping on narrow viewports. A result count reads "Showing 1 to 10 of 87 tickets".
 
-Desktop table at 992px and above, columns: Ticket No., Created Date, Summary, Category, Req. Priority, IT Priority, Status, Owner. Ticket No., Created Date, IT Priority, and Status are sortable, each header showing its sort state through `aria-sort` and a caret. An unassigned Ticket shows a muted "Unassigned" rather than an empty cell. A row opens Ticket Detail by click, by Enter, or by Space.
+Desktop table at 992px and above, columns: Ticket No., Created Date, Summary, Category, Req. Priority, IT Priority, Status, Owner. Ticket No., Created Date, IT Priority, and Status are sortable, each header showing its sort state through `aria-sort` and a caret. An unassigned Ticket shows a muted "Unassigned" rather than an empty cell. A Ticket whose owner is no longer eligible keeps the owner's name, followed by a muted "(inactive)" or "(not IT Staff)" marker and a "Needs new owner" badge, so the row is never mistaken for a healthy assignment (BR-56, BR-59). The marker is text plus the badge, never color alone. A row opens Ticket Detail by click, by Enter, or by Space.
 
 The column set is deliberately capped at eight. Requester, Related System, and Last Updated are available on the detail screen; adding them here would produce the unreadable mega-grid the handout warns against, and Summary is the column that most needs the width.
 
@@ -107,11 +107,11 @@ After the first successful load the toolbar stays mounted permanently and update
 
 Route `/staff/tickets/:id`. Extends the Lab 2 Ticket Detail layout rather than replacing it. A breadcrumb reads "Ticket Queue > Ticket Detail" with a "Back to Queue" action that returns to the queue with its search, filters, sort, and page intact.
 
-Read-only field group, styled with `--color-field-readonly-bg` and kept keyboard-reachable with `readOnly` rather than `disabled`: Ticket No., Category, Related System, Requester, Requested Priority, Created Date, Summary, Description.
+Read-only field group, styled with `--color-field-readonly-bg` and kept keyboard-reachable with `readOnly` rather than `disabled`: Ticket No., Category, Related System, Requester, Requested Priority, Created Date, Summary, Description. A Requester whose account is inactive is shown with a muted "(inactive)" marker after the name (BR-60).
 
 Operational field group, visibly editable with `--color-field-editable-border`:
 
-- **Ticket Owner**: a select of active IT Staff and Administrators, plus an Unassigned option, and a "Claim" shortcut button shown only while the Ticket is unassigned.
+- **Ticket Owner**: a select of active IT Staff and Administrators, plus an Unassigned option, and a "Claim" shortcut button shown while the Ticket is unassigned or its owner is ineligible. An ineligible current owner stays visible as the selected value with its "(inactive)" or "(not IT Staff)" marker and a "Needs new owner" badge, but is not offered as a choice for any other Ticket (BR-18, BR-58).
 - **IT Priority**: a select of the three priority values.
 - **Current Status**: a select offering only the statuses BR-25 permits from the current one. A disallowed status is never rendered as a choice, and the server rejects it too. Changing to Resolved reveals a required Resolution Summary textarea and a confirmation step before saving.
 
@@ -121,7 +121,7 @@ Panels below, as labelled tabs with counts: **Public Comments**, **Internal Note
 
 Public Comments and Internal Notes must be impossible to confuse. Internal Notes use a distinct `--color-warning-bg` tinted panel, a lock glyph, and a standing label reading "Internal only. Not visible to the Requester." above its composer. Public Comments use the plain surface background. The two composers never appear simultaneously: only the active tab's composer is rendered, so a note cannot be typed into a comment box by accident.
 
-Attachments render as in Lab 2, with add and remove controls absent for staff, since Attachment mutation stays a Requester capability.
+Attachments render as in Lab 2 for reading: each row shows its metadata and a Download action, and a removed Attachment shows its removal reason with no Download action. The upload control and every Remove control are not rendered at all for IT Staff and Administrators, not merely disabled, since Attachment mutation stays a Requester capability (BR-54, BR-55). The API refuses both operations with 403 regardless of what the client renders.
 
 States: loading, loaded, not found ("Ticket not found."), forbidden, saving (the affected control disabled and busy, others still usable), per-operation success (an inline confirmation next to the control that changed, not a page-level banner), validation error, conflict (a distinct callout for a rejected transition, naming what is permitted from the current status), and API failure with the prior value restored.
 
@@ -175,6 +175,8 @@ Run against the running app and the captured screenshots before any screen is ma
 - [ ] Each role sees only its permitted navigation, and the active item is marked on every route including detail routes.
 - [ ] Status, IT Priority, Requested Priority, and Role badges use their fixed text plus color mapping everywhere they appear.
 - [ ] The status select offers only permitted transitions from the current status.
+- [ ] On the IT Staff Attachments tab there is a Download action and no upload or Remove control.
+- [ ] A Ticket with an inactive or non-staff owner shows the owner's name, the marker, and the "Needs new owner" badge in both the queue and the detail, and appears under the "Needs an owner" filter.
 - [ ] No clipped labels, overlapping validation messages, or horizontal scrolling at 375px, 768px, and 1280px.
 - [ ] The queue renders as a table at 992px and as cards below 768px with no information lost.
 - [ ] Empty, no-results, forbidden, not-found, and failure states are visually distinguishable, not merely differently worded.

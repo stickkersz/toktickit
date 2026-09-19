@@ -50,7 +50,7 @@ All non-2xx responses share the Lab 2 envelope:
 | 201 Created | Ticket, Attachment, Comment, Note, or User created | POST creation endpoints |
 | 400 Bad Request | missing or invalid field, malformed id, unpermitted enum value | all write endpoints |
 | 401 Unauthorized | not authenticated, expired, logged out, or deactivated | every protected endpoint |
-| 403 Forbidden | authenticated but role not permitted, or password change outstanding | role-restricted endpoints |
+| 403 Forbidden | authenticated but role not permitted, or password change outstanding | role-restricted endpoints, including Attachment upload and removal for IT Staff and Administrators |
 | 404 Not Found | resource absent, or a Requester's non-owned resource | Ticket, Attachment, Comment endpoints |
 | 409 Conflict | duplicate email, unpermitted status transition, last-active-Administrator guard, attachment already removed | admin users, status, DELETE attachment |
 | 410 Gone | attachment exists but is soft-removed | attachment download |
@@ -139,7 +139,7 @@ On success the acting session survives and every other session for that user is 
 
 ## 5. Lab 2 Requester endpoints, as changed
 
-These keep their Lab 2 request and response bodies exactly, with two changes: the `requesterId` query parameter or body field is gone, and the caller must be an authenticated Requester who owns the resource.
+These keep their Lab 2 request and response bodies exactly, with two changes: the `requesterId` query parameter or body field is gone, and access is decided from the session. Ticket and Attachment endpoints differ in who may call them, so the second change is set out per endpoint in the tables below.
 
 | Endpoint | Change |
 |---|---|
@@ -150,7 +150,23 @@ These keep their Lab 2 request and response bodies exactly, with two changes: th
 | GET `/api/attachments/:id` and `/download` | `requesterId` query parameter removed |
 | DELETE `/api/attachments/:id` | body narrows from `{ requesterId, reason }` to `{ reason }` |
 
-Every one of them now returns 401 when unauthenticated and 403 when the authenticated role is not permitted. The Lab 2 404-on-non-owned behaviour is unchanged.
+Every one of them returns 401 when unauthenticated. The Lab 2 404-on-non-owned behaviour is unchanged for a Requester.
+
+### Attachment permissions
+
+Reading an Attachment and changing one are separate permissions (BR-54, BR-55, FR-21):
+
+| Endpoint | Requester | IT Staff | Administrator |
+|---|---|---|---|
+| GET `/api/tickets/:id` (Attachment list inside the detail) | own, else 404 | any | any |
+| GET `/api/attachments/:id` (metadata) | own, else 404 | any | any |
+| GET `/api/attachments/:id/download` | own, else 404 | any | any |
+| POST `/api/tickets/:id/attachments` | own, else 404 | 403 `FORBIDDEN` | 403 `FORBIDDEN` |
+| DELETE `/api/attachments/:id` | own, else 404 | 403 `FORBIDDEN` | 403 `FORBIDDEN` |
+
+- The 403 on the two mutating endpoints is decided from the role alone, before the Ticket or Attachment is looked up. An IT Staff or Administrator caller therefore gets the same 403 for an existing target and for one that does not exist, and no file is written and no row changes (BR-14, AC-39).
+- A soft-removed Attachment's metadata is still readable by every role that may read Attachments. Its download returns 410 to all of them, unchanged from Lab 2 (BR-54).
+- The rule follows the current role, not history: a user promoted from Requester to IT Staff or Administrator also receives 403 on both mutating endpoints for Tickets they created (BR-55, AC-43).
 
 `GET /api/requesters` is **deleted** (BR-49). A request to it returns 404 from the router, as for any unknown path.
 
@@ -193,12 +209,12 @@ Query parameters:
 | `status` | one `TicketStatus` value | none |
 | `itPriority` | `LOW \| MEDIUM \| HIGH` | none |
 | `category` | Category id | none |
-| `owner` | a User id, or `unassigned`, or `me` | none |
+| `owner` | a User id, or `unassigned`, or `me`, or `needs-owner` | none |
 | `sort` | `createdAt`, `-createdAt`, `updatedAt`, `-updatedAt`, `ticketNumber`, `-ticketNumber`, `itPriority`, `-itPriority`, `currentStatus`, `-currentStatus` | `-createdAt` |
 | `page` | integer from 1 | 1 |
 | `pageSize` | integer 5 to 50 | 10 |
 
-Filters combine with AND, and with `search`. Following `L2-BR-23`, an unrecognised or out-of-range query value falls back to its default rather than returning an error, so a stale bookmark degrades to a sane queue instead of a failure. Ties on every sort break by `id` descending.
+`owner=needs-owner` returns Tickets whose `currentStatus` is not `CLOSED` or `CANCELLED` and that are either unassigned or have an ineligible owner (BR-59, AC-41). `owner=unassigned` keeps its plain meaning of `ownerId` null. Filters combine with AND, and with `search`. Following `L2-BR-23`, an unrecognised or out-of-range query value falls back to its default rather than returning an error, so a stale bookmark degrades to a sane queue instead of a failure. Ties on every sort break by `id` descending.
 
 Response 200:
 
@@ -216,6 +232,8 @@ Response 200:
       "currentStatus": "OPEN",
       "ownerId": 7,
       "ownerName": "Michael Brown",
+      "ownerEligible": true,
+      "requesterIsActive": true,
       "requesterResolutionFlaggedAt": null,
       "createdAt": "2026-09-12T09:14:00.000Z",
       "updatedAt": "2026-09-13T02:31:00.000Z"
@@ -225,7 +243,7 @@ Response 200:
 }
 ```
 
-`ownerId` and `ownerName` are `null` for an unassigned Ticket. A zero-match query returns an empty array with `total: 0`, not an error.
+`ownerId` and `ownerName` are `null` for an unassigned Ticket, and then `ownerEligible` is `null` too. `ownerEligible` is `false` when the owner is inactive or no longer holds the IT Staff or Administrator role, and `requesterIsActive` is `false` when the Requester's account is inactive. Both are derived from the current `User` rows on every read and are never stored (BR-57, BR-59). The Ticket is still returned with the same `ownerId` and `ownerName` it always had: deactivating or re-roling a user never changes a Ticket (BR-56, AC-40). The same two fields appear wherever a Ticket is returned to IT Staff or an Administrator, including `GET /api/tickets/:id`. A zero-match query returns an empty array with `total: 0`, not an error.
 
 Errors: 401, 403 for a Requester (AC-12), 500.
 
@@ -252,7 +270,7 @@ Errors:
 - 401, 403 for a Requester (AC-22).
 - 404 when the Ticket does not exist.
 - 409 `INVALID_OWNER`: the target user does not exist, is inactive, or holds the `REQUESTER` role (BR-18, AC-20).
-- 409 `ALREADY_ASSIGNED`: an attempt to claim a Ticket that already has an owner, meaning the caller sent their own id for a Ticket whose `ownerId` is already set to somebody else (BR-19). Reassignment by explicitly naming a different user is permitted and does not hit this case.
+- 409 `ALREADY_ASSIGNED`: an attempt to claim a Ticket that already has an eligible owner, meaning the caller sent their own id for a Ticket whose `ownerId` is set to somebody else who is still active and holds the IT Staff or Administrator role (BR-19). A Ticket whose owner is ineligible under BR-57 is claimable and never returns this error (BR-58, AC-41). Reassignment by explicitly naming a different user is permitted and does not hit this case.
 
 ## 9. PATCH /api/staff/tickets/:id/priority
 
@@ -288,7 +306,7 @@ Errors:
 - 401, 403 for a Requester (AC-22).
 - 404 when the Ticket does not exist.
 - 409 `INVALID_TRANSITION`: the move is not permitted by the BR-25 matrix, including a move to the current status. The response names the current status and the permitted next statuses so the client can correct itself (AC-23).
-- 409 `OWNER_REQUIRED`: a move to `IN_PROGRESS`, `RESOLVED`, or `CLOSED` on an unassigned Ticket (BR-28, AC-25).
+- 409 `OWNER_REQUIRED`: a move to `IN_PROGRESS`, `RESOLVED`, or `CLOSED` on a Ticket that is unassigned, or whose owner is ineligible because they were deactivated or are no longer IT Staff or an Administrator (BR-28, BR-58, AC-25, AC-41). A move to a status BR-28 does not list is unaffected.
 
 ## 11. GET and POST /api/tickets/:id/comments
 
@@ -310,7 +328,7 @@ GET response 200, oldest first:
 ]
 ```
 
-`authorRole` is included so the client can badge the author, matching the handout's Ticket Detail mockup. No author email or id is exposed.
+`authorRole` is included so the client can badge the author, matching the handout's Ticket Detail mockup. It is the role the author held when the comment was written, stored on the row, so a later role change does not relabel it (BR-61, AC-44). No author email or id is exposed.
 
 POST request: `{ "body": "Thank you for the update." }`
 
@@ -412,7 +430,7 @@ Errors:
 - 409 `SELF_DEACTIVATION`: the Administrator is deactivating their own account, or changing their own role (BR-42, AC-31).
 - 409 `LAST_ADMINISTRATOR`: the change would leave zero active Administrators, whether by deactivating one or by changing their role away from `ADMINISTRATOR` (BR-43, AC-32).
 
-Deactivating a user, or changing their role, revokes that user's active sessions as part of the same operation (BR-45).
+Deactivating a user, or changing their role, revokes that user's active sessions as part of the same operation (BR-45). It writes to no Ticket, Comment, Note, or Attachment row: Tickets they owned keep their `ownerId` and are reported as `ownerEligible: false` until reassigned (BR-56, AC-40). It is never refused because the user still owns open Tickets.
 
 ## 16. POST /api/admin/users/:id/initial-password
 

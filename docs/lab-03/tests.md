@@ -24,6 +24,7 @@ The database must be running, migrated, and seeded first. Playwright's `testDir`
 | UNIT-06 | Unit | BR-33 | Comment and note body validation: empty, whitespace-only, 1, 2, 2000, 2001 characters | Whitespace-only and 1 rejected, 2 and 2000 accepted, 2001 rejected, value trimmed | `server/tests/lab-03/contentValidation.unit.test.ts` | Planned |
 | UNIT-07 | Unit | BR-40, BR-46 | User field validation: name bounds, email format and length, role enum | Out-of-bounds and malformed values rejected with a per-field message | `server/tests/lab-03/userValidation.unit.test.ts` | Planned |
 | UNIT-08 | Unit | BR-23, L2-BR-23 | `parseStaffQueueQuery` with unknown sort, out-of-range page and pageSize, unknown filter values | Every unrecognised input falls back to its default, never throws | `server/tests/lab-03/staffQueueQuery.unit.test.ts` | Planned |
+| UNIT-09 | Unit | BR-51, AC-36 | `verifyPassword` against the `!` marker, an empty string, and a truncated `scrypt$` string | Returns false for each without throwing, so a backfilled account can never authenticate | `server/tests/lab-03/password.unit.test.ts` | Planned |
 | API-01 | API | AC-01 | Valid login | 200, session cookie set, safe user body with role, no password field | `server/tests/lab-03/auth.api.test.ts` | Planned |
 | API-02 | API | AC-06 | Login with an unknown email, and with a wrong password | Both 401 with the identical generic message | `server/tests/lab-03/auth.api.test.ts` | Planned |
 | API-03 | API | AC-05 | Login to an inactive account with correct credentials | 401 `ACCOUNT_INACTIVE`, no session created | `server/tests/lab-03/auth.api.test.ts` | Planned |
@@ -41,7 +42,7 @@ The database must be running, migrated, and seeded first. Playwright's `testDir`
 | API-15 | API | AC-14 | Every Lab 2 Requester endpoint under a session, with `requesterId` removed | Same behaviour as Lab 2: create, list, detail, upload, download, soft remove | `server/tests/lab-03/requester-regression.api.test.ts` | Planned |
 | API-16 | API | AC-16, AC-17 | Queue listing with search, each filter, each sort, and pagination | Returned set matches all criteria; pagination metadata consistent; no duplicates or gaps across pages | `server/tests/lab-03/staff-queue.api.test.ts` | Planned |
 | API-17 | API | AC-16 | Queue `owner` filter with `unassigned`, `me`, and a specific id | Each returns exactly the matching Tickets | `server/tests/lab-03/staff-queue.api.test.ts` | Planned |
-| API-18 | API | BR-24a pattern | Queue query matching zero Tickets | Empty array with `total` 0, not an error | `server/tests/lab-03/staff-queue.api.test.ts` | Planned |
+| API-18 | API | L2-BR-24 | Queue query matching zero Tickets | Empty array with `total` 0, not an error | `server/tests/lab-03/staff-queue.api.test.ts` | Planned |
 | API-19 | API | AC-18 | Claiming an unassigned Ticket | 200, caller becomes Ticket Owner | `server/tests/lab-03/staff-ticket-detail.api.test.ts` | Planned |
 | API-20 | API | AC-19 | Reassigning to another active IT Staff user, and unassigning | 200, new owner recorded; unassign leaves `ownerId` null | `server/tests/lab-03/staff-ticket-detail.api.test.ts` | Planned |
 | API-21 | API | AC-20, BR-18 | Setting an inactive user, and a Requester, as Ticket Owner | 409 `INVALID_OWNER` in both cases, owner unchanged | `server/tests/lab-03/staff-ticket-detail.api.test.ts` | Planned |
@@ -64,6 +65,18 @@ The database must be running, migrated, and seeded first. Playwright's `testDir`
 | API-38 | API | AC-32, BR-43 | Deactivating, and demoting, the last active Administrator | 409 `LAST_ADMINISTRATOR`, no change written | `server/tests/lab-03/users-admin.api.test.ts` | Planned |
 | API-39 | API | BR-45 | Changing a user's role while they hold a live session | Their sessions are revoked immediately | `server/tests/lab-03/users-admin.api.test.ts` | Planned |
 | API-40 | API | BR-46 | Creating a user with an unknown role, and with two roles | 400 in both cases | `server/tests/lab-03/users-admin.api.test.ts` | Planned |
+| API-41 | API | AC-38, BR-54 | IT Staff and Administrator read Attachment metadata (`GET /api/attachments/:id` and the list inside `GET /api/tickets/:id`) and download on a Ticket owned by another Requester, including a removed Attachment | 200 with metadata and matching bytes; the removed Attachment's metadata reads 200 and its download is 410 | `server/tests/lab-03/attachment-access.api.test.ts` | Planned |
+| API-42 | API | AC-39, BR-55 | IT Staff and Administrator `POST /api/tickets/:id/attachments` against an existing Ticket | 403 `FORBIDDEN`, no Attachment row created, no file written to the upload directory | `server/tests/lab-03/attachment-access.api.test.ts` | Planned |
+| API-43 | API | AC-39, BR-55 | IT Staff and Administrator `DELETE /api/attachments/:id` against an active Attachment, and against an id that does not exist | 403 `FORBIDDEN` with an identical body in both cases, `isRemoved` still false | `server/tests/lab-03/attachment-access.api.test.ts` | Planned |
+| API-44 | API | AC-40, BR-56, BR-57 | Deactivate an IT Staff user who owns several Tickets, then change another owner's role to Requester, and read the queue | Every Ticket keeps its `ownerId`, `ownerName`, `currentStatus`, and `updatedAt`; `ownerEligible` is false; each user's live session now returns 401 | `server/tests/lab-03/account-change-tickets.api.test.ts` | Planned |
+| API-45 | API | AC-40, BR-57 | Reactivate the deactivated owner and restore the other owner's role | The same Tickets report `ownerEligible` true again, with no Ticket row written | `server/tests/lab-03/account-change-tickets.api.test.ts` | Planned |
+| API-46 | API | AC-41, BR-58 | One Ticket per case with an ineligible owner: `OPEN` to `IN_PROGRESS`, `IN_PROGRESS` to `RESOLVED` with a valid summary, `RESOLVED` to `CLOSED`, and `IN_PROGRESS` to `WAITING_FOR_REQUESTER` | The first three return 409 `OWNER_REQUIRED` with the status unchanged; the fourth returns 200 | `server/tests/lab-03/account-change-tickets.api.test.ts` | Planned |
+| API-47 | API | AC-41, BR-58 | Change IT Priority, post a Public Comment, and add an Internal Note on a Ticket with an ineligible owner | 200, 201, and 201: work is not frozen by the owner's departure | `server/tests/lab-03/account-change-tickets.api.test.ts` | Planned |
+| API-48 | API | AC-41, BR-19, BR-58 | Claim a Ticket whose owner is ineligible, then claim a Ticket whose owner is an active IT Staff user | 200 with the caller as owner for the first; 409 `ALREADY_ASSIGNED` for the second | `server/tests/lab-03/account-change-tickets.api.test.ts` | Planned |
+| API-49 | API | AC-41, BR-59 | Queue with `owner=needs-owner` over four fixtures: open and unassigned, open with an ineligible owner, `CLOSED` with an ineligible owner, open with an eligible owner | Exactly the first two are returned; `owner=unassigned` still returns only Tickets with a null `ownerId` | `server/tests/lab-03/account-change-tickets.api.test.ts` | Planned |
+| API-50 | API | AC-42, BR-60 | Deactivate a Requester who has Tickets: read the queue, attempt login, post a Public Comment as IT Staff, then reactivate and read as the Requester | Tickets remain with `requesterIsActive` false; login 401 `ACCOUNT_INACTIVE`; comment 201; after reactivation the Requester sees the Ticket and that comment | `server/tests/lab-03/account-change-tickets.api.test.ts` | Planned |
+| API-51 | API | AC-43, BR-55, BR-60 | Change a Requester who created Tickets to IT Staff, sign in again, and exercise every Requester-only operation | Each Ticket still resolves to the same requester by ticket number; own-list, create, resolution indication, Attachment upload, and Attachment remove all return 403; `GET /api/tickets/:id` returns 200 as for any staff | `server/tests/lab-03/account-change-tickets.api.test.ts` | Planned |
+| API-52 | API | AC-44, BR-61, BR-35 | An IT Staff user writes a Public Comment and an Internal Note and is then changed to Requester | The comment still reads `authorRole` `IT_STAFF` for the owning Requester; the former author now gets 403 on the notes endpoint while another IT Staff user still reads the note | `server/tests/lab-03/account-change-tickets.api.test.ts` | Planned |
 | UI-01 | UI | AC-01 | Login screen: valid submission | Calls the API once, stores nothing in `localStorage`, navigates to the role landing screen | `client/tests/lab-03/Login.test.tsx` | Planned |
 | UI-02 | UI | FR-01 | Login: missing email, malformed email, missing password | Per-field messages shown, no API call made | `client/tests/lab-03/Login.test.tsx` | Planned |
 | UI-03 | UI | AC-06 | Login: credential failure response | Generic callout, email preserved, password cleared | `client/tests/lab-03/Login.test.tsx` | Planned |
@@ -78,7 +91,7 @@ The database must be running, migrated, and seeded first. Playwright's `testDir`
 | UI-12 | UI | AC-17 | Ticket Queue: search, each filter, sort toggle, and page change | Correct query issued per interaction; `aria-sort` reflects state | `client/tests/lab-03/StaffTicketQueue.test.tsx` | Planned |
 | UI-13 | UI | L2 race defect | Ticket Queue: an older request resolving after a newer one | The stale result never renders | `client/tests/lab-03/StaffTicketQueue.test.tsx` | Planned |
 | UI-14 | UI | FR-10 | Ticket Queue: loading, empty, no-results, and failure states | Four visually distinct states; toolbar stays mounted after first load | `client/tests/lab-03/StaffTicketQueue.test.tsx` | Planned |
-| UI-15 | UI | AC-18, AC-19 | Staff Ticket Detail: claim, then reassign | Owner updates in place without a reload; Claim hidden once assigned | `client/tests/lab-03/StaffTicketDetail.test.tsx` | Planned |
+| UI-15 | UI | AC-18, AC-19 | Staff Ticket Detail: claim, then reassign | Owner updates in place without a reload; Claim hidden once assigned to an eligible owner | `client/tests/lab-03/StaffTicketDetail.test.tsx` | Planned |
 | UI-16 | UI | AC-23, BR-25 | Staff Ticket Detail: the status select | Only permitted next statuses are offered from the current status | `client/tests/lab-03/StaffTicketDetail.test.tsx` | Planned |
 | UI-17 | UI | AC-24 | Staff Ticket Detail: choosing Resolved | Resolution Summary appears and is required before saving | `client/tests/lab-03/StaffTicketDetail.test.tsx` | Planned |
 | UI-18 | UI | AC-23 | Staff Ticket Detail: a 409 from the status endpoint | Conflict callout naming the permitted statuses; prior value restored | `client/tests/lab-03/StaffTicketDetail.test.tsx` | Planned |
@@ -91,16 +104,24 @@ The database must be running, migrated, and seeded first. Playwright's `testDir`
 | UI-25 | UI | AC-31 | User Management: the Administrator's own row | Active toggle disabled with an explanatory tooltip | `client/tests/lab-03/UserManagement.test.tsx` | Planned |
 | UI-26 | UI | AC-32 | User Management: last-active-Administrator rejection | Clear error callout, no row change | `client/tests/lab-03/UserManagement.test.tsx` | Planned |
 | UI-27 | UI | AC-30 | User Management: set a new initial password | Success feedback stating the user must change it at next login | `client/tests/lab-03/UserManagement.test.tsx` | Planned |
+| UI-28 | UI | AC-38, AC-39 | Staff Ticket Detail Attachments tab as IT Staff and as Administrator, with one active and one removed Attachment | Metadata and a Download action shown; the removed one shows its reason and no Download; no upload control and no Remove control exist in the DOM | `client/tests/lab-03/StaffTicketDetail.test.tsx` | Planned |
+| UI-29 | UI | AC-40, AC-41 | Ticket Queue with a Ticket whose owner is inactive and another whose owner is no longer IT Staff, and the Owner filter | Owner name kept with "(inactive)" or "(not IT Staff)" and a "Needs new owner" badge; choosing "Needs an owner" issues `owner=needs-owner` | `client/tests/lab-03/StaffTicketQueue.test.tsx` | Planned |
+| UI-30 | UI | AC-41, AC-42 | Staff Ticket Detail for a Ticket with an ineligible owner and an inactive Requester | Claim shown; the ineligible owner is the displayed value but not offered for other Tickets; the Requester carries an "(inactive)" marker | `client/tests/lab-03/StaffTicketDetail.test.tsx` | Planned |
 | MIG-01 | Migration | AC-34 | Row count and ids in `User` after the rename, against `RequesterUser` before | Identical count, identical ids, no row lost or added | `server/tests/lab-03/migration.test.ts` | Planned |
 | MIG-02 | Migration | AC-34, BR-47 | Every pre-existing Ticket's requester after migration | Each Ticket still resolves to its original person by ticket number | `server/tests/lab-03/migration.test.ts` | Planned |
-| MIG-03 | Migration | BR-48 | Migrated Requesters after seeding | Role `REQUESTER`, `mustChangePassword` true, a usable hashed password, no plaintext stored | `server/tests/lab-03/migration.test.ts` | Planned |
+| MIG-03 | Migration | BR-48, BR-52 | Migrated Requesters after seeding | Role `REQUESTER`, `mustChangePassword` true, a well-formed `scrypt$` hash that is neither the `!` marker nor plaintext | `server/tests/lab-03/migration.test.ts` | Planned |
 | MIG-04 | Migration | BR-49 | `GET /api/requesters` after removal | 404 from the router | `server/tests/lab-03/migration.test.ts` | Planned |
 | MIG-05 | Migration | BR-50 | Seed run twice | Idempotent: same counts, no duplicates, required active and inactive fixtures present for all three roles | `server/tests/lab-03/seed.test.ts` | Planned |
+| MIG-06 | Migration | AC-36, BR-48, BR-51 | Apply the migration to a Lab 2 database that holds rows, and inspect `User` before any seeding | Every row has role `REQUESTER`, `mustChangePassword` true, and `passwordHash` equal to `!`; `passwordHash` and `updatedAt` are `NOT NULL`; `updatedAt` has no default | `server/tests/lab-03/migration.test.ts` | Planned |
+| MIG-07 | Migration | AC-36, BR-51 | Sign in as a migrated, unseeded user with the documented initial password, with an arbitrary password, and with the marker `!` | 401 with the generic failure body each time, identical to an unknown email, and no `Session` row created | `server/tests/lab-03/migration.test.ts` | Planned |
+| MIG-08 | Migration | AC-37, BR-52 | Run the seed on the migrated database, sign in as a migrated Requester with the documented initial password, change it, then run the seed again | After the first seed the hash is a well-formed `scrypt$` string; sign-in forces the change; after the second seed the new password still works, `mustChangePassword` is false, and the hash is unchanged | `server/tests/lab-03/seed.test.ts` | Planned |
+| MIG-09 | Migration | AC-34, BR-47 | Apply every migration from scratch to an empty database, then compare the migrations against `schema.prisma` with `prisma migrate diff` | Applies without error, and the diff reports no difference, so the hand-edited rename leaves no drift | `server/tests/lab-03/migration.test.ts` | Planned |
 | E2E-01 | E2E | AC-01, AC-02, AC-09 | Sign in with an initial password, change it, reach the application, log out, attempt direct access | Normal screens open only after the change; access blocked after logout | `e2e/lab-03/authentication.spec.ts` | Planned |
 | E2E-02 | E2E | AC-11, AC-12 | Sign in as each role and inspect navigation and a forbidden route | Each role sees only its destinations; a forbidden route shows the forbidden state | `e2e/lab-03/authentication.spec.ts` | Planned |
 | E2E-03 | E2E | AC-16 to AC-27 | Full staff flow: find in queue, open, claim, set IT Priority, move status, comment publicly, add an internal note, resolve with a summary | Every step succeeds and persists; the Requester sees the comment and the resolution but never the note | `e2e/lab-03/staff-ticket-flow.spec.ts` | Planned |
 | E2E-04 | E2E | AC-14 | Requester regression: create a Ticket with an attachment, list, filter, open detail, remove the attachment | Identical behaviour to Lab 2 under the authenticated identity | `e2e/lab-03/staff-ticket-flow.spec.ts` | Planned |
 | E2E-05 | E2E | AC-29 to AC-32 | Administrator flow: create a user, hit a duplicate email, edit, set an initial password, sign in as that user and be forced to change it, attempt self-deactivation and last-admin removal | Every safety rule refuses clearly; the new user is forced through the password change | `e2e/lab-03/user-administration.spec.ts` | Planned |
+| E2E-06 | E2E | AC-40, AC-41 | An Administrator deactivates an IT Staff user who owns an open Ticket; another IT Staff user finds it under "Needs an owner", claims it, and moves it to In Progress; the deactivated user then tries to sign in | The Ticket shows the marker and badge until claimed; the claim and the move succeed; the deactivated user sees the inactive-account response | `e2e/lab-03/user-administration.spec.ts` | Planned |
 | RESP-01 | Responsive | AC-35 | Every Lab 3 screen at 375, 768, and 1280 | No horizontal page scroll; queue is a table at 1280 and cards at 375; all controls reachable | `e2e/lab-03/responsive-visual.spec.ts` | Planned |
 | RESP-02 | Visual | ui-spec section 13 | Screenshot capture for every state in the ui-spec section 14 tree | All files written under `artifacts/lab-03/screenshots/` | `e2e/lab-03/responsive-visual.spec.ts` | Planned |
 
@@ -141,10 +162,19 @@ The database must be running, migrated, and seeded first. Playwright's `testDir`
 | AC-31 | API-37, UI-25, E2E-05 |
 | AC-32 | API-38, UI-26, E2E-05 |
 | AC-33 | API-12 |
-| AC-34 | MIG-01, MIG-02 |
+| AC-34 | MIG-01, MIG-02, MIG-09 |
 | AC-35 | RESP-01 |
+| AC-36 | UNIT-09, MIG-06, MIG-07 |
+| AC-37 | MIG-08 |
+| AC-38 | API-41, UI-28 |
+| AC-39 | API-42, API-43, UI-28 |
+| AC-40 | API-44, API-45, UI-29, E2E-06 |
+| AC-41 | API-46, API-47, API-48, API-49, UI-29, UI-30, E2E-06 |
+| AC-42 | API-50, UI-30 |
+| AC-43 | API-51 |
+| AC-44 | API-52 |
 
-Every AC-01 through AC-35 appears above, and every test row names a real file path that must exist before its row may be marked Pass.
+Every AC-01 through AC-44 appears above, and every test row names a real file path that must exist before its row may be marked Pass.
 
 ## 4. Migration and regression evidence
 
@@ -152,6 +182,8 @@ Captured once, when the Issue 02 migration is applied to a database already hold
 
 - `SELECT count(*) FROM "RequesterUser"` recorded before, `SELECT count(*) FROM "User"` after.
 - The full `ticketNumber` to requester email mapping, compared before and after.
+- `SELECT count(*) FROM "User" WHERE "passwordHash" = '!'` immediately after the migration, expected to equal the row count, and the same query after the seed, expected to return 0 (BR-51, BR-52).
+- The `is_nullable` and `column_default` values of `User.passwordHash` and `User.updatedAt` from `information_schema.columns`, expected `NO` with no default.
 - The complete Lab 2 suites (`server/tests/lab-01`, `server/tests/lab-02`, `client/tests/lab-02`, `e2e/lab-02`) passing from the Lab 3 branch, proving the increment was evolved rather than replaced.
 
 ## 5. Manual verification
