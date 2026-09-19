@@ -3,10 +3,9 @@ import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import App from "../../src/App.js";
 import * as api from "../../src/api.js";
-import type { Requester, TicketDetail } from "../../src/api.js";
+import type { AuthUser, TicketDetail } from "../../src/api.js";
 
-const STORAGE_KEY = "toktickit.currentRequesterId";
-const ARI: Requester = { id: 1, name: "Ari Anan", email: "ari.anan@example.com" };
+const ARI: AuthUser = { id: 1, name: "Ari Anan", email: "ari.anan@example.com", role: "REQUESTER", mustChangePassword: false };
 
 function ticketDetail(overrides: Partial<TicketDetail> = {}): TicketDetail {
   return {
@@ -29,8 +28,8 @@ function ticketDetail(overrides: Partial<TicketDetail> = {}): TicketDetail {
   };
 }
 
-function renderAtDetail(ticketId = 42, requester: Requester = ARI) {
-  localStorage.setItem(STORAGE_KEY, String(requester.id));
+function renderAtDetail(ticketId = 42, requester: AuthUser = ARI) {
+  vi.spyOn(api, "getCurrentUser").mockResolvedValue(requester);
   return render(
     <MemoryRouter initialEntries={[`/tickets/${ticketId}`]}>
       <App />
@@ -39,14 +38,13 @@ function renderAtDetail(ticketId = 42, requester: Requester = ARI) {
 }
 
 afterEach(() => {
-  localStorage.clear();
   vi.restoreAllMocks();
 });
 
 describe("Requester Ticket Detail", () => {
   // UI-10
   it("renders read-only Ticket detail with no Comments/Notes/Actions/status controls (handout §8.5)", async () => {
-    vi.spyOn(api, "getRequesters").mockResolvedValue([ARI]);
+    vi.spyOn(api, "getCurrentUser").mockResolvedValue(ARI);
     vi.spyOn(api, "getTicketDetail").mockResolvedValue(ticketDetail());
 
     renderAtDetail();
@@ -64,7 +62,7 @@ describe("Requester Ticket Detail", () => {
   });
 
   it("shows a full-page not-found message for a nonexistent or unowned Ticket (BR-35)", async () => {
-    vi.spyOn(api, "getRequesters").mockResolvedValue([ARI]);
+    vi.spyOn(api, "getCurrentUser").mockResolvedValue(ARI);
     vi.spyOn(api, "getTicketDetail").mockRejectedValue(new api.NotFoundError("Ticket not found."));
 
     renderAtDetail(999);
@@ -75,7 +73,7 @@ describe("Requester Ticket Detail", () => {
 
   it("shows the active attachment count and both active and removed rows, with file-type icons and a truncation tooltip", async () => {
     const longName = "a-very-long-original-filename-that-should-be-truncated-in-the-row.pdf";
-    vi.spyOn(api, "getRequesters").mockResolvedValue([ARI]);
+    vi.spyOn(api, "getCurrentUser").mockResolvedValue(ARI);
     vi.spyOn(api, "getTicketDetail").mockResolvedValue(
       ticketDetail({
         attachments: [

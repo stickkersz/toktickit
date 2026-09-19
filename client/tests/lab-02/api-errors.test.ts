@@ -6,7 +6,6 @@ import { ValidationError, createTicket } from "../../src/api.js";
 // non-JSON failure reach the interface. The Playwright evidence test only
 // asserts that an alert appears; these assert the actual text.
 const INPUT = {
-  requesterId: 1,
   categoryId: 1,
   relatedSystemId: 1,
   summary: "Projector will not power on",

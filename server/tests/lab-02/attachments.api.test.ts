@@ -1,33 +1,43 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import request from "supertest";
 import { app } from "../../src/app.js";
-import { UNUSABLE_PASSWORD_HASH } from "../../src/auth/password.js";
 import { getPrisma } from "../../src/prisma.js";
-import * as prismaModule from "../../src/prisma.js";
 import { UPLOAD_DIR } from "../../src/attachmentStorage.js";
+import { createUser, signedIn, useIsolatedDatabase } from "../lab-03/helpers.js";
 
-async function createTicket(requesterId = 1) {
-  const res = await request(app)
-    .post("/api/tickets")
-    .send({
-      requesterId,
-      categoryId: 1,
-      relatedSystemId: 1,
-      summary: "Attachment test ticket",
-      description: "Created to test the attachment upload endpoint end to end.",
-      requestedPriority: "LOW",
-    });
+// Lab 3: the Requester is the authenticated session, not a `requesterId` field,
+// query parameter or body (BR-11). Two Requesters on a throwaway database with the
+// reference data seeded. Uploads are answered 401 or 403 before multer runs, so an
+// unauthorized request never spools a file to disk (BR-55).
+const iso = useIsolatedDatabase({ referenceData: true });
+
+type Session = Awaited<ReturnType<typeof signedIn>>;
+let a: Session;
+let b: Session;
+
+beforeAll(async () => {
+  a = await signedIn((await createUser()).user);
+  b = await signedIn((await createUser()).user);
+});
+
+async function createTicket(as: Session = a) {
+  const res = await as.post("/api/tickets").send({
+    categoryId: 1,
+    relatedSystemId: 1,
+    summary: "Attachment test ticket",
+    description: "Created to test the attachment upload endpoint end to end.",
+    requestedPriority: "LOW",
+  });
   return res.body.id as number;
 }
 
-async function createTicketWithAttachment(requesterId = 1) {
-  const ticketId = await createTicket(requesterId);
-  const uploadRes = await request(app)
+async function createTicketWithAttachment(as: Session = a) {
+  const ticketId = await createTicket(as);
+  const uploadRes = await as
     .post(`/api/tickets/${ticketId}/attachments`)
-    .field("requesterId", String(requesterId))
     .attach("files", Buffer.from("fake image bytes"), {
       filename: "receipt.jpg",
       contentType: "image/jpeg",
@@ -35,19 +45,13 @@ async function createTicketWithAttachment(requesterId = 1) {
   return { ticketId, attachmentId: uploadRes.body.uploaded[0].id as number };
 }
 
-// Requires the DB to be migrated and seeded first (BR-37).
 describe("POST /api/tickets/:id/attachments", () => {
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
-
   // API-10
   it("accepts one valid file", async () => {
     const ticketId = await createTicket();
 
-    const res = await request(app)
+    const res = await a
       .post(`/api/tickets/${ticketId}/attachments`)
-      .field("requesterId", "1")
       .attach("files", Buffer.from("fake image bytes"), {
         filename: "receipt.jpg",
         contentType: "image/jpeg",
@@ -64,9 +68,8 @@ describe("POST /api/tickets/:id/attachments", () => {
     const ticketId = await createTicket();
     const big = Buffer.alloc(6 * 1024 * 1024);
 
-    const res = await request(app)
+    const res = await a
       .post(`/api/tickets/${ticketId}/attachments`)
-      .field("requesterId", "1")
       .attach("files", big, { filename: "big.jpg", contentType: "image/jpeg" });
 
     expect(res.status).toBe(400);
@@ -78,9 +81,8 @@ describe("POST /api/tickets/:id/attachments", () => {
   it("rejects a .docx file with ALL_FILES_REJECTED / UNSUPPORTED_TYPE", async () => {
     const ticketId = await createTicket();
 
-    const res = await request(app)
+    const res = await a
       .post(`/api/tickets/${ticketId}/attachments`)
-      .field("requesterId", "1")
       .attach("files", Buffer.from("not really a docx"), {
         filename: "notes.docx",
         contentType: "application/msword",
@@ -96,9 +98,8 @@ describe("POST /api/tickets/:id/attachments", () => {
     const ticketId = await createTicket();
 
     for (let i = 0; i < 5; i++) {
-      const res = await request(app)
+      const res = await a
         .post(`/api/tickets/${ticketId}/attachments`)
-        .field("requesterId", "1")
         .attach("files", Buffer.from("x"), {
           filename: `file-${i}.jpg`,
           contentType: "image/jpeg",
@@ -106,9 +107,8 @@ describe("POST /api/tickets/:id/attachments", () => {
       expect(res.status).toBe(201);
     }
 
-    const sixth = await request(app)
+    const sixth = await a
       .post(`/api/tickets/${ticketId}/attachments`)
-      .field("requesterId", "1")
       .attach("files", Buffer.from("x"), { filename: "file-6.jpg", contentType: "image/jpeg" });
 
     expect(sixth.status).toBe(400);
@@ -118,11 +118,10 @@ describe("POST /api/tickets/:id/attachments", () => {
 
   // API-17 (upload leg)
   it("rejects an upload from a non-owning Requester with 404", async () => {
-    const ticketId = await createTicket(1);
+    const ticketId = await createTicket(a);
 
-    const res = await request(app)
+    const res = await b
       .post(`/api/tickets/${ticketId}/attachments`)
-      .field("requesterId", "2")
       .attach("files", Buffer.from("x"), { filename: "file.jpg", contentType: "image/jpeg" });
 
     expect(res.status).toBe(404);
@@ -130,10 +129,12 @@ describe("POST /api/tickets/:id/attachments", () => {
 
   it("keeps an already-persisted file's row and disk copy when a later file in the batch fails", async () => {
     const ticketId = await createTicket();
-    const realPrisma = getPrisma();
+    const realPrisma = iso.db.client;
     let createCalls = 0;
 
-    vi.spyOn(prismaModule, "getPrisma").mockReturnValue({
+    const restore = iso.override({
+      // Authentication still runs for real, so the request reaches the route.
+      session: realPrisma.session,
       ticket: realPrisma.ticket,
       $transaction: async (fn: (tx: unknown) => unknown) =>
         fn({
@@ -150,33 +151,38 @@ describe("POST /api/tickets/:id/attachments", () => {
             },
           },
         }),
-    } as unknown as ReturnType<typeof prismaModule.getPrisma>);
+    });
 
-    const res = await request(app)
-      .post(`/api/tickets/${ticketId}/attachments`)
-      .field("requesterId", "1")
-      .attach("files", Buffer.from("a"), { filename: "a.jpg", contentType: "image/jpeg" })
-      .attach("files", Buffer.from("b"), { filename: "b.jpg", contentType: "image/jpeg" });
+    try {
+      const res = await a
+        .post(`/api/tickets/${ticketId}/attachments`)
+        .attach("files", Buffer.from("a"), { filename: "a.jpg", contentType: "image/jpeg" })
+        .attach("files", Buffer.from("b"), { filename: "b.jpg", contentType: "image/jpeg" });
 
-    expect(res.status).toBe(500);
+      expect(res.status).toBe(500);
 
-    const saved = await realPrisma.attachment.findMany({ where: { ticketId } });
-    expect(saved).toHaveLength(1);
-    expect(saved[0].originalFilename).toBe("a.jpg");
-    expect(existsSync(path.join(UPLOAD_DIR, saved[0].storedFilename))).toBe(true);
+      const saved = await realPrisma.attachment.findMany({ where: { ticketId } });
+      expect(saved).toHaveLength(1);
+      expect(saved[0].originalFilename).toBe("a.jpg");
+      expect(existsSync(path.join(UPLOAD_DIR, saved[0].storedFilename))).toBe(true);
+    } finally {
+      restore();
+    }
   });
 
   // API-23 / BR-25, BR-31, api-spec.md §7
   it("accounts for every submitted file when the batch fails part-way through", async () => {
     const ticketId = await createTicket();
-    const realPrisma = getPrisma();
+    const realPrisma = iso.db.client;
     let createCalls = 0;
 
     // Three files: the first commits, the second throws, and the third is
     // never reached at all. The third is the one that used to disappear
     // from the response entirely, leaving the Requester with no way to know
     // it still needed retrying.
-    vi.spyOn(prismaModule, "getPrisma").mockReturnValue({
+    const restore = iso.override({
+      // Authentication still runs for real, so the request reaches the route.
+      session: realPrisma.session,
       ticket: realPrisma.ticket,
       $transaction: async (fn: (tx: unknown) => unknown) =>
         fn({
@@ -193,44 +199,46 @@ describe("POST /api/tickets/:id/attachments", () => {
             },
           },
         }),
-    } as unknown as ReturnType<typeof prismaModule.getPrisma>);
+    });
 
-    const res = await request(app)
-      .post(`/api/tickets/${ticketId}/attachments`)
-      .field("requesterId", "1")
-      .attach("files", Buffer.from("a"), { filename: "first.jpg", contentType: "image/jpeg" })
-      .attach("files", Buffer.from("b"), { filename: "second.jpg", contentType: "image/jpeg" })
-      .attach("files", Buffer.from("c"), { filename: "third.jpg", contentType: "image/jpeg" });
+    try {
+      const res = await a
+        .post(`/api/tickets/${ticketId}/attachments`)
+        .attach("files", Buffer.from("a"), { filename: "first.jpg", contentType: "image/jpeg" })
+        .attach("files", Buffer.from("b"), { filename: "second.jpg", contentType: "image/jpeg" })
+        .attach("files", Buffer.from("c"), { filename: "third.jpg", contentType: "image/jpeg" });
 
-    expect(res.status).toBe(500);
+      expect(res.status).toBe(500);
 
-    // The committed file is reported as uploaded, not silently lost.
-    expect(res.body.uploaded).toHaveLength(1);
-    expect(res.body.uploaded[0].originalFilename).toBe("first.jpg");
+      // The committed file is reported as uploaded, not silently lost.
+      expect(res.body.uploaded).toHaveLength(1);
+      expect(res.body.uploaded[0].originalFilename).toBe("first.jpg");
 
-    // Both the file that threw and the one never reached are named, so the
-    // response accounts for all three files the Requester submitted.
-    const failedNames = (res.body.failed as { originalFilename: string; reason: string }[])
-      .map((f) => f.originalFilename)
-      .sort();
-    expect(failedNames).toEqual(["second.jpg", "third.jpg"]);
-    for (const entry of res.body.failed) {
-      expect(entry.reason).toBe("UPLOAD_FAILED");
-      expect(entry.message).toMatch(/retry/i);
+      // Both the file that threw and the one never reached are named, so the
+      // response accounts for all three files the Requester submitted.
+      const failedNames = (res.body.failed as { originalFilename: string; reason: string }[])
+        .map((f) => f.originalFilename)
+        .sort();
+      expect(failedNames).toEqual(["second.jpg", "third.jpg"]);
+      for (const entry of res.body.failed) {
+        expect(entry.reason).toBe("UPLOAD_FAILED");
+        expect(entry.message).toMatch(/retry/i);
+      }
+
+      const reported = res.body.uploaded.length + res.body.failed.length;
+      expect(reported).toBe(3);
+    } finally {
+      restore();
     }
-
-    const reported = res.body.uploaded.length + res.body.failed.length;
-    expect(reported).toBe(3);
   });
 });
 
 describe("GET /api/attachments/:id", () => {
   it("returns metadata for an active attachment owned by the requester", async () => {
-    const { attachmentId } = await createTicketWithAttachment(1);
+    const { attachmentId } = await createTicketWithAttachment(a);
 
-    const res = await request(app)
-      .get(`/api/attachments/${attachmentId}`)
-      .query({ requesterId: 1 });
+    const res = await a
+      .get(`/api/attachments/${attachmentId}`);
 
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({
@@ -241,38 +249,39 @@ describe("GET /api/attachments/:id", () => {
     expect(res.body.removedAt).toBeUndefined();
   });
 
-  it("returns 400 when requesterId is missing or non-numeric", async () => {
-    const { attachmentId } = await createTicketWithAttachment(1);
+  // Lab 2 answered a missing requesterId with 400. That input no longer exists
+  // (BR-11): with no session the answer is 401 and no metadata is returned.
+  it("returns 401 with no session, and no metadata", async () => {
+    const { attachmentId } = await createTicketWithAttachment(a);
 
     const res = await request(app).get(`/api/attachments/${attachmentId}`);
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(401);
+    expect(res.body.originalFilename).toBeUndefined();
   });
 
   // API-17 (metadata leg)
   it("returns 404 for a non-owning Requester, never leaking metadata", async () => {
-    const { attachmentId } = await createTicketWithAttachment(1);
+    const { attachmentId } = await createTicketWithAttachment(a);
 
-    const res = await request(app)
-      .get(`/api/attachments/${attachmentId}`)
-      .query({ requesterId: 2 });
+    const res = await b
+      .get(`/api/attachments/${attachmentId}`);
 
     expect(res.status).toBe(404);
     expect(res.body.originalFilename).toBeUndefined();
   });
 
   it("returns 404 for a nonexistent attachment id", async () => {
-    const res = await request(app).get("/api/attachments/999999").query({ requesterId: 1 });
+    const res = await a.get("/api/attachments/999999");
     expect(res.status).toBe(404);
   });
 });
 
 describe("GET /api/attachments/:id/download", () => {
   it("streams file bytes for an active attachment with the stored mimeType", async () => {
-    const { attachmentId } = await createTicketWithAttachment(1);
+    const { attachmentId } = await createTicketWithAttachment(a);
 
-    const res = await request(app)
-      .get(`/api/attachments/${attachmentId}/download`)
-      .query({ requesterId: 1 });
+    const res = await a
+      .get(`/api/attachments/${attachmentId}/download`);
 
     expect(res.status).toBe(200);
     expect(res.headers["content-type"]).toContain("image/jpeg");
@@ -282,14 +291,13 @@ describe("GET /api/attachments/:id/download", () => {
 
   // API-15
   it("returns 410 ATTACHMENT_REMOVED for a removed attachment, no bytes returned", async () => {
-    const { attachmentId } = await createTicketWithAttachment(1);
-    await request(app)
+    const { attachmentId } = await createTicketWithAttachment(a);
+    await a
       .delete(`/api/attachments/${attachmentId}`)
-      .send({ requesterId: 1, reason: "Wrong file attached by mistake" });
+      .send({ reason: "Wrong file attached by mistake" });
 
-    const res = await request(app)
-      .get(`/api/attachments/${attachmentId}/download`)
-      .query({ requesterId: 1 });
+    const res = await a
+      .get(`/api/attachments/${attachmentId}/download`);
 
     expect(res.status).toBe(410);
     expect(res.body.error).toBe("ATTACHMENT_REMOVED");
@@ -297,11 +305,10 @@ describe("GET /api/attachments/:id/download", () => {
 
   // API-17 (download leg)
   it("returns 404 for a non-owning Requester, never leaking file bytes", async () => {
-    const { attachmentId } = await createTicketWithAttachment(1);
+    const { attachmentId } = await createTicketWithAttachment(a);
 
-    const res = await request(app)
-      .get(`/api/attachments/${attachmentId}/download`)
-      .query({ requesterId: 2 });
+    const res = await b
+      .get(`/api/attachments/${attachmentId}/download`);
 
     expect(res.status).toBe(404);
   });
@@ -310,11 +317,11 @@ describe("GET /api/attachments/:id/download", () => {
 describe("DELETE /api/attachments/:id", () => {
   // API-14
   it("soft-removes an active attachment with a valid reason, retaining metadata", async () => {
-    const { attachmentId } = await createTicketWithAttachment(1);
+    const { attachmentId } = await createTicketWithAttachment(a);
 
-    const res = await request(app)
+    const res = await a
       .delete(`/api/attachments/${attachmentId}`)
-      .send({ requesterId: 1, reason: "Duplicate of another attachment" });
+      .send({ reason: "Duplicate of another attachment" });
 
     expect(res.status).toBe(200);
     expect(res.body.isRemoved).toBe(true);
@@ -323,25 +330,25 @@ describe("DELETE /api/attachments/:id", () => {
   });
 
   it("returns 400 VALIDATION_ERROR when reason is out of the 5-200 character range", async () => {
-    const { attachmentId } = await createTicketWithAttachment(1);
+    const { attachmentId } = await createTicketWithAttachment(a);
 
-    const res = await request(app)
+    const res = await a
       .delete(`/api/attachments/${attachmentId}`)
-      .send({ requesterId: 1, reason: "hi" });
+      .send({ reason: "hi" });
 
     expect(res.status).toBe(400);
     expect(res.body.error).toBe("VALIDATION_ERROR");
   });
 
   it("returns 409 ALREADY_REMOVED on a second removal attempt", async () => {
-    const { attachmentId } = await createTicketWithAttachment(1);
-    await request(app)
+    const { attachmentId } = await createTicketWithAttachment(a);
+    await a
       .delete(`/api/attachments/${attachmentId}`)
-      .send({ requesterId: 1, reason: "Duplicate of another attachment" });
+      .send({ reason: "Duplicate of another attachment" });
 
-    const res = await request(app)
+    const res = await a
       .delete(`/api/attachments/${attachmentId}`)
-      .send({ requesterId: 1, reason: "Duplicate of another attachment" });
+      .send({ reason: "Duplicate of another attachment" });
 
     expect(res.status).toBe(409);
     expect(res.body.error).toBe("ALREADY_REMOVED");
@@ -349,11 +356,11 @@ describe("DELETE /api/attachments/:id", () => {
 
   // API-17 (removal leg)
   it("returns 404 for a non-owning Requester and does not remove the attachment", async () => {
-    const { attachmentId } = await createTicketWithAttachment(1);
+    const { attachmentId } = await createTicketWithAttachment(a);
 
-    const res = await request(app)
+    const res = await b
       .delete(`/api/attachments/${attachmentId}`)
-      .send({ requesterId: 2, reason: "Attempted removal by a non-owner" });
+      .send({ reason: "Attempted removal by a non-owner" });
 
     expect(res.status).toBe(404);
 
@@ -362,44 +369,37 @@ describe("DELETE /api/attachments/:id", () => {
   });
 });
 
-// API-20 / BR-38
+// API-20 / BR-38. Lab 2 answered a deactivated Requester with 404 on every endpoint.
+// Under Lab 3 the deactivated user's session stops working first (BR-08), so each
+// answer is 401; the queries still carry the `requester.isActive` clause as a
+// second guard.
 describe("Attachment endpoints — deactivated Requester", () => {
-  it("returns 404 on GET metadata, GET download, DELETE, and POST upload once the Requester is inactive", async () => {
-    const requester = await getPrisma().user.create({
-      data: {
-        name: "Temp Requester",
-        email: `temp-${randomUUID()}@example.com`,
-        isActive: true,
-        passwordHash: UNUSABLE_PASSWORD_HASH,
-      },
-    });
-    const { ticketId, attachmentId } = await createTicketWithAttachment(requester.id);
+  it("returns 401 on GET metadata, GET download, DELETE, and POST upload once the Requester is inactive", async () => {
+    const { user } = await createUser();
+    const session = await signedIn(user);
+    const { ticketId, attachmentId } = await createTicketWithAttachment(session);
 
     await getPrisma().user.update({
-      where: { id: requester.id },
+      where: { id: user.id },
       data: { isActive: false },
     });
 
-    const getMeta = await request(app)
-      .get(`/api/attachments/${attachmentId}`)
-      .query({ requesterId: requester.id });
-    expect(getMeta.status).toBe(404);
+    expect((await session.get(`/api/attachments/${attachmentId}`)).status).toBe(401);
+    expect((await session.get(`/api/attachments/${attachmentId}/download`)).status).toBe(401);
+    expect(
+      (await session.delete(`/api/attachments/${attachmentId}`).send({ reason: "Attempt after deactivation" }))
+        .status,
+    ).toBe(401);
+    expect(
+      (
+        await session
+          .post(`/api/tickets/${ticketId}/attachments`)
+          .attach("files", Buffer.from("x"), { filename: "after-deactivation.jpg", contentType: "image/jpeg" })
+      ).status,
+    ).toBe(401);
 
-    const download = await request(app)
-      .get(`/api/attachments/${attachmentId}/download`)
-      .query({ requesterId: requester.id });
-    expect(download.status).toBe(404);
-
-    const del = await request(app)
-      .delete(`/api/attachments/${attachmentId}`)
-      .send({ requesterId: requester.id, reason: "Attempt after deactivation" });
-    expect(del.status).toBe(404);
-
-    const upload = await request(app)
-      .post(`/api/tickets/${ticketId}/attachments`)
-      .field("requesterId", String(requester.id))
-      .attach("files", Buffer.from("x"), { filename: "after-deactivation.jpg", contentType: "image/jpeg" });
-    expect(upload.status).toBe(404);
+    const stored = await getPrisma().attachment.findUniqueOrThrow({ where: { id: attachmentId } });
+    expect(stored.isRemoved).toBe(false);
   });
 });
 
@@ -409,18 +409,16 @@ describe("POST /api/tickets/:id/attachments — concurrent uploads at the active
     const ticketId = await createTicket();
 
     for (let i = 0; i < 4; i++) {
-      const res = await request(app)
+      const res = await a
         .post(`/api/tickets/${ticketId}/attachments`)
-        .field("requesterId", "1")
         .attach("files", Buffer.from("x"), { filename: `pre-${i}.jpg`, contentType: "image/jpeg" });
       expect(res.status).toBe(201);
     }
 
     const attempts = await Promise.all(
       Array.from({ length: 5 }, (_, i) =>
-        request(app)
+        a
           .post(`/api/tickets/${ticketId}/attachments`)
-          .field("requesterId", "1")
           .attach("files", Buffer.from("x"), { filename: `race-${i}.jpg`, contentType: "image/jpeg" }),
       ),
     );
@@ -441,9 +439,8 @@ describe("POST /api/tickets/:id/attachments — concurrent uploads at the active
 describe("DELETE /api/attachments/:id — concurrent removals of the same attachment", () => {
   it("removes it once and returns the documented 409 to the loser, keeping the first reason", async () => {
     const ticketId = await createTicket();
-    const uploadRes = await request(app)
+    const uploadRes = await a
       .post(`/api/tickets/${ticketId}/attachments`)
-      .field("requesterId", "1")
       .attach("files", Buffer.from("x"), { filename: "race.jpg", contentType: "image/jpeg" });
     const attachmentId = uploadRes.body.uploaded[0].id as number;
 
@@ -451,12 +448,12 @@ describe("DELETE /api/attachments/:id — concurrent removals of the same attach
     // the interleaving that previously let the second overwrite the first's
     // removedAt/removalReason and still answer 200.
     const [first, second] = await Promise.all([
-      request(app)
+      a
         .delete(`/api/attachments/${attachmentId}`)
-        .send({ requesterId: 1, reason: "First removal reason" }),
-      request(app)
+        .send({ reason: "First removal reason" }),
+      a
         .delete(`/api/attachments/${attachmentId}`)
-        .send({ requesterId: 1, reason: "Second removal reason" }),
+        .send({ reason: "Second removal reason" }),
     ]);
 
     const statuses = [first.status, second.status].sort();
@@ -476,10 +473,9 @@ describe("DELETE /api/attachments/:id — concurrent removals of the same attach
 // API-16
 describe("Ticket creation is independent of a later attachment failure (BR-25)", () => {
   it("keeps the Ticket queryable by its ticketNumber even if its one attachment upload fails", async () => {
-    const createRes = await request(app)
+    const createRes = await a
       .post("/api/tickets")
       .send({
-        requesterId: 1,
         categoryId: 1,
         relatedSystemId: 1,
         summary: "Ticket survives a failed attachment",
@@ -488,9 +484,8 @@ describe("Ticket creation is independent of a later attachment failure (BR-25)",
       });
     const ticketId = createRes.body.id as number;
 
-    const attachRes = await request(app)
+    const attachRes = await a
       .post(`/api/tickets/${ticketId}/attachments`)
-      .field("requesterId", "1")
       .attach("files", Buffer.from("not really a docx"), {
         filename: "notes.docx",
         contentType: "application/msword",

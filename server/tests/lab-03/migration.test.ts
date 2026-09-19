@@ -144,3 +144,12 @@ describe("Lab 3 migration on an empty database", () => {
     expect(diff.exitCode).toBe(0);
   }, SETUP_TIMEOUT);
 });
+
+describe("the Development Requester endpoint", () => {
+  // MIG-04 / BR-49
+  it("is gone: GET /api/requesters is a 404 from the router, with or without a session", async () => {
+    const anonymous = await request(app).get("/api/requesters");
+    expect(anonymous.status).toBe(404);
+    expect(anonymous.body).toEqual({});
+  });
+});

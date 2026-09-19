@@ -21,14 +21,10 @@ export const TEMPORARY: AuthUser = { ...REQUESTER, mustChangePassword: true };
 export function renderApp(
   path: string,
   currentUser: AuthUser | null = null,
-  // The active Development Requesters the Lab 2 selector would offer. It matters
-  // only when a stored selection has to be validated on mount.
-  options: { requesters?: api.Requester[] } = {},
 ) {
   vi.spyOn(api, "getCurrentUser").mockResolvedValue(currentUser);
   vi.spyOn(api, "getCategories").mockResolvedValue([]);
   vi.spyOn(api, "getRelatedSystems").mockResolvedValue([]);
-  vi.spyOn(api, "getRequesters").mockResolvedValue(options.requesters ?? []);
   vi.spyOn(api, "getTicketDetail").mockRejectedValue(new api.NotFoundError("Ticket not found."));
   vi.spyOn(api, "getTickets").mockResolvedValue({
     data: [],

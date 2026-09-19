@@ -3,12 +3,11 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import CreateTicket from "../../src/screens/CreateTicket.js";
-import { RequesterProvider } from "../../src/requesterContext.js";
+import { AuthProvider } from "../../src/authContext.js";
 import * as api from "../../src/api.js";
-import type { Category, RelatedSystem, Requester, Ticket } from "../../src/api.js";
+import type { Category, RelatedSystem, AuthUser, Ticket } from "../../src/api.js";
 
-const STORAGE_KEY = "toktickit.currentRequesterId";
-const REQUESTER: Requester = { id: 1, name: "Ari Anan", email: "ari.anan@example.com" };
+const REQUESTER: AuthUser = { id: 1, name: "Ari Anan", email: "ari.anan@example.com", role: "REQUESTER", mustChangePassword: false };
 const CATEGORY: Category = { id: 1, name: "Hardware" };
 const RELATED_SYSTEM: RelatedSystem = { id: 1, name: "Staff VPN" };
 const VALID_SUMMARY = "Laptop battery drains quickly";
@@ -18,16 +17,15 @@ const VALID_DESCRIPTION =
 function renderScreen() {
   return render(
     <MemoryRouter initialEntries={["/tickets/new"]}>
-      <RequesterProvider>
+      <AuthProvider>
         <CreateTicket />
-      </RequesterProvider>
+      </AuthProvider>
     </MemoryRouter>,
   );
 }
 
 function mockReferenceData() {
-  localStorage.setItem(STORAGE_KEY, String(REQUESTER.id));
-  vi.spyOn(api, "getRequesters").mockResolvedValue([REQUESTER]);
+  vi.spyOn(api, "getCurrentUser").mockResolvedValue(REQUESTER);
   vi.spyOn(api, "getCategories").mockResolvedValue([CATEGORY]);
   vi.spyOn(api, "getRelatedSystems").mockResolvedValue([RELATED_SYSTEM]);
 }
@@ -44,7 +42,6 @@ async function fillValidForm() {
 }
 
 afterEach(() => {
-  localStorage.clear();
   vi.restoreAllMocks();
 });
 
@@ -242,8 +239,8 @@ describe("Create Ticket", () => {
 
   // UI-16
   it("shows a full-form failure banner and no Submit button when reference data fails to load", async () => {
-    localStorage.setItem(STORAGE_KEY, String(REQUESTER.id));
-    vi.spyOn(api, "getRequesters").mockResolvedValue([REQUESTER]);
+    vi.spyOn(api, "getCurrentUser").mockResolvedValue(REQUESTER);
+    vi.spyOn(api, "getCurrentUser").mockResolvedValue(REQUESTER);
     vi.spyOn(api, "getCategories").mockRejectedValue(new Error("down"));
     vi.spyOn(api, "getRelatedSystems").mockResolvedValue([RELATED_SYSTEM]);
 

@@ -11,6 +11,8 @@ import { app } from "../../src/app.js";
 import * as prismaModule from "../../src/prisma.js";
 import { getPrisma } from "../../src/prisma.js";
 import { hashPassword } from "../../src/auth/password.js";
+import { SESSION_COOKIE, createSession } from "../../src/auth/session.js";
+import { seedReferenceData } from "../../prisma/seedReference.js";
 import { requireAuth } from "../../src/middleware/requireAuth.js";
 import { requireRole } from "../../src/middleware/requireRole.js";
 
@@ -36,15 +38,23 @@ export interface IsolatedDatabase {
   readonly db: ScratchDb;
   // Runs the seed against the isolated database, for tests that need the fixtures.
   seed: () => Promise<void>;
+  // Swaps what getPrisma() returns for the duration of a failure-injection test and
+  // returns the function that puts the isolated client back. Never call
+  // vi.restoreAllMocks() or a second spy's mockRestore() in an isolated file: either
+  // would also undo the isolation spy and send later tests to the shared database.
+  override: (fake: unknown) => () => void;
 }
 
-export function useIsolatedDatabase(): IsolatedDatabase {
+export function useIsolatedDatabase(options: { referenceData?: boolean } = {}): IsolatedDatabase {
   let scratch: ScratchDb | undefined;
   let spy: ReturnType<typeof vi.spyOn> | undefined;
 
   beforeAll(async () => {
     scratch = await createScratchDb();
     migrateDeploy(scratch.url);
+    // Categories and Related Systems, for the tests that create Tickets. On a fresh
+    // database they take ids 1 onwards in seed order, which the Lab 2 tests rely on.
+    if (options.referenceData) await seedReferenceData(scratch.client);
     spy = vi.spyOn(prismaModule, "getPrisma").mockReturnValue(scratch.client);
     isolated = true;
   }, 90_000);
@@ -63,6 +73,12 @@ export function useIsolatedDatabase(): IsolatedDatabase {
     seed: async () => {
       const { seedUsers } = await import("../../prisma/seedUsers.js");
       await seedUsers(scratch!.client);
+    },
+    override: (fake) => {
+      spy!.mockReturnValue(fake as never);
+      return () => {
+        spy!.mockReturnValue(scratch!.client);
+      };
     },
   };
 }
@@ -92,6 +108,21 @@ export async function createUser(
     },
   });
   return { user, email, password };
+}
+
+// A signed-in caller without the password round trip: it opens a real Session row
+// for the user and replays its cookie on every request. The guards behind it are
+// the real ones. A user must not have a pending password change, or requireAuth
+// answers 403, which createUser's default (mustChangePassword false) avoids.
+export async function signedIn(user: { id: number }) {
+  const cookie = `${SESSION_COOKIE}=${await createSession(user.id)}`;
+  return {
+    cookie,
+    get: (url: string) => request(app).get(url).set("Cookie", cookie),
+    post: (url: string) => request(app).post(url).set("Cookie", cookie),
+    patch: (url: string) => request(app).patch(url).set("Cookie", cookie),
+    delete: (url: string) => request(app).delete(url).set("Cookie", cookie),
+  };
 }
 
 // Signs in through the real endpoint and returns the Cookie header to replay.

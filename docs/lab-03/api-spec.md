@@ -11,6 +11,10 @@ Companion to `docs/lab-03/specification.md`. Every endpoint below implements one
 - Enum values are transmitted as their Prisma enum strings: `role` is `REQUESTER | IT_STAFF | ADMINISTRATOR`; `requestedPriority` and `itPriority` are `LOW | MEDIUM | HIGH`; `currentStatus` is one of the eight values in BR-23.
 - No state-changing operation uses GET. Together with `SameSite=Lax` this is the documented CSRF posture (BR-05).
 
+### Public endpoints
+
+Only three endpoints need no session: `GET /api/health`, and the two reference lists a Ticket form is built from, `GET /api/categories` and `GET /api/related-systems`. The lists hold no personal data and are unchanged from Lab 2. Every other endpoint in this document requires a session, and `GET /api/requesters` no longer exists (BR-49).
+
 ### Session cookie
 
 - Name `toktickit_session`, value an opaque 32-byte random token, base64url encoded.
@@ -174,6 +178,7 @@ Reading an Attachment and changing one are separate permissions (BR-54, BR-55, F
 
 - The 403 on the two mutating endpoints is decided from the role alone, before the Ticket or Attachment is looked up. An IT Staff or Administrator caller therefore gets the same 403 for an existing target and for one that does not exist, and no file is written and no row changes (BR-14, AC-39).
 - A soft-removed Attachment's metadata is still readable by every role that may read Attachments. Its download returns 410 to all of them, unchanged from Lab 2 (BR-54).
+- The read rows for IT Staff and Administrator are delivered with the IT Staff Ticket Detail Issue. Until then the read endpoints answer them 403 like the mutation endpoints; the mutation rows already hold.
 - The rule follows the current role, not history: a user promoted from Requester to IT Staff or Administrator also receives 403 on both mutating endpoints for Tickets they created (BR-55, AC-43).
 
 `GET /api/requesters` is **deleted** (BR-49). A request to it returns 404 from the router, as for any unknown path.
