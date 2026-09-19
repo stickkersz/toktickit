@@ -17,7 +17,9 @@ import { UPLOAD_DIR, ensureUploadDir, generateStoredFilename } from "./attachmen
 import { parseTicketListQuery } from "./ticketListQuery.js";
 import { isValidId } from "./ids.js";
 import { buildCorsOptions } from "./cors.js";
+import { escapeLike } from "./searchText.js";
 import { authRouter } from "./routes/auth.js";
+import { staffTicketsRouter } from "./routes/staffTickets.js";
 import { requireAuth } from "./middleware/requireAuth.js";
 import { requireRole } from "./middleware/requireRole.js";
 
@@ -38,6 +40,7 @@ export const app = express();
 app.use(cors(buildCorsOptions())); // credentialed, allow-listed (BR-62): src/cors.ts
 app.use(express.json());
 app.use(authRouter); // Lab 3: /api/auth/*
+app.use(staffTicketsRouter); // Lab 3: /api/staff/tickets
 
 // ---------------------------------------------------------------------------
 // Issue 2 — API health check
@@ -182,6 +185,9 @@ app.post("/api/tickets", ...requesterOnly, async (req: Request, res: Response) =
           summary: summaryResult.value!,
           description: descriptionResult.value!,
           requestedPriority: priorityResult.value!,
+          // BR-22: IT Priority starts as a copy of the Requested Priority, and only
+          // IT Staff or an Administrator may change it afterwards.
+          itPriority: priorityResult.value!,
         },
       });
     });
@@ -356,9 +362,11 @@ app.get("/api/tickets", ...requesterOnly, async (req: Request, res: Response) =>
 
     const where: Record<string, unknown> = { requesterId };
     if (query.search) {
+      // Escaped so a typed "%" or "_" matches itself instead of acting as a wildcard.
+      const text = escapeLike(query.search);
       where.OR = [
-        { ticketNumber: { contains: query.search, mode: "insensitive" } },
-        { summary: { contains: query.search, mode: "insensitive" } },
+        { ticketNumber: { contains: text, mode: "insensitive" } },
+        { summary: { contains: text, mode: "insensitive" } },
       ];
     }
     if (query.categoryId !== null) where.categoryId = query.categoryId;

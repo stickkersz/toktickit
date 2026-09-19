@@ -109,7 +109,7 @@ Editing and deleting a Public Comment or Internal Note are also excluded: both a
 - BR-19 Claiming assigns the acting IT Staff or Administrator as Ticket Owner. Claiming is permitted only while the Ticket has no eligible Ticket Owner: it is unassigned, or its owner is ineligible under BR-57.
 - BR-20 Reassigning changes the Ticket Owner to any other eligible user under BR-18, and is permitted whether or not the Ticket is currently assigned. Unassigning a Ticket back to no owner is permitted.
 - BR-21 Requested Priority is the value submitted by the Requester and is immutable after creation. No role may change it.
-- BR-22 IT Priority is set to the Requested Priority at creation and may afterwards be changed only by IT Staff or an Administrator. A Requester never sees an editable IT Priority control and cannot set it through the API.
+- BR-22 IT Priority is set to the Requested Priority at creation and may afterwards be changed only by IT Staff or an Administrator. A Requester never sees an editable IT Priority control and cannot set it through the API. Tickets that existed before Lab 3 have no IT Priority, because Lab 2 never set one, so a one-time data migration gives each of them the value of its Requested Priority. A value that is already set is never overwritten.
 
 ### Status workflow
 

@@ -227,7 +227,7 @@ Query parameters:
 | `page` | integer from 1 | 1 |
 | `pageSize` | integer 5 to 50 | 10 |
 
-`owner=needs-owner` returns Tickets whose `currentStatus` is not `CLOSED` or `CANCELLED` and that are either unassigned or have an ineligible owner (BR-59, AC-41). `owner=unassigned` keeps its plain meaning of `ownerId` null. Filters combine with AND, and with `search`. Following `L2-BR-23`, an unrecognised or out-of-range query value falls back to its default rather than returning an error, so a stale bookmark degrades to a sane queue instead of a failure. Ties on every sort break by `id` descending.
+`owner=needs-owner` returns Tickets whose `currentStatus` is not `CLOSED` or `CANCELLED` and that are either unassigned or have an ineligible owner (BR-59, AC-41). `owner=unassigned` keeps its plain meaning of `ownerId` null. `search` is matched as literal text: a typed `%`, `_` or `\` matches itself and is never a wildcard or an escape. Filters combine with AND, and with `search`. Following `L2-BR-23`, an unrecognised or out-of-range query value falls back to its default rather than returning an error, so a stale bookmark degrades to a sane queue instead of a failure. Ties on every sort break by `id` descending.
 
 Response 200:
 
@@ -245,6 +245,7 @@ Response 200:
       "currentStatus": "OPEN",
       "ownerId": 7,
       "ownerName": "Michael Brown",
+      "ownerIsActive": true,
       "ownerEligible": true,
       "requesterIsActive": true,
       "requesterResolutionFlaggedAt": null,
@@ -256,7 +257,7 @@ Response 200:
 }
 ```
 
-`ownerId` and `ownerName` are `null` for an unassigned Ticket, and then `ownerEligible` is `null` too. `ownerEligible` is `false` when the owner is inactive or no longer holds the IT Staff or Administrator role, and `requesterIsActive` is `false` when the Requester's account is inactive. Both are derived from the current `User` rows on every read and are never stored (BR-57, BR-59). The Ticket is still returned with the same `ownerId` and `ownerName` it always had: deactivating or re-roling a user never changes a Ticket (BR-56, AC-40). The same two fields appear wherever a Ticket is returned to IT Staff or an Administrator, including `GET /api/tickets/:id`. A zero-match query returns an empty array with `total: 0`, not an error.
+`ownerId` and `ownerName` are `null` for an unassigned Ticket, and then `ownerIsActive` and `ownerEligible` are `null` too. `ownerIsActive` is the owner's current active flag, reported so the client can say "(inactive)" for a deactivated owner and "(not IT Staff)" for one whose role changed, when `ownerEligible` is `false`. `ownerEligible` is `false` when the owner is inactive or no longer holds the IT Staff or Administrator role, and `requesterIsActive` is `false` when the Requester's account is inactive. Both are derived from the current `User` rows on every read and are never stored (BR-57, BR-59). The Ticket is still returned with the same `ownerId` and `ownerName` it always had: deactivating or re-roling a user never changes a Ticket (BR-56, AC-40). The same two fields appear wherever a Ticket is returned to IT Staff or an Administrator, including `GET /api/tickets/:id`. A zero-match query returns an empty array with `total: 0`, not an error.
 
 Errors: 401, 403 for a Requester (AC-12), 500.
 

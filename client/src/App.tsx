@@ -9,7 +9,8 @@ import CreateTicket from "./screens/CreateTicket.js";
 import TicketDetail from "./screens/TicketDetail.js";
 import Login from "./screens/Login.js";
 import ChangePassword from "./screens/ChangePassword.js";
-import RoleLanding from "./screens/RoleLanding.js";
+import RoleLanding, { StaffTicketDetailPlaceholder } from "./screens/RoleLanding.js";
+import StaffTicketQueue from "./screens/StaffTicketQueue.js";
 import Forbidden from "./screens/Forbidden.js";
 
 // Lab 3 (FR-02, BR-02): a user who still holds an initial password can reach no
@@ -109,7 +110,15 @@ function AppRoutes() {
           path="/staff/tickets"
           element={
             <RequireRole roles={["IT_STAFF", "ADMINISTRATOR"]} message="You do not have access to the Ticket Queue.">
-              <RoleLanding destination="IT Staff Ticket Queue" />
+              <StaffTicketQueue />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="/staff/tickets/:id"
+          element={
+            <RequireRole roles={["IT_STAFF", "ADMINISTRATOR"]} message="You do not have access to the Ticket Queue.">
+              <StaffTicketDetailPlaceholder />
             </RequireRole>
           }
         />

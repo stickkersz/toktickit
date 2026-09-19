@@ -120,6 +120,25 @@ describe("GET /api/tickets", () => {
     expect(res.status).toBe(200);
   });
 
+  it("treats a typed % or _ in the search as text, not as a LIKE wildcard", async () => {
+    const marker = randomUUID().slice(0, 8);
+    const target = await createTicket(a, { summary: `Wildcard ${marker} at 50% and file_name` });
+    const plain = await createTicket(a, { summary: `Wildcard ${marker} plain one` });
+    const idsFor = async (search: string) =>
+      ((await a.get("/api/tickets").query({ search })).body.data as { id: number }[]).map((t) => t.id);
+
+    // As a wildcard, "%" and "_" would match the plain Ticket too. As text they match
+    // only the Ticket whose summary really contains the character.
+    expect(await idsFor("%")).toEqual([target.id]);
+    expect(await idsFor("_")).toEqual([target.id]);
+    expect(await idsFor(`${marker} at 50%`)).toEqual([target.id]);
+    expect(await idsFor("file_name")).toEqual([target.id]);
+    // Patterns that could only match through a wildcard find nothing.
+    expect(await idsFor(`${marker} plain%`)).toEqual([]);
+    expect(await idsFor(`${marker} at 50_`)).toEqual([]);
+    expect(await idsFor(`${marker} plain one`)).toEqual([plain.id]);
+  });
+
   // Lab 2 answered a missing or unknown requesterId with 400. That input no longer
   // exists (BR-11): with no session the answer is 401, and a client that still
   // sends someone else's requesterId is served its own list (API-13).

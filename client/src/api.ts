@@ -390,3 +390,61 @@ export async function changePassword(input: ChangePasswordInput): Promise<AuthUs
   if (!res.ok) throw errorFromResponse(res.status, body, "Unable to change the password.");
   return body as AuthUser;
 }
+
+// ---------------------------------------------------------------------------
+// Lab 3 IT Staff Ticket Queue (api-spec.md endpoint 7).
+// ---------------------------------------------------------------------------
+
+export interface StaffTicketItem {
+  id: number;
+  ticketNumber: string;
+  summary: string;
+  categoryName: string;
+  requesterName: string;
+  requesterIsActive: boolean;
+  requestedPriority: TicketPriority;
+  itPriority: TicketPriority;
+  currentStatus: string;
+  ownerId: number | null;
+  ownerName: string | null;
+  // null when the Ticket is unassigned. `ownerEligible` false means the owner is inactive
+  // or no longer IT Staff or an Administrator (BR-57); `ownerIsActive` tells the two apart.
+  ownerIsActive: boolean | null;
+  ownerEligible: boolean | null;
+  requesterResolutionFlaggedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface StaffQueueParams {
+  search?: string;
+  status?: string;
+  itPriority?: string;
+  category?: number;
+  // A User id, or "unassigned", "me" or "needs-owner".
+  owner?: string;
+  sort?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+export interface StaffQueueResult {
+  tickets: StaffTicketItem[];
+  pagination: TicketListPagination;
+}
+
+export async function getStaffTickets(params: StaffQueueParams): Promise<StaffQueueResult> {
+  const query = new URLSearchParams();
+  if (params.search) query.set("search", params.search);
+  if (params.status) query.set("status", params.status);
+  if (params.itPriority) query.set("itPriority", params.itPriority);
+  if (params.category) query.set("category", String(params.category));
+  if (params.owner) query.set("owner", params.owner);
+  if (params.sort) query.set("sort", params.sort);
+  if (params.page) query.set("page", String(params.page));
+  if (params.pageSize) query.set("pageSize", String(params.pageSize));
+
+  const { res, body } = await authRequest(`/api/staff/tickets?${query.toString()}`);
+  if (!res.ok) throw errorFromResponse(res.status, body, "Unable to load the ticket queue.");
+  return body as StaffQueueResult;
+}

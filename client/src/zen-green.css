@@ -216,3 +216,46 @@ a:focus-visible {
   background-color: var(--color-field-readonly-bg);
   color: var(--color-text-muted);
 }
+
+/* Ticket Queue owner marker (ui-spec.md section 7): a Ticket whose owner is no longer eligible
+   says so in words and in this badge, so it is never mistaken for a healthy assignment. */
+.zg-badge-needs-owner {
+  background-color: var(--color-warning-bg);
+  color: var(--color-text);
+  border: 1px solid var(--color-warning);
+}
+
+/* A whole table row or card that opens a screen. */
+.zg-clickable-row {
+  cursor: pointer;
+}
+
+/* Pagination and text-style buttons take the Zen Green tokens, never Bootstrap's default blue. */
+.pagination .page-link {
+  color: var(--color-primary);
+  background-color: var(--color-surface);
+  border-color: var(--color-field-editable-border);
+}
+.pagination .page-link:hover {
+  background-color: var(--color-pale);
+  color: var(--color-primary);
+}
+.pagination .page-link:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 0.2rem rgba(11, 122, 70, 0.35);
+}
+.pagination .page-item.active .page-link {
+  background-color: var(--color-primary);
+  border-color: var(--color-primary);
+  color: var(--color-surface);
+}
+.pagination .page-item.disabled .page-link {
+  color: var(--color-text-muted);
+  background-color: var(--color-field-readonly-bg);
+}
+.btn-link {
+  color: var(--color-primary);
+}
+.btn-link:hover {
+  color: var(--color-secondary);
+}

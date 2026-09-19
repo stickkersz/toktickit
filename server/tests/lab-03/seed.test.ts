@@ -3,6 +3,8 @@ import request from "supertest";
 import * as prismaModule from "../../src/prisma.js";
 import { app } from "../../src/app.js";
 import { UNUSABLE_PASSWORD_HASH } from "../../src/auth/password.js";
+import { seedReferenceData } from "../../prisma/seedReference.js";
+import { SEED_TICKET_NUMBERS, seedTickets } from "../../prisma/seedTickets.js";
 import { DEV_INITIAL_PASSWORD, SEED_USERS, seedUsers } from "../../prisma/seedUsers.js";
 import { buildLegacyDb, cookieFrom, createScratchDb, migrateDeploy, type ScratchDb } from "./helpers.js";
 
@@ -20,10 +22,16 @@ describe("seed on a fresh database", () => {
 
   // MIG-05 / BR-50
   it("is idempotent and produces the required active and inactive fixtures for all three roles", async () => {
+    await seedReferenceData(db.client);
     await seedUsers(db.client);
+    await seedTickets(db.client);
     const first = await db.client.user.findMany({ orderBy: { id: "asc" } });
+    const firstTickets = await db.client.ticket.findMany({ orderBy: { id: "asc" } });
+    await seedReferenceData(db.client);
     await seedUsers(db.client);
+    await seedTickets(db.client);
     const second = await db.client.user.findMany({ orderBy: { id: "asc" } });
+    const secondTickets = await db.client.ticket.findMany({ orderBy: { id: "asc" } });
 
     expect(second).toHaveLength(first.length);
     expect(second.map((u) => u.id)).toEqual(first.map((u) => u.id));
@@ -41,6 +49,32 @@ describe("seed on a fresh database", () => {
     // The five Requesters keep ids 1 to 5 on a fresh database (Lab 2 tests rely on it).
     expect(second.slice(0, 5).map((u) => u.id)).toEqual([1, 2, 3, 4, 5]);
     expect(second.slice(0, 5).every((u) => u.role === "REQUESTER")).toBe(true);
+
+    // BR-50: Tickets spread across Requesters, statuses, priorities, and both assigned and
+    // unassigned ownership, and a second run adds and changes nothing.
+    expect(secondTickets).toHaveLength(SEED_TICKET_NUMBERS.length);
+    expect(secondTickets.map((t) => t.id)).toEqual(firstTickets.map((t) => t.id));
+    expect(secondTickets.map((t) => t.updatedAt)).toEqual(firstTickets.map((t) => t.updatedAt));
+    expect(new Set(secondTickets.map((t) => t.ticketNumber)).size).toBe(secondTickets.length);
+    expect(new Set(secondTickets.map((t) => t.requesterId)).size).toBeGreaterThanOrEqual(4);
+    expect(new Set(secondTickets.map((t) => t.currentStatus)).size).toBe(8);
+    expect(new Set(secondTickets.map((t) => t.itPriority)).size).toBe(3);
+    expect(secondTickets.some((t) => t.ownerId === null)).toBe(true);
+    expect(secondTickets.some((t) => t.ownerId !== null)).toBe(true);
+    expect(secondTickets.every((t) => t.itPriority !== null)).toBe(true);
+    // The queue's markers have real rows: an inactive owner, and an inactive Requester.
+    const inactive = new Set(second.filter((u) => !u.isActive).map((u) => u.id));
+    expect(secondTickets.some((t) => t.ownerId !== null && inactive.has(t.ownerId))).toBe(true);
+    expect(secondTickets.some((t) => inactive.has(t.requesterId))).toBe(true);
+    expect(secondTickets.some((t) => t.requesterResolutionFlaggedAt !== null)).toBe(true);
+  }, SETUP_TIMEOUT);
+
+  it("never overwrites work done through the application when it runs again", async () => {
+    const target = await db.client.ticket.findFirstOrThrow({ where: { ticketNumber: SEED_TICKET_NUMBERS[0] } });
+    await db.client.ticket.update({ where: { id: target.id }, data: { currentStatus: "CLOSED", itPriority: "LOW" } });
+    await seedTickets(db.client);
+    const after = await db.client.ticket.findUniqueOrThrow({ where: { id: target.id } });
+    expect(after).toMatchObject({ currentStatus: "CLOSED", itPriority: "LOW" });
   }, SETUP_TIMEOUT);
 });
 

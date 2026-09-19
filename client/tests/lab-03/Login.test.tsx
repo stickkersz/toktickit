@@ -47,7 +47,7 @@ describe("Login screen", () => {
     const { user, submit } = await fill(STAFF.email, "Str0ng!Pass");
     await user.click(submit);
 
-    expect(await screen.findByRole("heading", { name: `Signed in as ${STAFF.name}` })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Ticket Queue" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "My Tickets" })).not.toBeInTheDocument();
   });
 

@@ -63,8 +63,8 @@ describe("role based route protection", () => {
   });
 
   it.each<[string, AuthUser, string, RegExp]>([
-    ["IT Staff on the staff queue", STAFF, "/staff/tickets", /^Signed in as Pimchanok Somboon$/],
-    ["an Administrator on the staff queue", ADMIN, "/staff/tickets", /^Signed in as Aekkarat Wongsa$/],
+    ["IT Staff on the staff queue", STAFF, "/staff/tickets", /^Ticket Queue$/],
+    ["an Administrator on the staff queue", ADMIN, "/staff/tickets", /^Ticket Queue$/],
     ["an Administrator on User Management", ADMIN, "/admin/users", /^Signed in as Aekkarat Wongsa$/],
     ["a Requester on My Tickets", REQUESTER, "/tickets", /^My Tickets$/],
   ])("still lets %s in", async (_who, user, path, heading) => {
@@ -90,8 +90,11 @@ describe("role based route protection", () => {
 
   it("sends an unknown URL to the signed-in user's own landing route, never to Requester screens", async () => {
     renderApp("/no/such/page", STAFF);
-    expect(await screen.findByRole("heading", { name: `Signed in as ${STAFF.name}` })).toBeInTheDocument();
-    expectNoProtectedRequests();
+    expect(await screen.findByRole("heading", { name: "Ticket Queue" })).toBeInTheDocument();
+    // The queue loads its own filter list, so only the Requester screens' requests are ruled out.
+    expect(api.getTickets).not.toHaveBeenCalled();
+    expect(api.getTicketDetail).not.toHaveBeenCalled();
+    expect(api.getRelatedSystems).not.toHaveBeenCalled();
 
     vi.restoreAllMocks();
     renderApp("/still/not/a/page", ADMIN);
@@ -130,7 +133,7 @@ describe("a stale Lab 2 Development Requester selection in browser storage", () 
 
     vi.restoreAllMocks();
     renderApp("/select-requester", STAFF);
-    expect(await screen.findByRole("heading", { name: `Signed in as ${STAFF.name}` })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Ticket Queue" })).toBeInTheDocument();
     expect(screen.queryByText("Select Development Requester")).not.toBeInTheDocument();
   });
 
