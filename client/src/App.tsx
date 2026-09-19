@@ -3,6 +3,7 @@ import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { AuthProvider, useAuth } from "./authContext.js";
 import { RequesterProvider, useRequester } from "./requesterContext.js";
 import { landingPathFor } from "./roles.js";
+import type { UserRole } from "./api.js";
 import RequesterSelection from "./RequesterSelection.js";
 import Shell from "./Shell.js";
 import MyTickets from "./screens/MyTickets.js";
@@ -11,13 +12,22 @@ import TicketDetail from "./screens/TicketDetail.js";
 import Login from "./screens/Login.js";
 import ChangePassword from "./screens/ChangePassword.js";
 import RoleLanding from "./screens/RoleLanding.js";
+import Forbidden from "./screens/Forbidden.js";
 
 // BR-07/AC-02: no ticket screen renders without a current Requester. While
 // the stored id is still being revalidated against active Requesters
 // (BR-05), render nothing rather than redirecting prematurely.
+//
+// Lab 3 (BR-63): these are Requester screens. A signed-in IT Staff member or
+// Administrator gets the forbidden state before anything else is decided, so the
+// screen never renders and none of its data is requested.
 function RequireRequester({ children }: { children: ReactNode }) {
   const { requester, status } = useRequester();
+  const { user } = useAuth();
   if (status === "checking") return <p className="container py-4">Loading…</p>;
+  if (user && user.role !== "REQUESTER") {
+    return <Forbidden message="You do not have access to Requester tickets." />;
+  }
   if (!requester) return <Navigate to="/select-requester" replace />;
   return children;
 }
@@ -44,6 +54,24 @@ function RequireAuth({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   if (!user) return <Navigate to="/login" replace />;
   return children;
+}
+
+// Routes restricted to particular roles (BR-14, BR-16, BR-63). No session goes to
+// Login; a session whose role is not permitted gets the forbidden state, so a
+// direct URL cannot reach a screen the navigation would never have offered. This
+// is presentation only: the server enforces the same rule on every endpoint.
+function RequireRole({ roles, message, children }: { roles: UserRole[]; message: string; children: ReactNode }) {
+  const { user } = useAuth();
+  if (!user) return <Navigate to="/login" replace />;
+  if (!roles.includes(user.role)) return <Forbidden message={message} />;
+  return children;
+}
+
+// An unknown URL goes to the signed-in user's own home, and only signed-out
+// visitors fall through to the Lab 2 Requester flow.
+function FallbackRedirect() {
+  const { user } = useAuth();
+  return <Navigate to={user ? landingPathFor(user.role) : "/tickets"} replace />;
 }
 
 // The Development Requester selector is a Lab 2 testing mechanism that Issue 04
@@ -81,17 +109,17 @@ function AppRoutes() {
       <Route
         path="/staff/tickets"
         element={
-          <RequireAuth>
+          <RequireRole roles={["IT_STAFF", "ADMINISTRATOR"]} message="You do not have access to the Ticket Queue.">
             <RoleLanding destination="IT Staff Ticket Queue" />
-          </RequireAuth>
+          </RequireRole>
         }
       />
       <Route
         path="/admin/users"
         element={
-          <RequireAuth>
+          <RequireRole roles={["ADMINISTRATOR"]} message="You do not have access to User Management.">
             <RoleLanding destination="Administrator User Management" />
-          </RequireAuth>
+          </RequireRole>
         }
       />
       <Route
@@ -113,7 +141,7 @@ function AppRoutes() {
         <Route path="/tickets/new" element={<CreateTicket />} />
         <Route path="/tickets/:id" element={<TicketDetail />} />
       </Route>
-      <Route path="*" element={<Navigate to="/tickets" replace />} />
+      <Route path="*" element={<FallbackRedirect />} />
     </Routes>
   );
 }

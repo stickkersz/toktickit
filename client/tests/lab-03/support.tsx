@@ -13,14 +13,23 @@ export const REQUESTER: AuthUser = {
   mustChangePassword: false,
 };
 export const STAFF: AuthUser = { ...REQUESTER, id: 8, name: "Pimchanok Somboon", role: "IT_STAFF" };
+export const ADMIN: AuthUser = { ...REQUESTER, id: 9, name: "Aekkarat Wongsa", role: "ADMINISTRATOR" };
 export const TEMPORARY: AuthUser = { ...REQUESTER, mustChangePassword: true };
 
 // The whole application at a route, with the identity request answered as given.
 // Anything a landing screen would fetch is stubbed so no test reaches a network.
-export function renderApp(path: string, currentUser: AuthUser | null = null) {
+export function renderApp(
+  path: string,
+  currentUser: AuthUser | null = null,
+  // The active Development Requesters the Lab 2 selector would offer. It matters
+  // only when a stored selection has to be validated on mount.
+  options: { requesters?: api.Requester[] } = {},
+) {
   vi.spyOn(api, "getCurrentUser").mockResolvedValue(currentUser);
   vi.spyOn(api, "getCategories").mockResolvedValue([]);
   vi.spyOn(api, "getRelatedSystems").mockResolvedValue([]);
+  vi.spyOn(api, "getRequesters").mockResolvedValue(options.requesters ?? []);
+  vi.spyOn(api, "getTicketDetail").mockRejectedValue(new api.NotFoundError("Ticket not found."));
   vi.spyOn(api, "getTickets").mockResolvedValue({
     data: [],
     pagination: { page: 1, pageSize: 10, total: 0, totalPages: 0 },

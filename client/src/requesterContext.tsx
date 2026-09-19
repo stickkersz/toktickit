@@ -42,7 +42,11 @@ export function RequesterProvider({ children }: { children: ReactNode }) {
     authUser && authUser.role === "REQUESTER" && !authUser.mustChangePassword
       ? { id: authUser.id, name: authUser.name, email: authUser.email }
       : null;
-  const requester = signedInRequester ?? selected;
+  // BR-63: once anyone is signed in, the identity is the session's and nothing
+  // else. The legacy Development Requester selection is honoured only while
+  // nobody is signed in, so IT Staff and Administrators can never act as a
+  // Requester through a selection left in browser storage.
+  const requester = authUser ? signedInRequester : selected;
   const status = localStatus === "checking" || auth?.status === "checking" ? "checking" : "resolved";
 
   useEffect(() => {

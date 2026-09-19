@@ -36,6 +36,7 @@ The Lab 2 header keeps its 56px height, `--color-primary` background, and TokTic
 
 - Active-item marking and `aria-current="page"` follow the Lab 2 rule, extended so that a Ticket Detail route marks its parent list as active: `/tickets/:id` keeps My Tickets active for a Requester, `/staff/tickets/:id` keeps Ticket Queue active for IT Staff.
 - Below 768px the nav collapses to the existing hamburger panel. The user identity and Logout move inside that panel, and it closes on selection or outside tap.
+- **Direct URLs are protected too (BR-63, AC-46).** A signed-in user who opens a screen their role does not permit, by typing or bookmarking its URL, gets the forbidden state instead of the screen: "You do not have access to the Ticket Queue.", "You do not have access to User Management.", or, for the Requester screens (My Tickets, Create Ticket, Ticket Detail) seen by IT Staff or an Administrator, "You do not have access to Requester tickets.". It replaces the screen entirely, offers a "Go to your home screen" link, and nothing the screen would have fetched is requested. A signed-out visitor is sent to Login, and an unknown URL goes to the signed-in user's own landing route.
 - The shell renders only after the current user is known. While the identity request is in flight, neither navigation nor a redirect is shown, so the application never flashes the wrong role's menu.
 
 ## 4. Login screen

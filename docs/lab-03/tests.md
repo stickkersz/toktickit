@@ -108,6 +108,8 @@ The database must be running, migrated, and seeded first. Playwright's `testDir`
 | UI-28 | UI | AC-38, AC-39 | Staff Ticket Detail Attachments tab as IT Staff and as Administrator, with one active and one removed Attachment | Metadata and a Download action shown; the removed one shows its reason and no Download; no upload control and no Remove control exist in the DOM | `client/tests/lab-03/StaffTicketDetail.test.tsx` | Planned |
 | UI-29 | UI | AC-40, AC-41 | Ticket Queue with a Ticket whose owner is inactive and another whose owner is no longer IT Staff, and the Owner filter | Owner name kept with "(inactive)" or "(not IT Staff)" and a "Needs new owner" badge; choosing "Needs an owner" issues `owner=needs-owner` | `client/tests/lab-03/StaffTicketQueue.test.tsx` | Planned |
 | UI-30 | UI | AC-41, AC-42 | Staff Ticket Detail for a Ticket with an ineligible owner and an inactive Requester | Claim shown; the ineligible owner is the displayed value but not offered for other Tickets; the Requester carries an "(inactive)" marker | `client/tests/lab-03/StaffTicketDetail.test.tsx` | Planned |
+| UI-31 | UI | AC-46, BR-63, BR-16 | Each role opening, by direct URL, screens its role may not use (Requester on the staff and admin routes, IT Staff on the admin and Requester routes, Administrator on the Requester routes), plus signed-out visitors and unknown URLs | The forbidden state with the exact message and a link home; the screen never renders and none of its API requests are made; the allowed roles still get in; signed-out goes to Login; an unknown URL goes to the user's own landing route | `client/tests/lab-03/RoleRoutes.test.tsx` | Pass |
+| UI-32 | UI | AC-46, BR-63 | A Development Requester selection left in browser storage while IT Staff, an Administrator, a Requester, or nobody is signed in | Ignored for IT Staff and Administrators: no requester at all, the selector never shown, the stored value left alone; a signed-in Requester acts as themselves, never as the stored id; with nobody signed in the Lab 2 flow is unchanged | `client/tests/lab-03/RoleRoutes.test.tsx` | Pass |
 | MIG-01 | Migration | AC-34 | Row count and ids in `User` after the rename, against `RequesterUser` before | Identical count, identical ids, no row lost or added | `server/tests/lab-03/migration.test.ts` | Pass |
 | MIG-02 | Migration | AC-34, BR-47 | Every pre-existing Ticket's requester after migration | Each Ticket still resolves to its original person by ticket number | `server/tests/lab-03/migration.test.ts` | Pass |
 | MIG-03 | Migration | BR-48, BR-52 | Migrated Requesters after seeding, including migrated rows the seed does not list | Role `REQUESTER`, `mustChangePassword` true, a well-formed `scrypt$` hash that is neither the `!` marker nor plaintext, and no row left holding the marker | `server/tests/lab-03/migration.test.ts` | Pass |
@@ -175,8 +177,9 @@ The database must be running, migrated, and seeded first. Playwright's `testDir`
 | AC-43 | API-51 |
 | AC-44 | API-52 |
 | AC-45 | API-53 |
+| AC-46 | UI-31, UI-32 |
 
-Every AC-01 through AC-45 appears above, and every test row names a real file path that must exist before its row may be marked Pass.
+Every AC-01 through AC-46 appears above, and every test row names a real file path that must exist before its row may be marked Pass.
 
 ## 4. Migration and regression evidence
 
@@ -222,13 +225,15 @@ Test isolation: every Lab 3 API test file that creates users calls `useIsolatedD
 
 ### Issue 03: login and Change Password screens
 
-Eight rows moved from `Planned` to `Pass` (UI-01 to UI-08), each only after its test ran green.
+Ten rows moved from `Planned` to `Pass` (UI-01 to UI-08, plus UI-31 and UI-32 added in review round 1), each only after its test ran green.
 
 | Suite | Result |
 |---|---|
-| `cd client && npm test` | 10 files, 65 tests passed: the 44 Lab 2 tests, unmodified, plus 21 new Lab 3 tests (10 in `Login.test.tsx`, 11 in `ChangePassword.test.tsx`) |
+| `cd client && npm test` | 11 files, 92 tests passed: the 44 Lab 2 tests, unmodified, plus 48 new Lab 3 tests (10 in `Login.test.tsx`, 11 in `ChangePassword.test.tsx`, 27 in `RoleRoutes.test.tsx`) |
 | `cd server && npm test` | 17 files, 114 tests passed, unchanged |
 | `npx playwright test` | 8 of 9 passed, now through the Vite proxy. The failing spec is the same known `submission-evidence.spec.ts:132` described under Issue 02. |
+
+Review round 1 (songt888): role route protection was incomplete. A Requester could open `/staff/tickets` and `/admin/users` by URL, because both only required a session, and IT Staff or an Administrator could act as a Requester through a Development Requester selection left in browser storage. Both are fixed and covered by UI-31 and UI-32. The new tests were written first and failed against the old code (13 red); each part of the fix was then mutation-checked (reverting the context change, letting every role through, dropping the Requester-route role check, and sending unknown URLs to `/tickets` each turned tests red), and reverting the context change alone showed the route check had been masking it, so the provider is now tested directly. A real-Chromium pass repeated the cases with real logins and a real stored selection: every forbidden URL was blocked, no `/api/tickets` request was made behind a forbidden screen, `/select-requester` bounced IT Staff to their own landing, and the allowed routes still worked.
 
 Mutation check: removing the in-flight guard, the password clearing on a credential failure, the forced redirect to Change Password, and the client-side validation gate each turned at least one of the new tests red.
 
