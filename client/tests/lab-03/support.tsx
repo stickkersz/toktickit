@@ -30,6 +30,8 @@ export function renderApp(
     tickets: [],
     pagination: { page: 1, pageSize: 10, total: 0, totalPages: 0 },
   });
+  vi.spyOn(api, "getStaffOwners").mockResolvedValue([]);
+  vi.spyOn(api, "getStaffTicketDetail").mockRejectedValue(new api.NotFoundError("Ticket not found."));
   vi.spyOn(api, "getTicketDetail").mockRejectedValue(new api.NotFoundError("Ticket not found."));
   vi.spyOn(api, "getTickets").mockResolvedValue({
     data: [],

@@ -164,6 +164,12 @@ These keep their Lab 2 request and response bodies exactly, with two changes: th
 
 Every one of them returns 401 when unauthenticated. The Lab 2 404-on-non-owned behaviour is unchanged for a Requester.
 
+### GET /api/tickets/:id: what each role receives
+
+The Lab 2 body is unchanged and gains two fields for every role: `resolutionSummary` (the summary IT wrote when resolving, or `null`; the Requester can read it, BR-27) and `requesterResolutionFlaggedAt` (the timestamp of the Requester's "problem appears resolved" signal, or `null`; BR-29).
+
+IT Staff and Administrators also receive `itPriority`, `ownerId`, `ownerName`, `ownerIsActive`, `ownerEligible` and `requesterIsActive` with the meanings given under endpoint 7, and `permittedNextStatuses`: the statuses the Ticket may move to from where it is now, taken from the server's own BR-25 table, so a client never carries a second copy of the workflow. A Requester never receives any of those seven fields. A Requester is held to their own Ticket (404 otherwise); IT Staff and Administrators can open any Ticket, including one whose Requester is inactive (BR-60).
+
 ### Attachment permissions
 
 Reading an Attachment and changing one are separate permissions (BR-54, BR-55, FR-21):
@@ -178,7 +184,6 @@ Reading an Attachment and changing one are separate permissions (BR-54, BR-55, F
 
 - The 403 on the two mutating endpoints is decided from the role alone, before the Ticket or Attachment is looked up. An IT Staff or Administrator caller therefore gets the same 403 for an existing target and for one that does not exist, and no file is written and no row changes (BR-14, AC-39).
 - A soft-removed Attachment's metadata is still readable by every role that may read Attachments. Its download returns 410 to all of them, unchanged from Lab 2 (BR-54).
-- The read rows for IT Staff and Administrator are delivered with the IT Staff Ticket Detail Issue. Until then the read endpoints answer them 403 like the mutation endpoints; the mutation rows already hold.
 - The rule follows the current role, not history: a user promoted from Requester to IT Staff or Administrator also receives 403 on both mutating endpoints for Tickets they created (BR-55, AC-43).
 
 `GET /api/requesters` is **deleted** (BR-49). A request to it returns 404 from the router, as for any unknown path.
@@ -274,7 +279,7 @@ Request, one of:
 { "ownerId": null }
 ```
 
-Claiming is `{ "ownerId": <the caller's own id> }`: the contract has one operation rather than separate claim and assign verbs, because they differ only in the value sent.
+Claiming is `{ "ownerId": <the caller's own id> }`: the contract has one operation rather than separate claim and assign verbs, because they differ only in the value sent. A claim is a single conditional write: it succeeds while the Ticket has no owner, is already yours, or has an ineligible owner, so two people claiming at once cannot both win and the loser receives `ALREADY_ASSIGNED`. Claiming a Ticket you already own is a 200 no-op.
 
 Response 200: the updated Ticket in the endpoint 7 item shape.
 
@@ -282,7 +287,7 @@ Errors:
 
 - 400 `VALIDATION_ERROR`: `ownerId` absent, or not an integer and not null.
 - 401, 403 for a Requester (AC-22).
-- 404 when the Ticket does not exist.
+- 404 when the Ticket does not exist, or its id in the path is not a positive integer.
 - 409 `INVALID_OWNER`: the target user does not exist, is inactive, or holds the `REQUESTER` role (BR-18, AC-20).
 - 409 `ALREADY_ASSIGNED`: an attempt to claim a Ticket that already has an eligible owner, meaning the caller sent their own id for a Ticket whose `ownerId` is set to somebody else who is still active and holds the IT Staff or Administrator role (BR-19). A Ticket whose owner is ineligible under BR-57 is claimable and never returns this error (BR-58, AC-41). Reassignment by explicitly naming a different user is permitted and does not hit this case.
 
@@ -310,7 +315,7 @@ Request:
 { "currentStatus": "RESOLVED", "resolutionSummary": "Reissued the VPN profile and confirmed connectivity with the user." }
 ```
 
-`resolutionSummary` is required only when the target status is `RESOLVED` (BR-27).
+`resolutionSummary` is required only when the target status is `RESOLVED` (BR-27), is trimmed before it is stored, and is ignored for any other target. The checks run in this order: the request itself (400), then the Ticket (404), then the transition (409 `INVALID_TRANSITION`), then the owner (409 `OWNER_REQUIRED`), so a move that is not permitted is reported as such even when the Ticket also has no owner.
 
 Response 200: the updated Ticket.
 
@@ -319,7 +324,7 @@ Errors:
 - 400 `VALIDATION_ERROR`: unknown status value, or a transition to `RESOLVED` whose `resolutionSummary` is missing or outside 10 to 2000 characters after trimming (AC-24).
 - 401, 403 for a Requester (AC-22).
 - 404 when the Ticket does not exist.
-- 409 `INVALID_TRANSITION`: the move is not permitted by the BR-25 matrix, including a move to the current status. The response names the current status and the permitted next statuses so the client can correct itself (AC-23).
+- 409 `INVALID_TRANSITION`: the move is not permitted by the BR-25 matrix, including a move to the current status, or the Ticket changed status between the check and the write. The body is `{ "error", "message", "currentStatus", "permitted": [...] }`: it names the current status and lists the permitted next statuses, so the client can correct itself (AC-23). The write is conditional on the status that was checked, so of two conflicting moves exactly one succeeds.
 - 409 `OWNER_REQUIRED`: a move to `IN_PROGRESS`, `RESOLVED`, or `CLOSED` on a Ticket that is unassigned, or whose owner is ineligible because they were deactivated or are no longer IT Staff or an Administrator (BR-28, BR-58, AC-25, AC-41). A move to a status that BR-28 does not restrict is unaffected.
 
 ## 11. GET and POST /api/tickets/:id/comments
@@ -465,3 +470,20 @@ Errors:
 The target user's active sessions are revoked, so a holder of the previous password is returned to Login and is then forced through the mandatory change (BR-41, AC-30).
 
 The endpoint returns the updated user only. It never echoes the password back, and the password is never written to a log.
+
+## 17. GET /api/staff/owners
+
+Purpose: the list a Ticket Owner select is filled from (FR-12, BR-18).
+
+Authorization: IT Staff, Administrator.
+
+Response 200, ordered by name:
+
+```json
+[
+  { "id": 7, "name": "Michael Brown", "role": "IT_STAFF" },
+  { "id": 9, "name": "Aekkarat Wongsa", "role": "ADMINISTRATOR" }
+]
+```
+
+Only active users who hold the IT Staff or Administrator role appear. The body carries `id`, `name` and `role` and nothing else: no email, and never a password hash. Errors: 401, 403 for a Requester, 500.

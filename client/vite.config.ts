@@ -19,6 +19,9 @@ export default defineConfig(({ mode }) => {
       proxy: { "/api": { target } },
     },
     test: {
+      // Tests always exercise the same-origin default. A developer's own client/.env may set
+      // VITE_API_URL to reach an API on another origin, and that must never change a test result.
+      env: { VITE_API_URL: "" },
       environment: "jsdom",
       globals: true,
       setupFiles: "./tests/setup.ts",

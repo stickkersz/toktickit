@@ -18,6 +18,8 @@ import { parseTicketListQuery } from "./ticketListQuery.js";
 import { isValidId } from "./ids.js";
 import { buildCorsOptions } from "./cors.js";
 import { escapeLike } from "./searchText.js";
+import { isEligibleOwner } from "./routes/staffTickets.js";
+import { permittedNext, TERMINAL_STATUSES } from "./ticketStatus.js";
 import { authRouter } from "./routes/auth.js";
 import { staffTicketsRouter } from "./routes/staffTickets.js";
 import { requireAuth } from "./middleware/requireAuth.js";
@@ -91,12 +93,17 @@ app.get("/api/related-systems", async (_req: Request, res: Response) => {
 // Lab 3 identity rule (BR-11, BR-49, BR-55): every Ticket and Attachment
 // endpoint below takes the caller from the session cookie, never from a
 // `requesterId` in the body or query, which is ignored if a client still sends
-// one. GET /api/requesters no longer exists. Until the staff Issues land, these
-// endpoints are Requester-only, so IT Staff and Administrators get 403 from the
-// role alone, before anything is looked up; the read endpoints are opened to them
-// later (BR-54), and upload and removal never are (BR-55).
+// one. GET /api/requesters no longer exists. IT Staff and Administrators may read
+// any Ticket and Attachment (BR-54); creating, listing one's own Tickets, uploading
+// and removing are Requester-only, so they get 403 from the role alone, before
+// anything is looked up (BR-55).
 // ---------------------------------------------------------------------------
 const requesterOnly = [requireAuth, requireRole("REQUESTER")];
+
+// Reads are open to every role, each seeing what the matrix gives it (BR-54): a Requester their
+// own Tickets, IT Staff and Administrators any Ticket. Only the query differs.
+const anyRole = [requireAuth, requireRole("REQUESTER", "IT_STAFF", "ADMINISTRATOR")];
+const isStaffRole = (req: Request) => req.user!.role !== "REQUESTER";
 
 // ---------------------------------------------------------------------------
 // Lab 2 — Create Ticket
@@ -408,23 +415,25 @@ app.get("/api/tickets", ...requesterOnly, async (req: Request, res: Response) =>
 // Lab 2 — Requester Ticket Detail
 // GET /api/tickets/:id (api-spec.md §6, FR-05).
 // ---------------------------------------------------------------------------
-app.get("/api/tickets/:id", ...requesterOnly, async (req: Request, res: Response) => {
+app.get("/api/tickets/:id", ...anyRole, async (req: Request, res: Response) => {
   try {
     const ticketId = Number(req.params.id);
-    const requesterId = req.user!.id;
+    const staff = isStaffRole(req);
 
     if (!isValidId(ticketId)) {
       return res.status(404).json({ error: "NOT_FOUND", message: "Ticket not found." });
     }
 
     const ticket = await getPrisma().ticket.findFirst({
-      // BR-38: a Requester deactivated after creating a Ticket loses access to
-      // it too, same 404 as any other ownership failure.
-      where: { id: ticketId, requesterId, requester: { isActive: true } },
+      // A Requester is held to their own Ticket, and BR-38: one deactivated after creating it
+      // loses access to it too, same 404 as any other ownership failure. IT Staff and
+      // Administrators can open any Ticket, including one whose Requester is inactive (BR-60).
+      where: staff ? { id: ticketId } : { id: ticketId, requesterId: req.user!.id, requester: { isActive: true } },
       include: {
-        requester: { select: { name: true } },
+        requester: { select: { name: true, isActive: true } },
         category: { select: { name: true } },
         relatedSystem: { select: { name: true } },
+        owner: { select: { name: true, isActive: true, role: true } },
         attachments: { orderBy: { uploadedAt: "desc" } },
       },
     });
@@ -433,7 +442,7 @@ app.get("/api/tickets/:id", ...requesterOnly, async (req: Request, res: Response
       return res.status(404).json({ error: "NOT_FOUND", message: "Ticket not found." });
     }
 
-    res.status(200).json({
+    const base = {
       id: ticket.id,
       ticketNumber: ticket.ticketNumber,
       requesterId: ticket.requesterId,
@@ -446,12 +455,68 @@ app.get("/api/tickets/:id", ...requesterOnly, async (req: Request, res: Response
       description: ticket.description,
       requestedPriority: ticket.requestedPriority,
       currentStatus: ticket.currentStatus,
+      // BR-27: the Resolution Summary is visible to the Requester. The Requester's own
+      // "problem appears resolved" signal is visible to both sides (BR-29).
+      resolutionSummary: ticket.resolutionSummary,
+      requesterResolutionFlaggedAt: ticket.requesterResolutionFlaggedAt,
       createdAt: ticket.createdAt,
       updatedAt: ticket.updatedAt,
       attachments: ticket.attachments.map(serializeAttachment),
+    };
+
+    if (!staff) return res.status(200).json(base);
+
+    // Staff also get IT Priority, ownership, and the statuses the Ticket may move to, taken from
+    // the one workflow table so the client carries no copy of it (BR-25, BR-57, BR-59).
+    res.status(200).json({
+      ...base,
+      itPriority: ticket.itPriority,
+      ownerId: ticket.ownerId,
+      ownerName: ticket.owner?.name ?? null,
+      ownerIsActive: ticket.owner ? ticket.owner.isActive : null,
+      ownerEligible: isEligibleOwner(ticket.owner),
+      requesterIsActive: ticket.requester.isActive,
+      permittedNextStatuses: permittedNext(ticket.currentStatus),
     });
   } catch {
     res.status(500).json({ error: "INTERNAL_ERROR", message: "Unable to load the Ticket." });
+  }
+});
+
+// POST /api/tickets/:id/resolution-indication (api-spec.md endpoint 6, FR-09, BR-29). The
+// Requester says the problem appears resolved. It records a timestamp and never touches the
+// status: only IT Staff resolve or close a Ticket.
+app.post("/api/tickets/:id/resolution-indication", ...requesterOnly, async (req: Request, res: Response) => {
+  try {
+    const ticketId = Number(req.params.id);
+    if (!isValidId(ticketId)) {
+      return res.status(400).json({ error: "VALIDATION_ERROR", message: "A valid Ticket id is required." });
+    }
+    const prisma = getPrisma();
+    const owned = { id: ticketId, requesterId: req.user!.id, requester: { isActive: true } };
+    if (!(await prisma.ticket.findFirst({ where: owned, select: { id: true } }))) {
+      return res.status(404).json({ error: "NOT_FOUND", message: "Ticket not found." });
+    }
+
+    // Conditional on the Ticket not being terminal, so it cannot slip in after a close.
+    const flagged = await prisma.ticket.updateMany({
+      where: { ...owned, currentStatus: { notIn: [...TERMINAL_STATUSES] } },
+      data: { requesterResolutionFlaggedAt: new Date() },
+    });
+    if (flagged.count === 0) {
+      return res.status(409).json({ error: "TICKET_TERMINAL", message: "This Ticket is closed, so it can no longer be flagged." });
+    }
+    const ticket = await prisma.ticket.findUniqueOrThrow({
+      where: { id: ticketId },
+      select: { id: true, requesterResolutionFlaggedAt: true, currentStatus: true },
+    });
+    res.status(200).json({
+      id: ticket.id,
+      requesterResolutionFlaggedAt: ticket.requesterResolutionFlaggedAt,
+      currentStatus: ticket.currentStatus,
+    });
+  } catch {
+    res.status(500).json({ error: "INTERNAL_ERROR", message: "Unable to record that the problem appears resolved." });
   }
 });
 
@@ -460,7 +525,7 @@ app.get("/api/tickets/:id", ...requesterOnly, async (req: Request, res: Response
 // GET /api/attachments/:id, GET /api/attachments/:id/download,
 // DELETE /api/attachments/:id (api-spec.md §8-10, FR-07/FR-08, BR-29/BR-30).
 // ---------------------------------------------------------------------------
-app.get("/api/attachments/:id", ...requesterOnly, async (req: Request, res: Response) => {
+app.get("/api/attachments/:id", ...anyRole, async (req: Request, res: Response) => {
   try {
     const attachmentId = Number(req.params.id);
     const requesterId = req.user!.id;
@@ -471,7 +536,9 @@ app.get("/api/attachments/:id", ...requesterOnly, async (req: Request, res: Resp
 
     const attachment = await getPrisma().attachment.findFirst({
       // BR-38: same deactivated-Requester-loses-access rule as Ticket Detail.
-      where: { id: attachmentId, ticket: { requesterId, requester: { isActive: true } } },
+      where: isStaffRole(req)
+        ? { id: attachmentId }
+        : { id: attachmentId, ticket: { requesterId, requester: { isActive: true } } },
     });
 
     if (!attachment) {
@@ -484,7 +551,7 @@ app.get("/api/attachments/:id", ...requesterOnly, async (req: Request, res: Resp
   }
 });
 
-app.get("/api/attachments/:id/download", ...requesterOnly, async (req: Request, res: Response) => {
+app.get("/api/attachments/:id/download", ...anyRole, async (req: Request, res: Response) => {
   try {
     const attachmentId = Number(req.params.id);
     const requesterId = req.user!.id;
@@ -495,7 +562,9 @@ app.get("/api/attachments/:id/download", ...requesterOnly, async (req: Request, 
 
     const attachment = await getPrisma().attachment.findFirst({
       // BR-38: same deactivated-Requester-loses-access rule as Ticket Detail.
-      where: { id: attachmentId, ticket: { requesterId, requester: { isActive: true } } },
+      where: isStaffRole(req)
+        ? { id: attachmentId }
+        : { id: attachmentId, ticket: { requesterId, requester: { isActive: true } } },
     });
 
     if (!attachment) {

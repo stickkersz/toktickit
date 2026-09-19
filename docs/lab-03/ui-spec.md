@@ -118,13 +118,13 @@ Operational field group, visibly editable with `--color-field-editable-border`:
 
 A Ticket showing the Requester's "problem appears resolved" indication displays a `--color-pale` banner with the timestamp, so staff see the signal without it being mistaken for a status.
 
-Panels below, as labelled tabs with counts: **Public Comments**, **Internal Notes**, **Attachments**.
+Panels below, as labelled tabs with counts: **Public Comments**, **Internal Notes**, **Attachments**. The Attachments panel arrives first, as its own section, with the Issue that delivers this screen; Public Comments and Internal Notes join it as tabs with the Issue that delivers them.
 
 Public Comments and Internal Notes must be impossible to confuse. Internal Notes use a distinct `--color-warning-bg` tinted panel, a lock glyph, and a standing label reading "Internal only. Not visible to the Requester." above its composer. Public Comments use the plain surface background. The two composers never appear simultaneously: only the active tab's composer is rendered, so a note cannot be typed into a comment box by accident.
 
 Attachments render as in Lab 2 for reading: each row shows its metadata and a Download action, and a removed Attachment shows its removal reason with no Download action. The upload control and every Remove control are not rendered at all for IT Staff and Administrators, not merely disabled, since Attachment mutation stays a Requester capability (BR-54, BR-55). The API refuses both operations with 403 regardless of what the client renders.
 
-States: loading, loaded, not found ("Ticket not found."), forbidden, saving (the affected control disabled and busy, others still usable), per-operation success (an inline confirmation next to the control that changed, not a page-level banner), validation error, conflict (a distinct callout for a rejected transition, naming what is permitted from the current status), and API failure with the prior value restored.
+States: loading, loaded, not found ("Ticket not found."), forbidden, saving (the affected control disabled and busy, others still usable), per-operation success (an inline confirmation next to the control that changed, not a page-level banner), validation error, conflict (a distinct callout for a rejected transition, naming what is permitted from the current status), and API failure with the prior value restored. After a status change, or a refused change, the screen reloads what the control depends on (the permitted next statuses, the Resolution Summary, the owner list). If that reload fails, the screen does not present what it has as current: the control is locked, shows only its current value, says the latest values could not be loaded, and offers a Reload button; "Saved" is not shown, and the control unlocks only when a reload succeeds.
 
 ## 9. Administrator User Management
 
