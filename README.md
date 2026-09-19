@@ -32,10 +32,26 @@ docker run -d --name toktickit-pg \
 cd server
 cp .env.example .env      # edit DATABASE_URL / PORT if needed
 npm install
-npx prisma migrate dev    # creates the Category, RequesterUser, RelatedSystem, Ticket, Attachment tables
-npm run prisma:seed       # seeds Categories, Related Systems, and Development Requesters (active + inactive fixtures)
+npx prisma migrate deploy # applies every migration, in order, without touching existing data
+npm run prisma:seed       # then, as a SEPARATE second step: Categories, Related Systems, and the Lab 3 user accounts
 npm run dev                # http://localhost:3000 (PORT from .env)
 ```
+
+**Run the migration first and the seed second, always in that order.** The Lab 3 migration renames the Lab 2 `RequesterUser` table to `User` in place and cannot compute a password hash in SQL, so it gives every existing account an unusable placeholder credential. Until the seed has run, no migrated account can sign in. The seed is what issues the real initial password, and it never overwrites a password that a user has already chosen, so running it again is always safe. See `docs/adr/0002-rename-requesteruser-to-user-in-place.md`.
+
+Use `prisma migrate deploy`, not `prisma migrate dev`, on a database that already holds data: `migrate dev` would regenerate the rename as a destructive drop and create.
+
+### Development accounts (local only)
+
+These accounts exist only in a local development database and are created by the seed. The shared initial password is a **local development credential, not a real secret**; every account must replace it at first sign in.
+
+| Role | Accounts | Initial password |
+|---|---|---|
+| Requester | `kanokwan.srisuwan@toktickit.test`, `thanapon.wattana@toktickit.test`, `nutchanon.boonmee@toktickit.test`, `ploypailin.chaisiri@toktickit.test` (active), `somsak.rattanakosin@toktickit.test` (inactive) | `ChangeMe!23` |
+| IT Staff | `pimchanok.somboon@toktickit.test`, `wichai.charoen@toktickit.test`, `anucha.prasert@toktickit.test` (active), `sunisa.kaewmanee@toktickit.test` (inactive) | `ChangeMe!23` |
+| Administrator | `aekkarat.wongsa@toktickit.test` | `ChangeMe!23` |
+
+The Lab 3 sign-in screen arrives with a later Issue. Until then the API can be exercised directly: `POST /api/auth/login` with `{ "email", "password" }` sets the `toktickit_session` cookie, and `GET /api/auth/me` returns the signed-in user.
 
 ### 3. Client
 
@@ -53,7 +69,7 @@ From there the Lab 2 Requester workflow is complete: create a Ticket with attach
 ## Tests
 
 ```bash
-cd server && npm test      # Vitest/Supertest: unit validators + every Lab 2 API endpoint
+cd server && npm test      # Vitest/Supertest: unit validators + every Lab 2 and Lab 3 API endpoint, plus migration and seed tests
 cd client && npm test      # Vitest + Testing Library: every Lab 2 screen and its states
 ```
 

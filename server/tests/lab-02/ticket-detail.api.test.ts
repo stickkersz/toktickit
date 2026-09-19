@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import request from "supertest";
 import { app } from "../../src/app.js";
+import { UNUSABLE_PASSWORD_HASH } from "../../src/auth/password.js";
 import { getPrisma } from "../../src/prisma.js";
 
 async function createTicket(requesterId = 1) {
@@ -88,8 +89,13 @@ describe("GET /api/tickets/:id", () => {
 
   // API-19 / BR-38
   it("returns 404 once the owning Requester has been deactivated", async () => {
-    const requester = await getPrisma().requesterUser.create({
-      data: { name: "Temp Requester", email: `temp-${randomUUID()}@example.com`, isActive: true },
+    const requester = await getPrisma().user.create({
+      data: {
+        name: "Temp Requester",
+        email: `temp-${randomUUID()}@example.com`,
+        isActive: true,
+        passwordHash: UNUSABLE_PASSWORD_HASH,
+      },
     });
     const ticket = await createTicket(requester.id);
 
@@ -98,7 +104,7 @@ describe("GET /api/tickets/:id", () => {
       .query({ requesterId: requester.id });
     expect(before.status).toBe(200);
 
-    await getPrisma().requesterUser.update({
+    await getPrisma().user.update({
       where: { id: requester.id },
       data: { isActive: false },
     });

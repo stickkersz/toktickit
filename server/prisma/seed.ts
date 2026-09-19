@@ -1,4 +1,5 @@
 import { getPrisma } from "../src/prisma.js";
+import { SEED_USERS, seedUsers } from "./seedUsers.js";
 
 // BR-37: idempotent seed, upsert-keyed on each model's unique field.
 const CATEGORIES: { name: string; isActive: boolean }[] = [
@@ -20,14 +21,6 @@ const RELATED_SYSTEMS: { name: string; isActive: boolean }[] = [
   { name: "Legacy Alumni Portal", isActive: false },
 ];
 
-const REQUESTERS: { name: string; email: string; isActive: boolean }[] = [
-  { name: "Kanokwan Srisuwan", email: "kanokwan.srisuwan@toktickit.test", isActive: true },
-  { name: "Thanapon Wattana", email: "thanapon.wattana@toktickit.test", isActive: true },
-  { name: "Nutchanon Boonmee", email: "nutchanon.boonmee@toktickit.test", isActive: true },
-  { name: "Ploypailin Chaisiri", email: "ploypailin.chaisiri@toktickit.test", isActive: true },
-  { name: "Somsak Rattanakosin", email: "somsak.rattanakosin@toktickit.test", isActive: false },
-];
-
 async function main() {
   const prisma = getPrisma();
 
@@ -47,16 +40,10 @@ async function main() {
     });
   }
 
-  for (const { name, email, isActive } of REQUESTERS) {
-    await prisma.requesterUser.upsert({
-      where: { email },
-      update: { name, isActive },
-      create: { name, email, isActive },
-    });
-  }
+  await seedUsers(prisma);
 
   console.log(
-    `Seeded ${CATEGORIES.length} categories, ${RELATED_SYSTEMS.length} related systems, ${REQUESTERS.length} requesters.`,
+    `Seeded ${CATEGORIES.length} categories, ${RELATED_SYSTEMS.length} related systems, ${SEED_USERS.length} users.`,
   );
 }
 

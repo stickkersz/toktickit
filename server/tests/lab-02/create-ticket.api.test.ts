@@ -102,8 +102,8 @@ describe("POST /api/tickets", () => {
   });
 
   it("rejects an unknown or inactive requesterId", async () => {
-    const inactiveRequester = await getPrisma().requesterUser.findFirst({
-      where: { isActive: false },
+    const inactiveRequester = await getPrisma().user.findFirst({
+      where: { isActive: false, role: "REQUESTER" },
     });
 
     const res = await request(app)
@@ -128,7 +128,7 @@ describe("POST /api/tickets", () => {
 
   it("returns the documented safe 500 shape when a reference lookup fails", async () => {
     vi.spyOn(prismaModule, "getPrisma").mockReturnValue({
-      requesterUser: { findFirst: () => Promise.reject(new Error("connection refused")) },
+      user: { findFirst: () => Promise.reject(new Error("connection refused")) },
       category: { findFirst: () => Promise.resolve(null) },
       relatedSystem: { findFirst: () => Promise.resolve(null) },
     } as unknown as ReturnType<typeof prismaModule.getPrisma>);
