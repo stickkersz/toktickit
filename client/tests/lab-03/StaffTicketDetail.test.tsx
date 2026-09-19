@@ -1,7 +1,9 @@
 import "@testing-library/jest-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { screen, waitFor, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter, useNavigate } from "react-router-dom";
+import App from "../../src/App.js";
 import * as api from "../../src/api.js";
 import { ApiError, type StaffOwner, type StaffTicketDetail, type StaffTicketItem } from "../../src/api.js";
 import { ADMIN, REQUESTER, STAFF, renderApp } from "./support.js";
@@ -432,6 +434,192 @@ describe("Staff Ticket Detail: status", () => {
     expect(alert).toHaveClass("zg-alert-error");
     expect(alert).toHaveTextContent("Unable to change the status. Nothing was changed.");
     expect(screen.getByLabelText("Current Status")).toHaveValue("OPEN");
+  });
+});
+
+// Review round 1 (songt888): each control saves on its own, so responses can arrive in any order. A
+// response may only ever change the field its own operation was for. A whole-snapshot merge let an
+// older response, carrying a stale value for a different control, overwrite another successful save.
+describe("Staff Ticket Detail: concurrent saves", () => {
+  // What a mutation returns is a snapshot of the whole Ticket at the moment the server answered it, so
+  // a slow response can carry values for the other controls that are older than what is on screen.
+  const snapshot = (overrides: Partial<StaffTicketItem>): StaffTicketItem =>
+    ({ ...detail({ ownerId: null, itPriority: "HIGH", currentStatus: "OPEN" }), ...overrides }) as unknown as StaffTicketItem;
+  const deferred = <T,>() => {
+    let resolve!: (v: T) => void;
+    const promise = new Promise<T>((r) => (resolve = r));
+    return { promise, resolve };
+  };
+  const ME = { ownerId: STAFF.id, ownerName: STAFF.name, ownerIsActive: true, ownerEligible: true };
+
+  it("keeps a newer IT Priority when an older owner response, carrying the old priority, arrives last", async () => {
+    const fake = await openDetail(detail({ ownerId: null, itPriority: "HIGH" }));
+    const owner = deferred<StaffTicketItem>();
+    const priority = deferred<StaffTicketItem>();
+    fake.setOwner.mockReturnValue(owner.promise);
+    fake.setPriority.mockReturnValue(priority.promise);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Claim" }));
+    await user.selectOptions(screen.getByLabelText("IT Priority"), "Low");
+
+    // The priority save finishes first. Then the owner save finishes, its snapshot still saying HIGH.
+    priority.resolve(snapshot({ itPriority: "LOW", ownerId: null, ownerName: null }));
+    await waitFor(() => expect(screen.getByLabelText("IT Priority")).toHaveValue("LOW"));
+    owner.resolve(snapshot({ ...ME, itPriority: "HIGH" }));
+
+    await waitFor(() => expect(screen.getByLabelText("Ticket Owner")).toHaveValue(String(STAFF.id)));
+    expect(screen.getByLabelText("IT Priority")).toHaveValue("LOW");
+  });
+
+  it("keeps a newer owner when an older priority response, carrying no owner, arrives last", async () => {
+    const fake = await openDetail(detail({ ownerId: null, itPriority: "HIGH" }));
+    const owner = deferred<StaffTicketItem>();
+    const priority = deferred<StaffTicketItem>();
+    fake.setOwner.mockReturnValue(owner.promise);
+    fake.setPriority.mockReturnValue(priority.promise);
+    const user = userEvent.setup();
+
+    await user.selectOptions(screen.getByLabelText("IT Priority"), "Low");
+    await user.click(screen.getByRole("button", { name: "Claim" }));
+
+    owner.resolve(snapshot({ ...ME, itPriority: "HIGH" }));
+    await waitFor(() => expect(screen.getByLabelText("Ticket Owner")).toHaveValue(String(STAFF.id)));
+    priority.resolve(snapshot({ itPriority: "LOW", ownerId: null, ownerName: null, ownerIsActive: null, ownerEligible: null }));
+
+    await waitFor(() => expect(screen.getByLabelText("IT Priority")).toHaveValue("LOW"));
+    expect(screen.getByLabelText("Ticket Owner")).toHaveValue(String(STAFF.id));
+    expect(screen.queryByRole("button", { name: "Claim" })).not.toBeInTheDocument();
+  });
+
+  it("keeps a newer owner and priority when the reload after a status change comes back with older values", async () => {
+    const fake = await openDetail(detail({ currentStatus: "OPEN", ownerId: 20, ownerName: "Wichai Charoen", ownerIsActive: true, ownerEligible: true, itPriority: "HIGH" }));
+    const user = userEvent.setup();
+
+    // The status save succeeds; the reload it triggers is held back.
+    const reload = deferred<StaffTicketDetail>();
+    vi.mocked(api.getStaffTicketDetail).mockReturnValueOnce(reload.promise);
+    const ownerSave = deferred<StaffTicketItem>();
+    const prioritySave = deferred<StaffTicketItem>();
+    fake.setOwner.mockReturnValue(ownerSave.promise);
+    fake.setPriority.mockReturnValue(prioritySave.promise);
+
+    await user.selectOptions(screen.getByLabelText("Current Status"), "In Progress");
+    await waitFor(() => expect(fake.setStatus).toHaveBeenCalledWith(42, "IN_PROGRESS"));
+    await user.selectOptions(screen.getByLabelText("Ticket Owner"), `${STAFF.name} (you)`);
+    await user.selectOptions(screen.getByLabelText("IT Priority"), "Low");
+    ownerSave.resolve(snapshot({ ...ME, currentStatus: "IN_PROGRESS", itPriority: "HIGH" }));
+    prioritySave.resolve(snapshot({ ...ME, currentStatus: "IN_PROGRESS", itPriority: "LOW" }));
+    await waitFor(() => expect(screen.getByLabelText("Ticket Owner")).toHaveValue(String(STAFF.id)));
+    await waitFor(() => expect(screen.getByLabelText("IT Priority")).toHaveValue("LOW"));
+
+    // Now the held-back reload arrives. It was read before the owner and priority saves, so it still says
+    // owner 20 and HIGH, but it is the source of truth for the status and what the status may become.
+    reload.resolve({
+      ...detail({ currentStatus: "IN_PROGRESS", ownerId: 20, ownerName: "Wichai Charoen", ownerIsActive: true, ownerEligible: true, itPriority: "HIGH" }),
+      permittedNextStatuses: ["WAITING_FOR_REQUESTER", "RESOLVED", "CANCELLED"],
+    });
+    await waitFor(() => expect(optionsOf("Current Status")).toEqual(["In Progress", "Waiting for Requester", "Resolved", "Cancelled"]));
+    expect(screen.getByLabelText("Ticket Owner")).toHaveValue(String(STAFF.id));
+    expect(screen.getByLabelText("IT Priority")).toHaveValue("LOW");
+  });
+
+  it("applies the reload's permitted statuses and Resolution Summary after a status change, which the save response does not carry", async () => {
+    const fake = await openDetail(detail({ currentStatus: "IN_PROGRESS", ownerId: 20, ownerName: "Wichai Charoen", ownerIsActive: true, ownerEligible: true }));
+    const user = userEvent.setup();
+    await user.selectOptions(screen.getByLabelText("Current Status"), "Resolved");
+    await user.type(await screen.findByLabelText("Resolution Summary *"), "Replaced the faulty access point.");
+    await user.click(screen.getByRole("button", { name: "Confirm and resolve" }));
+    await waitFor(() => expect(fake.setStatus).toHaveBeenCalled());
+    await waitFor(() => expect(optionsOf("Current Status")).toEqual(["Resolved", "Closed", "Reopened"]));
+    expect(await screen.findByLabelText("Resolution Summary")).toHaveValue("Replaced the faulty access point.");
+  });
+
+  it("keeps the status control busy until its own reload has landed, so the next choice is made from the correct options", async () => {
+    const fake = await openDetail(detail({ currentStatus: "OPEN", ownerId: 20, ownerName: "Wichai Charoen", ownerIsActive: true, ownerEligible: true }));
+    const user = userEvent.setup();
+    const reload = deferred<StaffTicketDetail>();
+    vi.mocked(api.getStaffTicketDetail).mockReturnValueOnce(reload.promise);
+
+    await user.selectOptions(screen.getByLabelText("Current Status"), "In Progress");
+    await waitFor(() => expect(fake.setStatus).toHaveBeenCalledTimes(1));
+    // The save has succeeded, but the options still belong to the old status until the reload says otherwise.
+    await waitFor(() => expect(screen.getByLabelText("Current Status")).toHaveValue("IN_PROGRESS"));
+    expect(screen.getByLabelText("Current Status")).toBeDisabled();
+    expect(screen.getByLabelText("Current Status")).toHaveAttribute("aria-busy", "true");
+    // The other controls are not held up by it.
+    expect(screen.getByLabelText("IT Priority")).toBeEnabled();
+    expect(screen.getByLabelText("Ticket Owner")).toBeEnabled();
+
+    reload.resolve({
+      ...detail({ currentStatus: "IN_PROGRESS", ownerId: 20, ownerName: "Wichai Charoen", ownerIsActive: true, ownerEligible: true }),
+      permittedNextStatuses: ["WAITING_FOR_REQUESTER", "RESOLVED", "CANCELLED"],
+    });
+    await waitFor(() => expect(screen.getByLabelText("Current Status")).toBeEnabled());
+    expect(optionsOf("Current Status")).toEqual(["In Progress", "Waiting for Requester", "Resolved", "Cancelled"]);
+  });
+
+  it("applies a refusal's reload to the owner control only, leaving a newer IT Priority alone", async () => {
+    const fake = await openDetail(detail({ ownerId: null, itPriority: "HIGH" }));
+    const user = userEvent.setup();
+    const prioritySave = deferred<StaffTicketItem>();
+    fake.setPriority.mockReturnValue(prioritySave.promise);
+    fake.setOwner.mockRejectedValue(new ApiError("taken", 409, "ALREADY_ASSIGNED"));
+    // The reload after the refused claim was read before the priority save and still says HIGH.
+    vi.mocked(api.getStaffTicketDetail).mockResolvedValueOnce({
+      ...detail({ ownerId: 20, ownerName: "Wichai Charoen", ownerIsActive: true, ownerEligible: true, itPriority: "HIGH" }),
+    });
+
+    await user.selectOptions(screen.getByLabelText("IT Priority"), "Low");
+    await user.click(screen.getByRole("button", { name: "Claim" }));
+    await waitFor(() => expect(screen.getByLabelText("Ticket Owner")).toHaveValue("20"));
+    prioritySave.resolve(snapshot({ itPriority: "LOW", ownerId: null, ownerName: null }));
+
+    await waitFor(() => expect(screen.getByLabelText("IT Priority")).toHaveValue("LOW"));
+    expect(screen.getByLabelText("Ticket Owner")).toHaveValue("20");
+  });
+});
+
+describe("Staff Ticket Detail: moving between Tickets", () => {
+  function Jump({ to }: { to: string }) {
+    const navigate = useNavigate();
+    return (
+      <button type="button" onClick={() => navigate(to)}>
+        jump to {to}
+      </button>
+    );
+  }
+
+  it("never applies a save that was still in flight for one Ticket to the next Ticket opened", async () => {
+    vi.spyOn(api, "getCurrentUser").mockResolvedValue(STAFF);
+    vi.spyOn(api, "getStaffOwners").mockResolvedValue(OWNERS);
+    vi.spyOn(api, "getStaffTicketDetail").mockImplementation(async (id: number) =>
+      detail({ id, ticketNumber: `TKT-2026-0000${id}`, itPriority: "HIGH", ownerId: null }),
+    );
+    const slow = { resolve: (_: StaffTicketItem) => {} };
+    vi.spyOn(api, "setTicketPriority").mockImplementation(() => new Promise((resolve) => (slow.resolve = resolve)));
+    render(
+      <MemoryRouter initialEntries={["/staff/tickets/42"]}>
+        <App />
+        <Jump to="/staff/tickets/43" />
+      </MemoryRouter>,
+    );
+    const user = userEvent.setup();
+    await screen.findByRole("heading", { name: "TKT-2026-000042" });
+
+    // A priority save for Ticket 42 is still in flight when the user opens Ticket 43.
+    await user.selectOptions(screen.getByLabelText("IT Priority"), "Low");
+    await user.click(screen.getByRole("button", { name: "jump to /staff/tickets/43" }));
+    await screen.findByRole("heading", { name: "TKT-2026-000043" });
+    expect(screen.getByLabelText("IT Priority")).toHaveValue("HIGH");
+    expect(screen.getByLabelText("IT Priority")).toBeEnabled();
+
+    // Ticket 42's save now completes. Ticket 43 must not change.
+    slow.resolve(detail({ id: 42, itPriority: "LOW" }) as unknown as StaffTicketItem);
+    await new Promise((r) => setTimeout(r, 30));
+    expect(screen.getByRole("heading", { name: "TKT-2026-000043" })).toBeInTheDocument();
+    expect(screen.getByLabelText("IT Priority")).toHaveValue("HIGH");
+    expect(screen.queryByText("Saved")).not.toBeInTheDocument();
   });
 });
 

@@ -397,6 +397,97 @@ describe("PATCH /api/staff/tickets/:id/status", () => {
     expect((await stored(t.id)).currentStatus).toBe(close.status === 200 ? "CLOSED" : "REOPENED");
   });
 
+  // Review round 1 (songt888): the write must be conditional on the very status that was validated.
+  // Re-reading the status between the check and the write let a concurrent change be treated as
+  // the status that had been checked, so an unvalidated move, even out of a terminal state, went
+  // through. These tests change the Ticket in the gap between the check and the write itself.
+  describe("a change that lands between the check and the write", () => {
+    // Wraps the isolated client so that, right after the validation read returns, the Ticket is
+    // changed by someone else, exactly as a concurrent request would.
+    function interfereAfterValidation(ticketId: number, change: () => Promise<unknown>) {
+      const real = iso.db.client;
+      let validated = false;
+      return iso.override({
+        session: real.session,
+        ticket: {
+          findUnique: async (args: Parameters<typeof real.ticket.findUnique>[0]) => {
+            const found = await real.ticket.findUnique(args);
+            // The first read that carries the status is the validation read.
+            if (!validated && args?.where && "id" in args.where && args.where.id === ticketId && args.select && "currentStatus" in args.select) {
+              validated = true;
+              await change();
+            }
+            return found;
+          },
+          findUniqueOrThrow: real.ticket.findUniqueOrThrow.bind(real.ticket),
+          updateMany: real.ticket.updateMany.bind(real.ticket),
+        },
+      });
+    }
+
+    it("never lets a move out of a terminal state through: a Ticket closed after the check stays closed", async () => {
+      const t = await makeTicket({ status: "IN_PROGRESS", ownerId: staffId });
+      // IN_PROGRESS to RESOLVED is permitted, so the check passes; then the Ticket is CANCELLED.
+      const restore = interfereAfterValidation(t.id, () => iso.db.client.ticket.update({ where: { id: t.id }, data: { currentStatus: "CANCELLED" } }));
+      try {
+        const res = await move(staff, t.id, { currentStatus: "RESOLVED", resolutionSummary: "A valid summary for this move." });
+        expect(res.status).toBe(409);
+        expect(res.body.error).toBe("INVALID_TRANSITION");
+        expect(res.body.currentStatus).toBe("CANCELLED");
+      } finally {
+        restore();
+      }
+      const after = await stored(t.id);
+      expect(after.currentStatus).toBe("CANCELLED");
+      expect(after.resolutionSummary).toBeNull();
+    });
+
+    it("refuses a move that was valid when checked but is not valid from the status the Ticket has now", async () => {
+      const t = await makeTicket({ status: "OPEN", ownerId: staffId });
+      // OPEN to IN_PROGRESS passes the check; then someone moves it to WAITING_FOR_REQUESTER and RESOLVED-side
+      // moves would differ, so the only safe outcome is that the write applies to nothing and is re-judged.
+      const restore = interfereAfterValidation(t.id, () => iso.db.client.ticket.update({ where: { id: t.id }, data: { currentStatus: "CLOSED" } }));
+      try {
+        const res = await move(staff, t.id, { currentStatus: "IN_PROGRESS" });
+        expect(res.status).toBe(409);
+        expect(res.body.error).toBe("INVALID_TRANSITION");
+      } finally {
+        restore();
+      }
+      expect((await stored(t.id)).currentStatus).toBe("CLOSED");
+    });
+
+    it("re-judges the move from the new status: if it is still permitted from there it is refused as changed, not silently applied", async () => {
+      const t = await makeTicket({ status: "OPEN", ownerId: staffId });
+      // OPEN to CANCELLED passes; then the Ticket moves to IN_PROGRESS, from which CANCELLED is also permitted.
+      const restore = interfereAfterValidation(t.id, () => iso.db.client.ticket.update({ where: { id: t.id }, data: { currentStatus: "IN_PROGRESS" } }));
+      try {
+        const res = await move(staff, t.id, { currentStatus: "CANCELLED" });
+        // Not applied on the strength of a check made against a status the Ticket no longer had.
+        expect(res.status).toBe(409);
+        expect(res.body.error).toBe("INVALID_TRANSITION");
+        expect(res.body.message).toMatch(/changed/i);
+      } finally {
+        restore();
+      }
+      expect((await stored(t.id)).currentStatus).toBe("IN_PROGRESS");
+    });
+
+    it("does not resolve or close a Ticket whose owner became ineligible after the check", async () => {
+      const owner = (await createUser({ role: "IT_STAFF" })).user;
+      const t = await makeTicket({ status: "IN_PROGRESS", ownerId: owner.id });
+      const restore = interfereAfterValidation(t.id, () => iso.db.client.user.update({ where: { id: owner.id }, data: { isActive: false } }));
+      try {
+        const res = await move(staff, t.id, { currentStatus: "RESOLVED", resolutionSummary: "A valid summary for this move." });
+        expect(res.status).toBe(409);
+        expect(res.body.error).toBe("OWNER_REQUIRED");
+      } finally {
+        restore();
+      }
+      expect((await stored(t.id)).currentStatus).toBe("IN_PROGRESS");
+    });
+  });
+
   it("lets an Administrator change status too", async () => {
     const admin = await signedIn({ id: adminId });
     const t = await makeTicket({ status: "NEW" });

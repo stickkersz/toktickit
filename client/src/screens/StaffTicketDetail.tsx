@@ -37,6 +37,29 @@ const statusLabel = (status: string) => STATUS_LABEL[status] ?? status;
 const SUMMARY_MIN = 10;
 const SUMMARY_MAX = 2000;
 
+// Each control owns a group of fields. A response, from a save or from a reload, may only ever change
+// the fields of the control it was for: a mutation returns a snapshot of the whole Ticket taken when
+// the server answered, so a slow response can carry older values for the OTHER controls than what is
+// already on screen, and applying it whole would overwrite another control's successful save.
+const SAVE_FIELDS: Record<Control, (keyof StaffTicketItem)[]> = {
+  owner: ["ownerId", "ownerName", "ownerIsActive", "ownerEligible"],
+  priority: ["itPriority"],
+  // A status save's response carries the new status only; what the Ticket may move to next, and its
+  // Resolution Summary, come from the reload that follows it.
+  status: ["currentStatus"],
+};
+const RELOAD_FIELDS: Record<Control, (keyof StaffTicketDetailData)[]> = {
+  owner: ["ownerId", "ownerName", "ownerIsActive", "ownerEligible"],
+  priority: ["itPriority"],
+  status: ["currentStatus", "permittedNextStatuses", "resolutionSummary"],
+};
+
+function pick<T extends object>(source: T, keys: (keyof T)[]): Partial<T> {
+  const out: Partial<T> = {};
+  for (const key of keys) out[key] = source[key];
+  return out;
+}
+
 interface Problem {
   control: Control;
   message: string;
@@ -46,7 +69,13 @@ interface Problem {
 
 // ui-spec.md section 8: the IT Staff Ticket Detail. Every change saves on its own, next to its
 // own control, and only that control is busy while it saves.
-export default function StaffTicketDetail() {
+// Remounted for each Ticket, so nothing in flight for one Ticket can ever be applied to another.
+export default function StaffTicketDetailRoute() {
+  const { id } = useParams();
+  return <StaffTicketDetail key={id} />;
+}
+
+function StaffTicketDetail() {
   const { id } = useParams();
   const ticketId = Number(id);
   const { user } = useAuth();
@@ -65,11 +94,10 @@ export default function StaffTicketDetail() {
 
   const loadIdRef = useRef(0);
 
-  // Reads the Ticket. `quiet` refreshes it in place without going back to a loading screen, so a
-  // control that has just saved does not flash away.
-  async function load(quiet = false) {
+  // Reads the whole Ticket, for opening the screen and for Retry.
+  async function load() {
     const loadId = ++loadIdRef.current;
-    if (!quiet) setLoadState("loading");
+    setLoadState("loading");
     try {
       const [detail, list] = await Promise.all([
         getStaffTicketDetail(ticketId),
@@ -83,8 +111,24 @@ export default function StaffTicketDetail() {
       setLoadState("ready");
     } catch (e) {
       if (loadIdRef.current !== loadId) return;
-      if (quiet) return;
       setLoadState(e instanceof NotFoundError ? "notfound" : "error");
+    }
+  }
+
+  // Re-reads one control's fields from the server, in place, and touches nothing else. It fetches the
+  // complete detail, and takes only what that control owns from it. Two operations for the same control
+  // can never overlap, because a control is disabled while its own operation and reload are running, so
+  // the only ordering that matters is between different controls, and field scoping settles that.
+  async function refresh(control: Control) {
+    try {
+      const [detail, list] = await Promise.all([
+        getStaffTicketDetail(ticketId),
+        control === "owner" ? getStaffOwners().catch(() => null) : Promise.resolve(null),
+      ]);
+      setTicket((t) => t && { ...t, ...pick(detail, RELOAD_FIELDS[control]) });
+      if (list) setOwners(list);
+    } catch {
+      // A failed refresh leaves what is on screen as it is: the change itself already succeeded or was refused.
     }
   }
 
@@ -93,24 +137,6 @@ export default function StaffTicketDetail() {
 
   function setBusyFor(control: Control, value: boolean) {
     setBusy((b) => ({ ...b, [control]: value }));
-  }
-
-  // Applies what a mutation returned to the Ticket already on screen, in place.
-  function merge(item: StaffTicketItem) {
-    setTicket((t) =>
-      t && {
-        ...t,
-        itPriority: item.itPriority,
-        currentStatus: item.currentStatus,
-        ownerId: item.ownerId,
-        ownerName: item.ownerName,
-        ownerIsActive: item.ownerIsActive,
-        ownerEligible: item.ownerEligible,
-        requesterIsActive: item.requesterIsActive,
-        requesterResolutionFlaggedAt: item.requesterResolutionFlaggedAt,
-        updatedAt: item.updatedAt,
-      },
-    );
   }
 
   function fail(control: Control, e: unknown, generic: string) {
@@ -145,13 +171,16 @@ export default function StaffTicketDetail() {
     setSaved(null);
     setProblem(null);
     try {
-      merge(await work());
+      const item = await work();
+      // Only this control's own fields: the response is a snapshot of the whole Ticket, and the other
+      // controls' values in it may be older than what is on screen.
+      setTicket((t) => t && { ...t, ...pick(item, SAVE_FIELDS[control]) });
       setSaved(control);
       if (after) await after();
     } catch (e) {
       fail(control, e, generic);
-      // A refusal means the screen was out of date: show what is stored now.
-      if (e instanceof ApiError && e.code && e.code !== "VALIDATION_ERROR" && e.status === 409) await load(true);
+      // A refusal means this control was out of date: show what is stored now, for this control only.
+      if (e instanceof ApiError && e.code && e.code !== "VALIDATION_ERROR" && e.status === 409) await refresh(control);
     } finally {
       setBusyFor(control, false);
     }
@@ -180,7 +209,7 @@ export default function StaffTicketDetail() {
       return;
     }
     setResolving(false);
-    return run("status", () => changeTicketStatus(ticketId, next), "Unable to change the status. Nothing was changed.", () => load(true));
+    return run("status", () => changeTicketStatus(ticketId, next), "Unable to change the status. Nothing was changed.", () => refresh("status"));
   }
 
   function confirmResolve() {
@@ -193,7 +222,7 @@ export default function StaffTicketDetail() {
     return run("status", () => changeTicketStatus(ticketId, "RESOLVED", trimmed), "Unable to resolve the Ticket. Nothing was changed.", async () => {
       setResolving(false);
       setSummary("");
-      await load(true);
+      await refresh("status");
     });
   }
 

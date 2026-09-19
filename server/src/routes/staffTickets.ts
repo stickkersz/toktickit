@@ -264,21 +264,29 @@ staffTicketsRouter.patch("/api/staff/tickets/:id/status", ...staffOnly, async (r
     if (ticketId === null) return sendError(res, 404, "NOT_FOUND", "Ticket not found.");
 
     const prisma = getPrisma();
-    // The decision from a fresh read, used both before the write and again if the write finds
-    // the Ticket has moved on in the meantime.
-    const refuse = async (): Promise<
-      { status: 404 } | { status: 409; code: "INVALID_TRANSITION" | "OWNER_REQUIRED"; from: TicketStatus } | null
-    > => {
+
+    // Judges the move against ONE read of the Ticket and hands back the status it judged. That
+    // exact status is what the write is conditional on: judging one read and then guarding the
+    // write with a second, unjudged read would let a concurrent change be mistaken for the status
+    // that had been checked, and an unvalidated move, even one out of CLOSED or CANCELLED, would
+    // go through.
+    type Verdict = { ok: true; from: TicketStatus } | { ok: false; refusal: Refusal };
+    type Refusal = { status: 404 } | { status: 409; code: "INVALID_TRANSITION" | "OWNER_REQUIRED"; from: TicketStatus };
+    const judge = async (): Promise<Verdict> => {
       const t = await prisma.ticket.findUnique({
         where: { id: ticketId },
         select: { currentStatus: true, owner: { select: { isActive: true, role: true } } },
       });
-      if (!t) return { status: 404 };
-      if (!isTransitionPermitted(t.currentStatus, target)) return { status: 409, code: "INVALID_TRANSITION", from: t.currentStatus };
-      if (requiresOwner(target) && isEligibleOwner(t.owner) !== true) return { status: 409, code: "OWNER_REQUIRED", from: t.currentStatus };
-      return null;
+      if (!t) return { ok: false, refusal: { status: 404 } };
+      if (!isTransitionPermitted(t.currentStatus, target)) {
+        return { ok: false, refusal: { status: 409, code: "INVALID_TRANSITION", from: t.currentStatus } };
+      }
+      if (requiresOwner(target) && isEligibleOwner(t.owner) !== true) {
+        return { ok: false, refusal: { status: 409, code: "OWNER_REQUIRED", from: t.currentStatus } };
+      }
+      return { ok: true, from: t.currentStatus };
     };
-    const respondRefusal = (r: NonNullable<Awaited<ReturnType<typeof refuse>>>) => {
+    const respondRefusal = (r: Refusal) => {
       if (r.status === 404) return sendError(res, 404, "NOT_FOUND", "Ticket not found.");
       if (r.code === "INVALID_TRANSITION") {
         const permitted = permittedNext(r.from);
@@ -295,25 +303,31 @@ staffTicketsRouter.patch("/api/staff/tickets/:id/status", ...staffOnly, async (r
       return sendError(res, 409, "OWNER_REQUIRED", `A Ticket needs an active IT Staff owner before it can move to ${target}. Claim it or assign an owner first.`);
     };
 
-    const before = await refuse();
-    if (before) return respondRefusal(before);
+    const verdict = await judge();
+    if (!verdict.ok) return respondRefusal(verdict.refusal);
 
-    // The write is conditional on the Ticket still being in the status that was checked, and
-    // on the owner still being eligible when one is required, so a concurrent change cannot
-    // slip an unpermitted move through between the read and the write.
-    const from = (await prisma.ticket.findUniqueOrThrow({ where: { id: ticketId }, select: { currentStatus: true } })).currentStatus;
+    // Conditional on the Ticket still being in the status that was judged, and on the owner still
+    // being eligible when one is required. If it has moved on, nothing is written and the move is
+    // judged again from where the Ticket actually is: it is never applied on the strength of a
+    // check made against a status the Ticket no longer has.
     const moved = await prisma.ticket.updateMany({
       where: {
         id: ticketId,
-        currentStatus: from,
+        currentStatus: verdict.from,
         ...(requiresOwner(target) ? { owner: { is: { isActive: true, role: { in: ["IT_STAFF", "ADMINISTRATOR"] } } } } : {}),
       },
       data: { currentStatus: target, ...(summary !== undefined ? { resolutionSummary: summary } : {}) },
     });
     if (moved.count === 0) {
-      const after = await refuse();
-      if (after) return respondRefusal(after);
-      return sendError(res, 409, "INVALID_TRANSITION", "The Ticket changed while you were editing it. Reload and try again.");
+      const again = await judge();
+      if (!again.ok) return respondRefusal(again.refusal);
+      // Still permitted from its new status, but that is not the status it was judged against.
+      return res.status(409).json({
+        error: "INVALID_TRANSITION",
+        message: "The Ticket changed while you were editing it. Reload and try again.",
+        currentStatus: again.from,
+        permitted: permittedNext(again.from),
+      });
     }
 
     const updated = await prisma.ticket.findUniqueOrThrow({ where: { id: ticketId }, include: staffTicketInclude });
