@@ -23,7 +23,7 @@ describe("GET /api/requesters", () => {
 
   it("returns a safe 500 in the documented { error, message } shape on database failure", async () => {
     vi.spyOn(prisma, "getPrisma").mockReturnValue({
-      requesterUser: { findMany: () => Promise.reject(new Error("connection refused")) },
+      user: { findMany: () => Promise.reject(new Error("connection refused")) },
     } as unknown as ReturnType<typeof prisma.getPrisma>);
 
     const res = await request(app).get("/api/requesters");

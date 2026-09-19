@@ -15,6 +15,9 @@ import { formatTicketNumber } from "./ticketNumber.js";
 import { validateAttachment, ATTACHMENT_REJECT_MESSAGES } from "./attachmentValidation.js";
 import { UPLOAD_DIR, ensureUploadDir, generateStoredFilename } from "./attachmentStorage.js";
 import { parseTicketListQuery } from "./ticketListQuery.js";
+import { isValidId } from "./ids.js";
+import { buildCorsOptions } from "./cors.js";
+import { authRouter } from "./routes/auth.js";
 
 const upload = multer({
   storage: multer.diskStorage({
@@ -30,8 +33,9 @@ const upload = multer({
 // Supertest can import `app` without opening a port. Do not merge these files.
 export const app = express();
 
-app.use(cors());          // already wired: lets the Vite dev server call this API
+app.use(cors(buildCorsOptions())); // credentialed, allow-listed (BR-62): src/cors.ts
 app.use(express.json());
+app.use(authRouter); // Lab 3: /api/auth/*
 
 // ---------------------------------------------------------------------------
 // Issue 2 — API health check
@@ -84,8 +88,8 @@ app.get("/api/related-systems", async (_req: Request, res: Response) => {
 // ---------------------------------------------------------------------------
 app.get("/api/requesters", async (_req: Request, res: Response) => {
   try {
-    const requesters = await getPrisma().requesterUser.findMany({
-      where: { isActive: true },
+    const requesters = await getPrisma().user.findMany({
+      where: { isActive: true, role: "REQUESTER" },
       select: { id: true, name: true, email: true },
       orderBy: { id: "asc" },
     });
@@ -99,9 +103,6 @@ app.get("/api/requesters", async (_req: Request, res: Response) => {
 // Lab 2 — Create Ticket
 // POST /api/tickets (api-spec.md §4, FR-02/FR-03, BR-01/BR-08/BR-09/BR-13..19).
 // ---------------------------------------------------------------------------
-function isValidId(value: number): boolean {
-  return Number.isInteger(value) && value > 0;
-}
 
 // Shared shape for endpoints 6, 8, 10 (api-spec.md): removedAt/removalReason
 // are only present once BR-30 actually applies (isRemoved: true).
@@ -146,7 +147,7 @@ app.post("/api/tickets", async (req: Request, res: Response) => {
 
     if (!isValidId(requesterId)) {
       fields.requesterId = "A valid requesterId is required.";
-    } else if (!(await getPrisma().requesterUser.findFirst({ where: { id: requesterId, isActive: true } }))) {
+    } else if (!(await getPrisma().user.findFirst({ where: { id: requesterId, isActive: true, role: "REQUESTER" } }))) {
       fields.requesterId = "requesterId must reference an active Requester.";
     }
 
@@ -366,7 +367,7 @@ app.get("/api/tickets", async (req: Request, res: Response) => {
     const requesterId = Number(req.query.requesterId);
     if (
       !isValidId(requesterId) ||
-      !(await getPrisma().requesterUser.findFirst({ where: { id: requesterId, isActive: true } }))
+      !(await getPrisma().user.findFirst({ where: { id: requesterId, isActive: true, role: "REQUESTER" } }))
     ) {
       return res.status(400).json({
         error: "VALIDATION_ERROR",

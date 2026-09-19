@@ -10,4 +10,4 @@ Lab 3 requires that logging out genuinely blocks further access, and that deacti
 
 ## Consequences
 
-The API is stateful: every authenticated request costs one session lookup, and expired rows need occasional pruning. Because the cookie must be first-party, the client is served through a Vite dev proxy so the API is same-origin in development; without it, a cross-origin cookie would need `SameSite=None; Secure`, which plain-HTTP local development cannot provide. CSRF is handled by `SameSite=Lax` plus the rule that no state-changing operation uses GET.
+The API is stateful: every authenticated request costs one session lookup, and expired rows need occasional pruning. Because the cookie must be first-party, the client is served through a Vite dev proxy so the API is same-origin in development (added in Issue 03; until then the Lab 2 client calls the API cross-origin and relies on credentialed CORS, BR-62); without it, a cross-origin cookie would need `SameSite=None; Secure`, which plain-HTTP local development cannot provide. CSRF is handled by `SameSite=Lax` plus the rule that no state-changing operation uses GET.

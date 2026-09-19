@@ -16,23 +16,23 @@ The database must be running, migrated, and seeded first. Playwright's `testDir`
 
 | Test ID | Type | Requirement / AC | What It Tests | Expected Result | Automated Test File | Final |
 |---|---|---|---|---|---|---|
-| UNIT-01 | Unit | BR-03 | `hashPassword` then `verifyPassword` round trip, and a wrong password | Correct password verifies, wrong one does not, hash is never the plaintext | `server/tests/lab-03/password.unit.test.ts` | Planned |
-| UNIT-02 | Unit | BR-03 | Two hashes of the same password | Different salts produce different stored values, both verify | `server/tests/lab-03/password.unit.test.ts` | Planned |
-| UNIT-03 | Unit | BR-10, AC-07 | `validateNewPassword` against each unmet rule and the boundaries 7, 8, 128, 129 | One specific message per unmet rule; 8 and 128 accepted, 7 and 129 rejected | `server/tests/lab-03/password.unit.test.ts` | Planned |
+| UNIT-01 | Unit | BR-03 | `hashPassword` then `verifyPassword` round trip, and a wrong password | Correct password verifies, wrong one does not, hash is never the plaintext | `server/tests/lab-03/password.unit.test.ts` | Pass |
+| UNIT-02 | Unit | BR-03 | Two hashes of the same password | Different salts produce different stored values, both verify | `server/tests/lab-03/password.unit.test.ts` | Pass |
+| UNIT-03 | Unit | BR-10, AC-07 | `validateNewPassword` against each unmet rule and the boundaries 7, 8, 128, 129 | One specific message per unmet rule; 8 and 128 accepted, 7 and 129 rejected | `server/tests/lab-03/password.unit.test.ts` | Pass |
 | UNIT-04 | Unit | BR-25, AC-23 | `isTransitionPermitted` across every from/to pair in the matrix | Exactly the BR-25 pairs allowed, all others refused, including same-status | `server/tests/lab-03/statusTransition.unit.test.ts` | Planned |
 | UNIT-05 | Unit | BR-26 | Terminal statuses `CLOSED` and `CANCELLED` | No transition out of either is permitted | `server/tests/lab-03/statusTransition.unit.test.ts` | Planned |
 | UNIT-06 | Unit | BR-33 | Comment and note body validation: empty, whitespace-only, 1, 2, 2000, 2001 characters | Whitespace-only and 1 rejected, 2 and 2000 accepted, 2001 rejected, value trimmed | `server/tests/lab-03/contentValidation.unit.test.ts` | Planned |
 | UNIT-07 | Unit | BR-40, BR-46 | User field validation: name bounds, email format and length, role enum | Out-of-bounds and malformed values rejected with a per-field message | `server/tests/lab-03/userValidation.unit.test.ts` | Planned |
 | UNIT-08 | Unit | BR-23, L2-BR-23 | `parseStaffQueueQuery` with unknown sort, out-of-range page and pageSize, unknown filter values | Every unrecognised input falls back to its default, never throws | `server/tests/lab-03/staffQueueQuery.unit.test.ts` | Planned |
-| UNIT-09 | Unit | BR-51, AC-36 | `verifyPassword` against the `!` marker, an empty string, and a truncated `scrypt$` string | Returns false for each without throwing, so a backfilled account can never authenticate | `server/tests/lab-03/password.unit.test.ts` | Planned |
-| API-01 | API | AC-01 | Valid login | 200, session cookie set, safe user body with role, no password field | `server/tests/lab-03/auth.api.test.ts` | Planned |
-| API-02 | API | AC-06 | Login with an unknown email, and with a wrong password | Both 401 with the identical generic message | `server/tests/lab-03/auth.api.test.ts` | Planned |
-| API-03 | API | AC-05 | Login to an inactive account with correct credentials | 401 `ACCOUNT_INACTIVE`, no session created | `server/tests/lab-03/auth.api.test.ts` | Planned |
-| API-04 | API | AC-02, BR-02 | A `mustChangePassword` user calling a protected endpoint | 403 `PASSWORD_CHANGE_REQUIRED`; `/auth/me`, change-password, and logout still work | `server/tests/lab-03/auth.api.test.ts` | Planned |
-| API-05 | API | AC-07 | Change password with each BR-10 rule unmet, and with a mismatched confirmation | 400 with the specific field message, old password still valid | `server/tests/lab-03/auth.api.test.ts` | Planned |
-| API-06 | API | AC-08 | Successful password change | 200, `mustChangePassword` false, other sessions revoked, acting session survives | `server/tests/lab-03/auth.api.test.ts` | Planned |
-| API-07 | API | AC-09 | Logout, then reuse the same cookie | 200 on logout, 401 on the next request | `server/tests/lab-03/auth.api.test.ts` | Planned |
-| API-08 | API | AC-10, BR-08 | Deactivate a user holding a live session, then use it | 401 without an explicit logout | `server/tests/lab-03/auth.api.test.ts` | Planned |
+| UNIT-09 | Unit | BR-51, AC-36 | `verifyPassword` against the `!` marker, an empty string, and a truncated `scrypt$` string | Returns false for each without throwing, so a backfilled account can never authenticate | `server/tests/lab-03/password.unit.test.ts` | Pass |
+| API-01 | API | AC-01 | Valid login | 200, session cookie set, safe user body with role, no password field | `server/tests/lab-03/auth.api.test.ts` | Pass |
+| API-02 | API | AC-06 | Login with an unknown email, and with a wrong password | Both 401 with the identical generic message | `server/tests/lab-03/auth.api.test.ts` | Pass |
+| API-03 | API | AC-05 | Login to an inactive account with correct credentials | 401 `ACCOUNT_INACTIVE`, no session created | `server/tests/lab-03/auth.api.test.ts` | Pass |
+| API-04 | API | AC-02, BR-02 | A `mustChangePassword` user calling a protected endpoint | 403 `PASSWORD_CHANGE_REQUIRED`; `/auth/me`, change-password, and logout still work | `server/tests/lab-03/auth.api.test.ts` | Pass |
+| API-05 | API | AC-07 | Change password with each BR-10 rule unmet, and with a mismatched confirmation | 400 with the specific field message, old password still valid | `server/tests/lab-03/auth.api.test.ts` | Pass |
+| API-06 | API | AC-08 | Successful password change | 200, `mustChangePassword` false, other sessions revoked, acting session survives | `server/tests/lab-03/auth.api.test.ts` | Pass |
+| API-07 | API | AC-09 | Logout, then reuse the same cookie | 200 on logout, 401 on the next request | `server/tests/lab-03/auth.api.test.ts` | Pass |
+| API-08 | API | AC-10, BR-08 | Deactivate a user holding a live session, then use it; and use a session past its 8 hour expiry | 401 without an explicit logout in both cases, and the expired row is removed | `server/tests/lab-03/auth.api.test.ts` | Pass |
 | API-09 | API | AC-13 | Every protected endpoint with no cookie | 401 on each, no data in any body | `server/tests/lab-03/authorization.api.test.ts` | Planned |
 | API-10 | API | AC-12, AC-22 | A Requester session against every staff and admin endpoint | 403 on each, no protected data | `server/tests/lab-03/authorization.api.test.ts` | Planned |
 | API-11 | API | AC-04, BR-35 | A Requester requesting Internal Notes on a Ticket they own | 403, body contains no note content and no note count | `server/tests/lab-03/authorization.api.test.ts` | Planned |
@@ -77,6 +77,7 @@ The database must be running, migrated, and seeded first. Playwright's `testDir`
 | API-50 | API | AC-42, BR-60 | Deactivate a Requester who has Tickets: read the queue, attempt login, post a Public Comment as IT Staff, then reactivate and read as the Requester | Tickets remain with `requesterIsActive` false; login 401 `ACCOUNT_INACTIVE`; comment 201; after reactivation the Requester sees the Ticket and that comment | `server/tests/lab-03/account-change-tickets.api.test.ts` | Planned |
 | API-51 | API | AC-43, BR-55, BR-60 | Change a Requester who created Tickets to IT Staff, sign in again, and exercise every Requester-only operation | Each Ticket still resolves to the same requester by ticket number; own-list, create, resolution indication, Attachment upload, and Attachment remove all return 403; `GET /api/tickets/:id` returns 200 as for any staff | `server/tests/lab-03/account-change-tickets.api.test.ts` | Planned |
 | API-52 | API | AC-44, BR-61, BR-35 | An IT Staff user writes a Public Comment and an Internal Note and is then changed to Requester | The comment still reads `authorRole` `IT_STAFF` for the owning Requester; the former author now gets 403 on the notes endpoint while another IT Staff user still reads the note | `server/tests/lab-03/account-change-tickets.api.test.ts` | Planned |
+| API-53 | API | AC-45, BR-62 | A preflight and a real request from an allowed origin, from an unlisted origin, and with no `Origin`; and `CORS_ORIGINS` parsing including a `*` entry | The allowed origin is echoed exactly with `Access-Control-Allow-Credentials: true` and `Vary: Origin`, never `*`; any other origin gets no CORS headers; a wildcard entry is dropped | `server/tests/lab-03/cors.api.test.ts` | Pass |
 | UI-01 | UI | AC-01 | Login screen: valid submission | Calls the API once, stores nothing in `localStorage`, navigates to the role landing screen | `client/tests/lab-03/Login.test.tsx` | Planned |
 | UI-02 | UI | FR-01 | Login: missing email, malformed email, missing password | Per-field messages shown, no API call made | `client/tests/lab-03/Login.test.tsx` | Planned |
 | UI-03 | UI | AC-06 | Login: credential failure response | Generic callout, email preserved, password cleared | `client/tests/lab-03/Login.test.tsx` | Planned |
@@ -107,15 +108,15 @@ The database must be running, migrated, and seeded first. Playwright's `testDir`
 | UI-28 | UI | AC-38, AC-39 | Staff Ticket Detail Attachments tab as IT Staff and as Administrator, with one active and one removed Attachment | Metadata and a Download action shown; the removed one shows its reason and no Download; no upload control and no Remove control exist in the DOM | `client/tests/lab-03/StaffTicketDetail.test.tsx` | Planned |
 | UI-29 | UI | AC-40, AC-41 | Ticket Queue with a Ticket whose owner is inactive and another whose owner is no longer IT Staff, and the Owner filter | Owner name kept with "(inactive)" or "(not IT Staff)" and a "Needs new owner" badge; choosing "Needs an owner" issues `owner=needs-owner` | `client/tests/lab-03/StaffTicketQueue.test.tsx` | Planned |
 | UI-30 | UI | AC-41, AC-42 | Staff Ticket Detail for a Ticket with an ineligible owner and an inactive Requester | Claim shown; the ineligible owner is the displayed value but not offered for other Tickets; the Requester carries an "(inactive)" marker | `client/tests/lab-03/StaffTicketDetail.test.tsx` | Planned |
-| MIG-01 | Migration | AC-34 | Row count and ids in `User` after the rename, against `RequesterUser` before | Identical count, identical ids, no row lost or added | `server/tests/lab-03/migration.test.ts` | Planned |
-| MIG-02 | Migration | AC-34, BR-47 | Every pre-existing Ticket's requester after migration | Each Ticket still resolves to its original person by ticket number | `server/tests/lab-03/migration.test.ts` | Planned |
-| MIG-03 | Migration | BR-48, BR-52 | Migrated Requesters after seeding | Role `REQUESTER`, `mustChangePassword` true, a well-formed `scrypt$` hash that is neither the `!` marker nor plaintext | `server/tests/lab-03/migration.test.ts` | Planned |
+| MIG-01 | Migration | AC-34 | Row count and ids in `User` after the rename, against `RequesterUser` before | Identical count, identical ids, no row lost or added | `server/tests/lab-03/migration.test.ts` | Pass |
+| MIG-02 | Migration | AC-34, BR-47 | Every pre-existing Ticket's requester after migration | Each Ticket still resolves to its original person by ticket number | `server/tests/lab-03/migration.test.ts` | Pass |
+| MIG-03 | Migration | BR-48, BR-52 | Migrated Requesters after seeding, including migrated rows the seed does not list | Role `REQUESTER`, `mustChangePassword` true, a well-formed `scrypt$` hash that is neither the `!` marker nor plaintext, and no row left holding the marker | `server/tests/lab-03/migration.test.ts` | Pass |
 | MIG-04 | Migration | BR-49 | `GET /api/requesters` after removal | 404 from the router | `server/tests/lab-03/migration.test.ts` | Planned |
-| MIG-05 | Migration | BR-50 | Seed run twice | Idempotent: same counts, no duplicates, required active and inactive fixtures present for all three roles | `server/tests/lab-03/seed.test.ts` | Planned |
-| MIG-06 | Migration | AC-36, BR-48, BR-51 | Apply the migration to a Lab 2 database that holds rows, and inspect `User` before any seeding | Every row has role `REQUESTER`, `mustChangePassword` true, and `passwordHash` equal to `!`; `passwordHash` and `updatedAt` are `NOT NULL`; `updatedAt` has no default | `server/tests/lab-03/migration.test.ts` | Planned |
-| MIG-07 | Migration | AC-36, BR-51 | Sign in as a migrated, unseeded user with the documented initial password, with an arbitrary password, and with the marker `!` | 401 with the generic failure body each time, identical to an unknown email, and no `Session` row created | `server/tests/lab-03/migration.test.ts` | Planned |
-| MIG-08 | Migration | AC-37, BR-52 | Run the seed on the migrated database, sign in as a migrated Requester with the documented initial password, change it, then run the seed again | After the first seed the hash is a well-formed `scrypt$` string; sign-in forces the change; after the second seed the new password still works, `mustChangePassword` is false, and the hash is unchanged | `server/tests/lab-03/seed.test.ts` | Planned |
-| MIG-09 | Migration | AC-34, BR-47 | Apply every migration from scratch to an empty database, then compare the migrations against `schema.prisma` with `prisma migrate diff` | Applies without error, and the diff reports no difference, so the hand-edited rename leaves no drift | `server/tests/lab-03/migration.test.ts` | Planned |
+| MIG-05 | Migration | BR-50 | Seed run twice | Idempotent: same counts, no duplicates, required active and inactive fixtures present for all three roles | `server/tests/lab-03/seed.test.ts` | Pass |
+| MIG-06 | Migration | AC-36, BR-48, BR-51 | Apply the migration to a Lab 2 database that holds rows, and inspect `User` before any seeding | Every row has role `REQUESTER`, `mustChangePassword` true, and `passwordHash` equal to `!`; `passwordHash` and `updatedAt` are `NOT NULL`; `updatedAt` has no default | `server/tests/lab-03/migration.test.ts` | Pass |
+| MIG-07 | Migration | AC-36, BR-51 | Sign in as a migrated, unseeded user with the documented initial password, with an arbitrary password, and with the marker `!` | 401 with the generic failure body each time, identical to an unknown email, and no `Session` row created | `server/tests/lab-03/migration.test.ts` | Pass |
+| MIG-08 | Migration | AC-37, BR-52 | Run the seed on the migrated database, sign in as a migrated Requester with the documented initial password, change it, then run the seed again | After the first seed the hash is a well-formed `scrypt$` string; sign-in forces the change; after the second seed the new password still works, `mustChangePassword` is false, and the hash is unchanged | `server/tests/lab-03/seed.test.ts` | Pass |
+| MIG-09 | Migration | AC-34, BR-47 | Apply every migration from scratch to an empty database, then compare the migrations against `schema.prisma` with `prisma migrate diff` | Applies without error, and the diff reports no difference, so the hand-edited rename leaves no drift | `server/tests/lab-03/migration.test.ts` | Pass |
 | E2E-01 | E2E | AC-01, AC-02, AC-09 | Sign in with an initial password, change it, reach the application, log out, attempt direct access | Normal screens open only after the change; access blocked after logout | `e2e/lab-03/authentication.spec.ts` | Planned |
 | E2E-02 | E2E | AC-11, AC-12 | Sign in as each role and inspect navigation and a forbidden route | Each role sees only its destinations; a forbidden route shows the forbidden state | `e2e/lab-03/authentication.spec.ts` | Planned |
 | E2E-03 | E2E | AC-16 to AC-27 | Full staff flow: find in queue, open, claim, set IT Priority, move status, comment publicly, add an internal note, resolve with a summary | Every step succeeds and persists; the Requester sees the comment and the resolution but never the note | `e2e/lab-03/staff-ticket-flow.spec.ts` | Planned |
@@ -173,8 +174,9 @@ The database must be running, migrated, and seeded first. Playwright's `testDir`
 | AC-42 | API-50, UI-30 |
 | AC-43 | API-51 |
 | AC-44 | API-52 |
+| AC-45 | API-53 |
 
-Every AC-01 through AC-44 appears above, and every test row names a real file path that must exist before its row may be marked Pass.
+Every AC-01 through AC-45 appears above, and every test row names a real file path that must exist before its row may be marked Pass.
 
 ## 4. Migration and regression evidence
 
@@ -193,3 +195,27 @@ Automated tests did not catch the two worst Lab 2 defects: a stale-response race
 ## 6. Results
 
 To be completed as each Issue lands. Final counts from `main`, with the `Final` column above flipped from `Planned` to `Pass` per row, go here before submission.
+
+### Issue 02: auth foundation
+
+Twenty-one rows moved from `Planned` to `Pass` (UNIT-01, UNIT-02, UNIT-03, UNIT-09, API-01 to API-08, API-53, MIG-01 to MIG-03, MIG-05 to MIG-09), each only after that row's test ran green.
+
+| Suite | Result |
+|---|---|
+| `cd server && npm test` | 17 files, 114 tests passed: the 82 Lab 2 tests plus 32 new Lab 3 tests. Five consecutive full runs all passed. |
+| `cd client && npm test` | 8 files, 44 tests passed, unchanged |
+| `npx playwright test` | 8 of 9 passed. `e2e/lab-02/submission-evidence.spec.ts:132` fails because it asserts exactly 3 Network Tickets for requester index 2, who already holds 9 from earlier runs of this shared development database. It predates Lab 3, is not in the graded traceability table, and is rewritten in Issue 04 together with the removal of `GET /api/requesters`. |
+
+Migration evidence, from the migration applied to the development database that holds real Lab 2 data (`prisma migrate deploy`):
+
+| Check | Before (`RequesterUser`) | After (`User`) |
+|---|---|---|
+| Row count | 65 | 65 |
+| Ticket count | 139 | 139 |
+| MD5 of the `ticketNumber:requester email` mapping, ordered by ticket number | `89bbb4d1963d27718755bec5948b7769` | `89bbb4d1963d27718755bec5948b7769` |
+| Rows holding the `!` marker, before seeding | n/a | 65 |
+| Rows holding the `!` marker, after `prisma db seed` | n/a | 0 |
+
+The same migration was first run on a copy of that database, and `prisma migrate diff` against `schema.prisma` reported no difference. The migration tests run the same steps on throwaway databases, so they never touch shared data. A first run of the seed left 60 migrated rows without a credential because it only handled its own fixture emails; the seed now credentials every row still holding the marker, and MIG-03 asserts it.
+
+Test isolation: every Lab 3 API test file that creates users calls `useIsolatedDatabase()`, which builds a throwaway migrated database and points `getPrisma()` at it, and `createUser` throws if a file forgot to. Vitest runs files in parallel, and `server/tests/lab-02/requesters.api.test.ts` asserts the exact list of active Requesters in the shared development database, so the Lab 3 tests must never write there. After the change the shared database was byte-for-byte unchanged by a run of the auth tests (78 users, highest id 194, 0 sessions before and after), and no `toktickit_scratch_*` database remained.

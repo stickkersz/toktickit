@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import request from "supertest";
 import { app } from "../../src/app.js";
+import { UNUSABLE_PASSWORD_HASH } from "../../src/auth/password.js";
 import { getPrisma } from "../../src/prisma.js";
 import * as prismaModule from "../../src/prisma.js";
 import { UPLOAD_DIR } from "../../src/attachmentStorage.js";
@@ -364,12 +365,17 @@ describe("DELETE /api/attachments/:id", () => {
 // API-20 / BR-38
 describe("Attachment endpoints — deactivated Requester", () => {
   it("returns 404 on GET metadata, GET download, DELETE, and POST upload once the Requester is inactive", async () => {
-    const requester = await getPrisma().requesterUser.create({
-      data: { name: "Temp Requester", email: `temp-${randomUUID()}@example.com`, isActive: true },
+    const requester = await getPrisma().user.create({
+      data: {
+        name: "Temp Requester",
+        email: `temp-${randomUUID()}@example.com`,
+        isActive: true,
+        passwordHash: UNUSABLE_PASSWORD_HASH,
+      },
     });
     const { ticketId, attachmentId } = await createTicketWithAttachment(requester.id);
 
-    await getPrisma().requesterUser.update({
+    await getPrisma().user.update({
       where: { id: requester.id },
       data: { isActive: false },
     });

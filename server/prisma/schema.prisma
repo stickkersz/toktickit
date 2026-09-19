@@ -18,13 +18,70 @@ model Category {
   tickets   Ticket[]
 }
 
-model RequesterUser {
+enum UserRole {
+  REQUESTER
+  IT_STAFF
+  ADMINISTRATOR
+}
+
+// Lab 3: RequesterUser renamed to User in place (ADR 0002, spec section 8).
+// Ticket.requesterId keeps its name: it names the role the user plays there.
+model User {
+  id                 Int      @id @default(autoincrement())
+  name               String
+  email              String   @unique
+  passwordHash       String
+  role               UserRole @default(REQUESTER)
+  mustChangePassword Boolean  @default(true)
+  isActive           Boolean  @default(true)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  tickets        Ticket[]        @relation("TicketRequester")
+  ownedTickets   Ticket[]        @relation("TicketOwner")
+  sessions       Session[]
+  publicComments PublicComment[]
+  internalNotes  InternalNote[]
+
+  @@index([role, isActive])
+}
+
+model Session {
   id        Int      @id @default(autoincrement())
-  name      String
-  email     String   @unique
-  isActive  Boolean  @default(true)
+  tokenHash String   @unique
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id])
   createdAt DateTime @default(now())
-  tickets   Ticket[]
+  expiresAt DateTime
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model PublicComment {
+  id         Int      @id @default(autoincrement())
+  ticketId   Int
+  ticket     Ticket   @relation(fields: [ticketId], references: [id])
+  authorId   Int
+  author     User     @relation(fields: [authorId], references: [id])
+  authorRole UserRole
+  body       String
+  createdAt  DateTime @default(now())
+
+  @@index([ticketId, createdAt])
+}
+
+model InternalNote {
+  id         Int      @id @default(autoincrement())
+  ticketId   Int
+  ticket     Ticket   @relation(fields: [ticketId], references: [id])
+  authorId   Int
+  author     User     @relation(fields: [authorId], references: [id])
+  authorRole UserRole
+  body       String
+  createdAt  DateTime @default(now())
+
+  @@index([ticketId, createdAt])
 }
 
 model RelatedSystem {
@@ -42,14 +99,21 @@ enum TicketPriority {
 }
 
 enum TicketStatus {
-  NEW // only status reachable in Lab 2; Lab 3+ extends this enum
+  NEW
+  OPEN
+  IN_PROGRESS
+  WAITING_FOR_REQUESTER
+  RESOLVED
+  CLOSED
+  REOPENED
+  CANCELLED
 }
 
 model Ticket {
   id                Int             @id @default(autoincrement())
   ticketNumber      String          @unique
   requesterId       Int
-  requester         RequesterUser   @relation(fields: [requesterId], references: [id])
+  requester         User            @relation("TicketRequester", fields: [requesterId], references: [id])
   categoryId        Int
   category          Category        @relation(fields: [categoryId], references: [id])
   relatedSystemId   Int
@@ -63,8 +127,17 @@ model Ticket {
   updatedAt         DateTime        @updatedAt
   attachments       Attachment[]
 
+  ownerId                      Int?
+  owner                        User?           @relation("TicketOwner", fields: [ownerId], references: [id])
+  resolutionSummary            String?
+  requesterResolutionFlaggedAt DateTime?
+  publicComments               PublicComment[]
+  internalNotes                InternalNote[]
+
   @@index([requesterId, createdAt])
   @@index([requesterId, currentStatus])
+  @@index([currentStatus, createdAt])
+  @@index([ownerId, currentStatus])
 }
 
 model Attachment {
