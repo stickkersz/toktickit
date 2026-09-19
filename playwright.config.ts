@@ -51,7 +51,11 @@ export default defineConfig({
       url: CLIENT_URL,
       reuseExistingServer: !process.env.CI,
       timeout: 60_000,
-      env: { VITE_API_URL: API_URL },
+      // The client reaches the API through the Vite proxy (same-origin), so it
+      // is told where the Playwright API lives rather than given an absolute URL.
+      // VITE_API_URL is blanked so a developer's own client/.env cannot send the
+      // browser cross-origin to a different port.
+      env: { VITE_API_PROXY_TARGET: API_URL, VITE_API_URL: "" },
     },
   ],
 });

@@ -1,5 +1,6 @@
 import { createContext, ReactNode, useContext, useEffect, useMemo, useState } from "react";
 import { getRequesters, Requester } from "./api.js";
+import { AuthContext } from "./authContext.js";
 
 const STORAGE_KEY = "toktickit.currentRequesterId";
 
@@ -26,9 +27,23 @@ function readStoredId(): number | null {
 // (name/email) is never read from storage as-is; it is re-fetched and
 // re-validated against the active Requesters list on every load, and the
 // stored id is cleared if that Requester is now missing or inactive.
+//
+// Lab 3 bridge, removed with the selector in Issue 04: a signed-in Requester
+// (no pending password change) is presented to the Lab 2 screens as the current
+// Requester. It is derived from the auth user on every render rather than stored,
+// so it can never outlive the session and never touches localStorage. An
+// AuthProvider is optional so the Lab 2 screens and tests can mount this alone.
 export function RequesterProvider({ children }: { children: ReactNode }) {
-  const [requester, setRequester] = useState<Requester | null>(null);
-  const [status, setStatus] = useState<"checking" | "resolved">("checking");
+  const [selected, setSelected] = useState<Requester | null>(null);
+  const [localStatus, setStatus] = useState<"checking" | "resolved">("checking");
+  const auth = useContext(AuthContext);
+  const authUser = auth?.user ?? null;
+  const signedInRequester: Requester | null =
+    authUser && authUser.role === "REQUESTER" && !authUser.mustChangePassword
+      ? { id: authUser.id, name: authUser.name, email: authUser.email }
+      : null;
+  const requester = signedInRequester ?? selected;
+  const status = localStatus === "checking" || auth?.status === "checking" ? "checking" : "resolved";
 
   useEffect(() => {
     const storedId = readStoredId();
@@ -43,14 +58,14 @@ export function RequesterProvider({ children }: { children: ReactNode }) {
         if (!match) {
           localStorage.removeItem(STORAGE_KEY);
         }
-        setRequester(match);
+        setSelected(match);
         setStatus("resolved");
       })
       .catch(() => {
         // Can't confirm the stored id is still active: treat it as invalid
         // rather than trusting stale storage (BR-05).
         localStorage.removeItem(STORAGE_KEY);
-        setRequester(null);
+        setSelected(null);
         setStatus("resolved");
       });
   }, []);
@@ -61,12 +76,12 @@ export function RequesterProvider({ children }: { children: ReactNode }) {
       status,
       selectRequester: (next: Requester) => {
         localStorage.setItem(STORAGE_KEY, String(next.id));
-        setRequester(next);
+        setSelected(next);
       },
       // FR-09/BR-06: switching clears all previously loaded requester-scoped data.
       clearRequester: () => {
         localStorage.removeItem(STORAGE_KEY);
-        setRequester(null);
+        setSelected(null);
       },
     }),
     [requester, status],

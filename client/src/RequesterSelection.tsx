@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { getRequesters, Requester } from "./api.js";
 import { useRequester } from "./requesterContext.js";
 
@@ -91,8 +91,8 @@ export default function RequesterSelection() {
       )}
 
       <div className="alert alert-secondary small">
-        Authentication coming in Lab 3: this selection will be replaced with secure
-        authentication.
+        Authentication is arriving in Lab 3: this selection will be replaced by real sign-in.{" "}
+        <Link to="/login">Sign in with an account</Link>
       </div>
 
       <div className="d-flex justify-content-end gap-2 mt-4">

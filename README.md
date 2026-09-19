@@ -53,18 +53,20 @@ These accounts exist only in a local development database and are created by the
 | IT Staff | `pimchanok.somboon@toktickit.test`, `wichai.charoen@toktickit.test`, `anucha.prasert@toktickit.test` (active), `sunisa.kaewmanee@toktickit.test` (inactive) | `ChangeMe!23` |
 | Administrator | `aekkarat.wongsa@toktickit.test` | `ChangeMe!23` |
 
-The Lab 3 sign-in screen arrives with a later Issue. Until then the API can be exercised directly: `POST /api/auth/login` with `{ "email", "password" }` sets the `toktickit_session` cookie, and `GET /api/auth/me` returns the signed-in user.
+Sign in at `http://localhost:5173/login`. An account that still holds the initial password is taken straight to Change Password and can reach nothing else until it has chosen a new one. The Development Requester selector is still there for Lab 2 until Issue 04 removes it, and a signed-in Requester bypasses it. IT Staff and Administrators currently land on a placeholder page, because their screens arrive in later Issues. Once an account has chosen its own password the seed never resets it, so to sign in with `ChangeMe!23` again use an account you have not touched yet.
 
 ### 3. Client
 
 ```bash
 cd client
-cp .env.example .env      # set VITE_API_URL to match the server PORT
+cp .env.example .env      # optional: only needed if your server is not on port 3000
 npm install
 npm run dev                # http://localhost:5173
 ```
 
-Open the client URL. It opens on the Development Requester Selection screen (`/select-requester`, a Lab 2 testing mechanism, not authentication); selecting a Requester and clicking Continue takes you to `/tickets`.
+The client calls a relative `/api`, and the Vite dev server proxies it to the API (`http://127.0.0.1:3000` by default; set `VITE_API_PROXY_TARGET` in `client/.env` if your server uses another port). That keeps the browser on a single origin, so the session cookie is first-party. **Leave `VITE_API_URL` unset**: an older `client/.env` that still sets it sends the browser straight to that URL cross-origin instead of through the proxy.
+
+Open the client URL. Without a session it opens on the Development Requester Selection screen (`/select-requester`, a Lab 2 testing mechanism, not authentication); selecting a Requester and clicking Continue takes you to `/tickets`, or use the sign-in link on that screen.
 
 From there the Lab 2 Requester workflow is complete: create a Ticket with attachments, find it in My Tickets (search, filter, sort, paginate), open its Ticket Detail, and add, download, or soft-remove attachments. A Requester only ever sees their own Tickets; another Requester's Ticket returns "Ticket not found" even by direct URL.
 
