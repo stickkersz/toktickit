@@ -133,3 +133,49 @@ a:focus-visible {
   background-color: var(--color-error-bg);
   color: var(--color-error);
 }
+
+/* Lab 3 (ui-spec.md sections 2, 4, 5, 12). Tokens only, no ad-hoc hex values. */
+
+/* Warning callout: the inactive-account response on Login, visually distinct
+   from a credential failure. */
+.zg-alert-warning {
+  background-color: var(--color-warning-bg);
+  color: var(--color-text);
+  border: 1px solid var(--color-warning);
+}
+
+/* Field-level validation text sits directly under its field. */
+.zg-field-error {
+  color: var(--color-error);
+}
+/* Reserved space under every field, so validation text appearing on blur cannot
+   shift the controls below and swallow a click that is already in progress. */
+.zg-field-feedback {
+  min-height: 1.5rem;
+  padding-top: 0.25rem;
+}
+.form-control.is-invalid {
+  border-color: var(--color-error);
+  background-image: none;
+}
+
+.zg-wordmark,
+.zg-wordmark-icon {
+  color: var(--color-primary);
+}
+
+/* Role badge: a neutral outline, not a status color. */
+.zg-badge-role {
+  background-color: var(--color-surface);
+  color: var(--color-text);
+  border: 1px solid var(--color-field-editable-border);
+}
+
+/* Password checklist: state is carried by the glyph and the hidden text, never
+   by color alone (ui-spec.md section 12). */
+.zg-rule-met {
+  color: var(--color-success);
+}
+.zg-rule-unmet {
+  color: var(--color-text-muted);
+}

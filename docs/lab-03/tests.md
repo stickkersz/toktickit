@@ -78,14 +78,14 @@ The database must be running, migrated, and seeded first. Playwright's `testDir`
 | API-51 | API | AC-43, BR-55, BR-60 | Change a Requester who created Tickets to IT Staff, sign in again, and exercise every Requester-only operation | Each Ticket still resolves to the same requester by ticket number; own-list, create, resolution indication, Attachment upload, and Attachment remove all return 403; `GET /api/tickets/:id` returns 200 as for any staff | `server/tests/lab-03/account-change-tickets.api.test.ts` | Planned |
 | API-52 | API | AC-44, BR-61, BR-35 | An IT Staff user writes a Public Comment and an Internal Note and is then changed to Requester | The comment still reads `authorRole` `IT_STAFF` for the owning Requester; the former author now gets 403 on the notes endpoint while another IT Staff user still reads the note | `server/tests/lab-03/account-change-tickets.api.test.ts` | Planned |
 | API-53 | API | AC-45, BR-62 | A preflight and a real request from an allowed origin, from an unlisted origin, and with no `Origin`; and `CORS_ORIGINS` parsing including a `*` entry | The allowed origin is echoed exactly with `Access-Control-Allow-Credentials: true` and `Vary: Origin`, never `*`; any other origin gets no CORS headers; a wildcard entry is dropped | `server/tests/lab-03/cors.api.test.ts` | Pass |
-| UI-01 | UI | AC-01 | Login screen: valid submission | Calls the API once, stores nothing in `localStorage`, navigates to the role landing screen | `client/tests/lab-03/Login.test.tsx` | Planned |
-| UI-02 | UI | FR-01 | Login: missing email, malformed email, missing password | Per-field messages shown, no API call made | `client/tests/lab-03/Login.test.tsx` | Planned |
-| UI-03 | UI | AC-06 | Login: credential failure response | Generic callout, email preserved, password cleared | `client/tests/lab-03/Login.test.tsx` | Planned |
-| UI-04 | UI | AC-05 | Login: inactive-account response | Distinct inactive message, visually different from a credential failure | `client/tests/lab-03/Login.test.tsx` | Planned |
-| UI-05 | UI | FR-01 | Login: double submit while in flight | Button disabled and busy, exactly one request issued | `client/tests/lab-03/Login.test.tsx` | Planned |
-| UI-06 | UI | AC-02 | A `mustChangePassword` user attempting any other route | Redirected to Change Password, no nav items rendered | `client/tests/lab-03/ChangePassword.test.tsx` | Planned |
-| UI-07 | UI | AC-07 | Change Password: live rule checklist as the user types | Each rule flips met state; submission blocked while any is unmet | `client/tests/lab-03/ChangePassword.test.tsx` | Planned |
-| UI-08 | UI | AC-08 | Change Password: success | Navigates into the application, nav items appear | `client/tests/lab-03/ChangePassword.test.tsx` | Planned |
+| UI-01 | UI | AC-01 | Login screen: valid submission | Calls the API once, stores nothing in `localStorage`, navigates to the role landing screen | `client/tests/lab-03/Login.test.tsx` | Pass |
+| UI-02 | UI | FR-01 | Login: missing email, malformed email, missing password | Per-field messages shown, no API call made | `client/tests/lab-03/Login.test.tsx` | Pass |
+| UI-03 | UI | AC-06 | Login: credential failure response | Generic callout, email preserved, password cleared | `client/tests/lab-03/Login.test.tsx` | Pass |
+| UI-04 | UI | AC-05 | Login: inactive-account response | Distinct inactive message, visually different from a credential failure | `client/tests/lab-03/Login.test.tsx` | Pass |
+| UI-05 | UI | FR-01 | Login: double submit while in flight | Button disabled and busy, exactly one request issued | `client/tests/lab-03/Login.test.tsx` | Pass |
+| UI-06 | UI | AC-02 | A `mustChangePassword` user attempting any other route | Redirected to Change Password, no nav items rendered | `client/tests/lab-03/ChangePassword.test.tsx` | Pass |
+| UI-07 | UI | AC-07 | Change Password: live rule checklist as the user types | Each rule flips met state; submission blocked while any is unmet | `client/tests/lab-03/ChangePassword.test.tsx` | Pass |
+| UI-08 | UI | AC-08 | Change Password: success | Navigates into the application, nav items appear | `client/tests/lab-03/ChangePassword.test.tsx` | Pass |
 | UI-09 | UI | AC-11 | Shell rendered for each of the three roles | Only that role's nav items appear; no hidden markup for the others | `client/tests/lab-03/Shell.role.test.tsx` | Planned |
 | UI-10 | UI | AC-09 | Logout from the shell | Session cleared, redirected to Login, back-navigation does not restore the app | `client/tests/lab-03/Shell.role.test.tsx` | Planned |
 | UI-11 | UI | AC-16 | Ticket Queue: loaded with rows | Ticket number, status, IT priority, and owner rendered; unassigned shown explicitly | `client/tests/lab-03/StaffTicketQueue.test.tsx` | Planned |
@@ -108,6 +108,8 @@ The database must be running, migrated, and seeded first. Playwright's `testDir`
 | UI-28 | UI | AC-38, AC-39 | Staff Ticket Detail Attachments tab as IT Staff and as Administrator, with one active and one removed Attachment | Metadata and a Download action shown; the removed one shows its reason and no Download; no upload control and no Remove control exist in the DOM | `client/tests/lab-03/StaffTicketDetail.test.tsx` | Planned |
 | UI-29 | UI | AC-40, AC-41 | Ticket Queue with a Ticket whose owner is inactive and another whose owner is no longer IT Staff, and the Owner filter | Owner name kept with "(inactive)" or "(not IT Staff)" and a "Needs new owner" badge; choosing "Needs an owner" issues `owner=needs-owner` | `client/tests/lab-03/StaffTicketQueue.test.tsx` | Planned |
 | UI-30 | UI | AC-41, AC-42 | Staff Ticket Detail for a Ticket with an ineligible owner and an inactive Requester | Claim shown; the ineligible owner is the displayed value but not offered for other Tickets; the Requester carries an "(inactive)" marker | `client/tests/lab-03/StaffTicketDetail.test.tsx` | Planned |
+| UI-31 | UI | AC-46, BR-63, BR-16 | Each role opening, by direct URL, screens its role may not use (Requester on the staff and admin routes, IT Staff on the admin and Requester routes, Administrator on the Requester routes), plus signed-out visitors and unknown URLs | The forbidden state with the exact message and a link home; the screen never renders and none of its API requests are made; the allowed roles still get in; signed-out goes to Login; an unknown URL goes to the user's own landing route | `client/tests/lab-03/RoleRoutes.test.tsx` | Pass |
+| UI-32 | UI | AC-46, BR-63 | A Development Requester selection left in browser storage while IT Staff, an Administrator, a Requester, or nobody is signed in | Ignored for IT Staff and Administrators: no requester at all, the selector never shown, the stored value left alone; a signed-in Requester acts as themselves, never as the stored id; with nobody signed in the Lab 2 flow is unchanged | `client/tests/lab-03/RoleRoutes.test.tsx` | Pass |
 | MIG-01 | Migration | AC-34 | Row count and ids in `User` after the rename, against `RequesterUser` before | Identical count, identical ids, no row lost or added | `server/tests/lab-03/migration.test.ts` | Pass |
 | MIG-02 | Migration | AC-34, BR-47 | Every pre-existing Ticket's requester after migration | Each Ticket still resolves to its original person by ticket number | `server/tests/lab-03/migration.test.ts` | Pass |
 | MIG-03 | Migration | BR-48, BR-52 | Migrated Requesters after seeding, including migrated rows the seed does not list | Role `REQUESTER`, `mustChangePassword` true, a well-formed `scrypt$` hash that is neither the `!` marker nor plaintext, and no row left holding the marker | `server/tests/lab-03/migration.test.ts` | Pass |
@@ -175,8 +177,9 @@ The database must be running, migrated, and seeded first. Playwright's `testDir`
 | AC-43 | API-51 |
 | AC-44 | API-52 |
 | AC-45 | API-53 |
+| AC-46 | UI-31, UI-32 |
 
-Every AC-01 through AC-45 appears above, and every test row names a real file path that must exist before its row may be marked Pass.
+Every AC-01 through AC-46 appears above, and every test row names a real file path that must exist before its row may be marked Pass.
 
 ## 4. Migration and regression evidence
 
@@ -219,3 +222,19 @@ Migration evidence, from the migration applied to the development database that 
 The same migration was first run on a copy of that database, and `prisma migrate diff` against `schema.prisma` reported no difference. The migration tests run the same steps on throwaway databases, so they never touch shared data. A first run of the seed left 60 migrated rows without a credential because it only handled its own fixture emails; the seed now credentials every row still holding the marker, and MIG-03 asserts it.
 
 Test isolation: every Lab 3 API test file that creates users calls `useIsolatedDatabase()`, which builds a throwaway migrated database and points `getPrisma()` at it, and `createUser` throws if a file forgot to. Vitest runs files in parallel, and `server/tests/lab-02/requesters.api.test.ts` asserts the exact list of active Requesters in the shared development database, so the Lab 3 tests must never write there. After the change the shared database was byte-for-byte unchanged by a run of the auth tests (78 users, highest id 194, 0 sessions before and after), and no `toktickit_scratch_*` database remained.
+
+### Issue 03: login and Change Password screens
+
+Ten rows moved from `Planned` to `Pass` (UI-01 to UI-08, plus UI-31 and UI-32 added in review round 1), each only after its test ran green.
+
+| Suite | Result |
+|---|---|
+| `cd client && npm test` | 11 files, 92 tests passed: the 44 Lab 2 tests, unmodified, plus 48 new Lab 3 tests (10 in `Login.test.tsx`, 11 in `ChangePassword.test.tsx`, 27 in `RoleRoutes.test.tsx`) |
+| `cd server && npm test` | 17 files, 114 tests passed, unchanged |
+| `npx playwright test` | 8 of 9 passed, now through the Vite proxy. The failing spec is the same known `submission-evidence.spec.ts:132` described under Issue 02. |
+
+Review round 1 (songt888): role route protection was incomplete. A Requester could open `/staff/tickets` and `/admin/users` by URL, because both only required a session, and IT Staff or an Administrator could act as a Requester through a Development Requester selection left in browser storage. Both are fixed and covered by UI-31 and UI-32. The new tests were written first and failed against the old code (13 red); each part of the fix was then mutation-checked (reverting the context change, letting every role through, dropping the Requester-route role check, and sending unknown URLs to `/tickets` each turned tests red), and reverting the context change alone showed the route check had been masking it, so the provider is now tested directly. A real-Chromium pass repeated the cases with real logins and a real stored selection: every forbidden URL was blocked, no `/api/tickets` request was made behind a forbidden screen, `/select-requester` bounced IT Staff to their own landing, and the allowed routes still worked.
+
+Mutation check: removing the in-flight guard, the password clearing on a credential failure, the forced redirect to Change Password, and the client-side validation gate each turned at least one of the new tests red.
+
+Manual pass in real Chromium against the real API through the Vite proxy, at 375, 768 and 1280 (22 checks): no horizontal scroll on Login or Change Password at any width; validation, credential failure, inactive account and API-failure states each look different; the session cookie is `HttpOnly`, `SameSite=Lax`, `Path=/` and unreadable by script; nothing identity related is in `localStorage`; a direct visit to `/tickets` with an initial password is pushed back to Change Password; the session survives a reload; all 19 auth requests were same-origin with no CORS preflight. The pass found one defect the component tests could not: on an empty form, the first click on Sign In blurred the email field, its error appeared, the button moved down, and the mouse-up landed off the button, so the click was lost and the password error never showed. Space for field feedback is now always reserved so nothing shifts.
