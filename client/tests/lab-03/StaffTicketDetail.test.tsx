@@ -580,6 +580,133 @@ describe("Staff Ticket Detail: concurrent saves", () => {
   });
 });
 
+describe("Staff Ticket Detail: a reload that fails", () => {
+  // After a status change, or a refused change, the screen reloads what the control depends on. If that
+  // fails, what is on screen may be out of date, so it must say so and stop offering changes from it.
+  const WICHAI = { ownerId: 20, ownerName: "Wichai Charoen", ownerIsActive: true, ownerEligible: true };
+  const deferred = <T,>() => {
+    let resolve!: (v: T) => void;
+    const promise = new Promise<T>((r) => (resolve = r));
+    return { promise, resolve };
+  };
+
+  it("does not say Saved or offer the old next statuses when the reload after a status change fails, and recovers on Reload", async () => {
+    const fake = await openDetail(detail({ currentStatus: "OPEN", ...WICHAI }));
+    const user = userEvent.setup();
+    vi.mocked(api.getStaffTicketDetail).mockRejectedValueOnce(new Error("network down"));
+
+    await user.selectOptions(screen.getByLabelText("Current Status"), "In Progress");
+    await waitFor(() => expect(fake.setStatus).toHaveBeenCalledTimes(1));
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("The latest values could not be loaded");
+
+    // The status that was stored is shown, but the options that belonged to Open are not offered as if they were current.
+    expect(screen.getByLabelText("Current Status")).toHaveValue("IN_PROGRESS");
+    expect(optionsOf("Current Status")).toEqual(["In Progress"]);
+    expect(screen.getByLabelText("Current Status")).toBeDisabled();
+    expect(screen.queryByText("Saved")).not.toBeInTheDocument();
+    // Nothing else is held back by it.
+    expect(screen.getByLabelText("IT Priority")).toBeEnabled();
+    expect(screen.getByLabelText("Ticket Owner")).toBeEnabled();
+
+    // While the Reload runs it says so, and does not call it Saving.
+    const again = deferred<StaffTicketDetail>();
+    vi.mocked(api.getStaffTicketDetail).mockReturnValueOnce(again.promise);
+    await user.click(within(alert).getByRole("button", { name: "Reload" }));
+    expect(screen.getByRole("button", { name: "Reloading…" })).toBeDisabled();
+    expect(screen.queryByText("Saving…")).not.toBeInTheDocument();
+    again.resolve({ ...detail({ currentStatus: "IN_PROGRESS", ...WICHAI }), permittedNextStatuses: PERMITTED.IN_PROGRESS });
+
+    await waitFor(() => expect(screen.getByLabelText("Current Status")).toBeEnabled());
+    expect(optionsOf("Current Status")).toEqual(["In Progress", "Waiting for Requester", "Resolved", "Cancelled"]);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("stays locked, with Reload still offered, while the reload keeps failing", async () => {
+    const fake = await openDetail(detail({ currentStatus: "OPEN", ...WICHAI }));
+    const user = userEvent.setup();
+    vi.mocked(api.getStaffTicketDetail).mockRejectedValueOnce(new Error("down")).mockRejectedValueOnce(new Error("still down"));
+
+    await user.selectOptions(screen.getByLabelText("Current Status"), "In Progress");
+    await waitFor(() => expect(fake.setStatus).toHaveBeenCalledTimes(1));
+    await user.click(await screen.findByRole("button", { name: "Reload" }));
+    await waitFor(() => expect(api.getStaffTicketDetail).toHaveBeenCalledTimes(3));
+
+    expect(await screen.findByRole("button", { name: "Reload" })).toBeEnabled();
+    expect(screen.getByLabelText("Current Status")).toBeDisabled();
+    expect(optionsOf("Current Status")).toEqual(["In Progress"]);
+  });
+
+  it("does not show a stale Resolution Summary as current when the reload after resolving fails", async () => {
+    const fake = await openDetail(detail({ currentStatus: "IN_PROGRESS", ...WICHAI }));
+    const user = userEvent.setup();
+    vi.mocked(api.getStaffTicketDetail).mockRejectedValueOnce(new Error("network down"));
+
+    await user.selectOptions(screen.getByLabelText("Current Status"), "Resolved");
+    await user.type(await screen.findByLabelText("Resolution Summary *"), "Replaced the faulty access point.");
+    await user.click(screen.getByRole("button", { name: "Confirm and resolve" }));
+    await waitFor(() => expect(fake.setStatus).toHaveBeenCalledTimes(1));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("The latest values could not be loaded");
+    expect(screen.getByLabelText("Current Status")).toBeDisabled();
+    expect(optionsOf("Current Status")).toEqual(["Resolved"]);
+    expect(screen.queryByText("Saved")).not.toBeInTheDocument();
+
+    await user.click(within(alert).getByRole("button", { name: "Reload" }));
+    await waitFor(() => expect(optionsOf("Current Status")).toEqual(["Resolved", "Closed", "Reopened"]));
+    expect(await screen.findByLabelText("Resolution Summary")).toHaveValue("Replaced the faulty access point.");
+  });
+
+  it("does not claim the owner control shows the current owner when the reload after a refused claim fails", async () => {
+    const fake = await openDetail(detail({ ownerId: null }));
+    const user = userEvent.setup();
+    fake.setOwner.mockImplementation(async () => {
+      fake.set(WICHAI);
+      throw new ApiError("taken", 409, "ALREADY_ASSIGNED");
+    });
+    vi.mocked(api.getStaffTicketDetail).mockRejectedValueOnce(new Error("network down"));
+
+    await user.click(screen.getByRole("button", { name: "Claim" }));
+    await waitFor(() => expect(fake.setOwner).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.getAllByRole("alert").length).toBeGreaterThan(0));
+
+    const text = screen.getAllByRole("alert").map((a) => a.textContent).join(" ");
+    expect(text).toContain("its latest values could not be loaded");
+    expect(text).not.toContain("It now shows its current owner");
+    expect(screen.getByLabelText("Ticket Owner")).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Claim" })).toBeDisabled();
+
+    await user.click(screen.getByRole("button", { name: "Reload" }));
+    await waitFor(() => expect(screen.getByLabelText("Ticket Owner")).toHaveValue("20"));
+    expect(screen.getByLabelText("Ticket Owner")).toBeEnabled();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("treats a failed owner list as a failed reload too, since a refused owner may still be in it", async () => {
+    const fake = await openDetail(detail({ ownerId: null }));
+    const user = userEvent.setup();
+    fake.setOwner.mockRejectedValue(new ApiError("no longer eligible", 409, "INVALID_OWNER"));
+    vi.mocked(api.getStaffOwners).mockRejectedValueOnce(new Error("down"));
+
+    await user.selectOptions(screen.getByLabelText("Ticket Owner"), "Wichai Charoen");
+    await waitFor(() => expect(fake.setOwner).toHaveBeenCalledTimes(1));
+
+    await waitFor(() => expect(screen.getByLabelText("Ticket Owner")).toBeDisabled());
+    expect(screen.getByRole("button", { name: "Reload" })).toBeEnabled();
+    await user.click(screen.getByRole("button", { name: "Reload" }));
+    await waitFor(() => expect(screen.getByLabelText("Ticket Owner")).toBeEnabled());
+  });
+
+  it("stays quiet about a reload that worked: Saved, no lock", async () => {
+    const fake = await openDetail(detail({ currentStatus: "OPEN", ...WICHAI }));
+    await userEvent.selectOptions(screen.getByLabelText("Current Status"), "In Progress");
+    await waitFor(() => expect(fake.setStatus).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText("Saved")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Reload" })).not.toBeInTheDocument();
+  });
+});
+
 describe("Staff Ticket Detail: moving between Tickets", () => {
   function Jump({ to }: { to: string }) {
     const navigate = useNavigate();

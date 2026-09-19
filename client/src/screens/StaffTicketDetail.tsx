@@ -86,6 +86,9 @@ function StaffTicketDetail() {
   const [ticket, setTicket] = useState<StaffTicketDetailData | null>(null);
   const [owners, setOwners] = useState<StaffOwner[]>([]);
   const [busy, setBusy] = useState<Record<Control, boolean>>({ owner: false, priority: false, status: false });
+  // A control whose latest values could not be reloaded is locked: its options may be out of date, so
+  // nothing more is changed through it until a Reload succeeds.
+  const [stale, setStale] = useState<Record<Control, boolean>>({ owner: false, priority: false, status: false });
   const [saved, setSaved] = useState<Control | null>(null);
   const [problem, setProblem] = useState<Problem | null>(null);
   const [resolving, setResolving] = useState(false);
@@ -119,17 +122,32 @@ function StaffTicketDetail() {
   // complete detail, and takes only what that control owns from it. Two operations for the same control
   // can never overlap, because a control is disabled while its own operation and reload are running, so
   // the only ordering that matters is between different controls, and field scoping settles that.
-  async function refresh(control: Control) {
+  // Says whether it worked. When it did not, nothing was applied and the caller must lock the control:
+  // what is on screen may be out of date (the permitted next statuses, the Resolution Summary, the
+  // owner list), and must not be presented as current.
+  async function refresh(control: Control): Promise<boolean> {
     try {
       const [detail, list] = await Promise.all([
         getStaffTicketDetail(ticketId),
-        control === "owner" ? getStaffOwners().catch(() => null) : Promise.resolve(null),
+        control === "owner" ? getStaffOwners() : Promise.resolve(null),
       ]);
       setTicket((t) => t && { ...t, ...pick(detail, RELOAD_FIELDS[control]) });
       if (list) setOwners(list);
+      setStale((st) => (st[control] ? { ...st, [control]: false } : st));
+      return true;
     } catch {
-      // A failed refresh leaves what is on screen as it is: the change itself already succeeded or was refused.
+      setStale((st) => ({ ...st, [control]: true }));
+      return false;
     }
+  }
+
+  // The Reload button of a locked control.
+  async function reload(control: Control) {
+    setBusyFor(control, true);
+    setSaved(null);
+    setProblem(null);
+    await refresh(control);
+    setBusyFor(control, false);
   }
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -166,7 +184,7 @@ function StaffTicketDetail() {
     }
   }
 
-  async function run(control: Control, work: () => Promise<StaffTicketItem>, generic: string, after?: () => Promise<void>) {
+  async function run(control: Control, work: () => Promise<StaffTicketItem>, generic: string, after?: () => Promise<boolean>) {
     setBusyFor(control, true);
     setSaved(null);
     setProblem(null);
@@ -175,12 +193,19 @@ function StaffTicketDetail() {
       // Only this control's own fields: the response is a snapshot of the whole Ticket, and the other
       // controls' values in it may be older than what is on screen.
       setTicket((t) => t && { ...t, ...pick(item, SAVE_FIELDS[control]) });
-      setSaved(control);
-      if (after) await after();
+      // The change is stored. Whether the screen can be called up to date depends on the reload.
+      const current = after ? await after() : true;
+      if (current) setSaved(control);
     } catch (e) {
       fail(control, e, generic);
       // A refusal means this control was out of date: show what is stored now, for this control only.
-      if (e instanceof ApiError && e.code && e.code !== "VALIDATION_ERROR" && e.status === 409) await refresh(control);
+      if (e instanceof ApiError && e.code && e.code !== "VALIDATION_ERROR" && e.status === 409 && !(await refresh(control))) {
+        setProblem({
+          control,
+          conflict: true,
+          message: "The Ticket changed, so this change was not made, and its latest values could not be loaded.",
+        });
+      }
     } finally {
       setBusyFor(control, false);
     }
@@ -222,7 +247,7 @@ function StaffTicketDetail() {
     return run("status", () => changeTicketStatus(ticketId, "RESOLVED", trimmed), "Unable to resolve the Ticket. Nothing was changed.", async () => {
       setResolving(false);
       setSummary("");
-      await refresh("status");
+      return refresh("status");
     });
   }
 
@@ -270,16 +295,29 @@ function StaffTicketDetail() {
   const activeCount = ticket.attachments.filter((a) => !a.isRemoved).length;
   const ownerMissingFromList = ticket.ownerId !== null && !owners.some((o) => o.id === ticket.ownerId);
   const canClaim = ticket.ownerId === null || ticket.ownerEligible === false;
+  // Options come from the last reload: while that is missing, offer nothing but the current status.
+  // (A locked control is never one that looked terminal: a terminal Ticket has no move to make stale.)
   const terminal = ticket.permittedNextStatuses.length === 0;
-  const statusOptions = [ticket.currentStatus, ...ticket.permittedNextStatuses];
+  const statusOptions = stale.status ? [ticket.currentStatus] : [ticket.currentStatus, ...ticket.permittedNextStatuses];
+  const locked = { owner: busy.owner || stale.owner, priority: busy.priority || stale.priority, status: busy.status || stale.status };
   const problemFor = (control: Control) => (problem && problem.control === control ? problem : null);
 
   const feedback = (control: Control) => (
     <div className="zg-field-feedback small" aria-live="polite">
-      {busy[control] && <span className="text-muted">Saving…</span>}
+      {busy[control] && !stale[control] && <span className="text-muted">Saving…</span>}
       {!busy[control] && saved === control && <span className="text-success">Saved</span>}
     </div>
   );
+
+  const staleNote = (control: Control) =>
+    stale[control] && (
+      <div className="zg-alert-warning rounded p-2 small mb-2" role="alert">
+        <span>The latest values could not be loaded, so this control is locked until they are.</span>{" "}
+        <button type="button" className="btn btn-outline-secondary btn-sm" disabled={busy[control]} onClick={() => void reload(control)}>
+          {busy[control] ? "Reloading…" : "Reload"}
+        </button>
+      </div>
+    );
 
   const problemNote = (control: Control) => {
     const p = problemFor(control);
@@ -377,7 +415,7 @@ function StaffTicketDetail() {
               id="staff-owner"
               className="form-select zg-editable"
               value={ticket.ownerId ?? ""}
-              disabled={busy.owner}
+              disabled={locked.owner}
               aria-busy={busy.owner}
               onChange={(e) => void changeOwner(e.target.value === "" ? null : Number(e.target.value))}
             >
@@ -395,7 +433,7 @@ function StaffTicketDetail() {
               ))}
             </select>
             {canClaim && user && (
-              <button type="button" className="btn zg-btn-primary zg-touch-target" disabled={busy.owner} onClick={() => void changeOwner(user.id)}>
+              <button type="button" className="btn zg-btn-primary zg-touch-target" disabled={locked.owner} onClick={() => void changeOwner(user.id)}>
                 Claim
               </button>
             )}
@@ -407,6 +445,7 @@ function StaffTicketDetail() {
             </div>
           )}
           {feedback("owner")}
+          {staleNote("owner")}
           {problemNote("owner")}
         </div>
 
@@ -416,7 +455,7 @@ function StaffTicketDetail() {
             id="staff-it-priority"
             className="form-select zg-editable"
             value={ticket.itPriority}
-            disabled={busy.priority}
+            disabled={locked.priority}
             aria-busy={busy.priority}
             onChange={(e) => void changePriority(e.target.value as TicketPriority)}
           >
@@ -425,6 +464,7 @@ function StaffTicketDetail() {
             <option value="HIGH">High</option>
           </select>
           {feedback("priority")}
+          {staleNote("priority")}
           {problemNote("priority")}
         </div>
 
@@ -434,7 +474,7 @@ function StaffTicketDetail() {
             id="staff-status"
             className="form-select zg-editable"
             value={resolving ? "RESOLVED" : ticket.currentStatus}
-            disabled={busy.status || terminal}
+            disabled={locked.status || terminal}
             aria-busy={busy.status}
             onChange={(e) => void chooseStatus(e.target.value)}
           >
@@ -446,6 +486,7 @@ function StaffTicketDetail() {
           </select>
           {terminal && <div className="text-muted small mt-1">This Ticket is {statusLabel(ticket.currentStatus)}, so its status cannot change.</div>}
           {feedback("status")}
+          {staleNote("status")}
           {problemNote("status")}
         </div>
 
@@ -460,7 +501,7 @@ function StaffTicketDetail() {
                 className={`form-control${summaryError ? " is-invalid" : ""}`}
                 rows={3}
                 value={summary}
-                disabled={busy.status}
+                disabled={locked.status}
                 aria-invalid={summaryError ? true : undefined}
                 aria-describedby={summaryError ? "staff-resolution-summary-error" : undefined}
                 onChange={(e) => setSummary(e.target.value)}
@@ -478,7 +519,7 @@ function StaffTicketDetail() {
                 <button
                   type="button"
                   className="btn btn-outline-secondary btn-sm zg-touch-target"
-                  disabled={busy.status}
+                  disabled={locked.status}
                   onClick={() => {
                     setResolving(false);
                     setSummaryError(null);
@@ -486,7 +527,7 @@ function StaffTicketDetail() {
                 >
                   Cancel
                 </button>
-                <button type="button" className="btn zg-btn-primary btn-sm zg-touch-target" disabled={busy.status} onClick={() => void confirmResolve()}>
+                <button type="button" className="btn zg-btn-primary btn-sm zg-touch-target" disabled={locked.status} onClick={() => void confirmResolve()}>
                   {busy.status ? "Resolving…" : "Confirm and resolve"}
                 </button>
               </div>
