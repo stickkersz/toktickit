@@ -306,7 +306,7 @@ Errors:
 - 401, 403 for a Requester (AC-22).
 - 404 when the Ticket does not exist.
 - 409 `INVALID_TRANSITION`: the move is not permitted by the BR-25 matrix, including a move to the current status. The response names the current status and the permitted next statuses so the client can correct itself (AC-23).
-- 409 `OWNER_REQUIRED`: a move to `IN_PROGRESS`, `RESOLVED`, or `CLOSED` on a Ticket that is unassigned, or whose owner is ineligible because they were deactivated or are no longer IT Staff or an Administrator (BR-28, BR-58, AC-25, AC-41). A move to a status BR-28 does not list is unaffected.
+- 409 `OWNER_REQUIRED`: a move to `IN_PROGRESS`, `RESOLVED`, or `CLOSED` on a Ticket that is unassigned, or whose owner is ineligible because they were deactivated or are no longer IT Staff or an Administrator (BR-28, BR-58, AC-25, AC-41). A move to a status that BR-28 does not restrict is unaffected.
 
 ## 11. GET and POST /api/tickets/:id/comments
 
