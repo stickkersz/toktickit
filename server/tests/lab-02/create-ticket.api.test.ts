@@ -1,11 +1,14 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
-import request from "supertest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import { app } from "../../src/app.js";
 import { getPrisma } from "../../src/prisma.js";
-import * as prismaModule from "../../src/prisma.js";
+import { createUser, signedIn, useIsolatedDatabase } from "../lab-03/helpers.js";
+
+// Lab 3: the Requester is the authenticated session, not a `requesterId` in the
+// body (BR-11). The database is a throwaway one with the reference data seeded,
+// so Category and Related System ids 1 onwards are the seeded ones.
+const iso = useIsolatedDatabase({ referenceData: true });
 
 const validBody = {
-  requesterId: 1,
   categoryId: 1,
   relatedSystemId: 1,
   summary: "Laptop battery drains quickly",
@@ -13,20 +16,24 @@ const validBody = {
   requestedPriority: "MEDIUM",
 };
 
-// Requires the DB to be migrated and seeded first (BR-37).
 describe("POST /api/tickets", () => {
-  afterEach(() => {
-    vi.restoreAllMocks();
+  let ari: Awaited<ReturnType<typeof signedIn>>;
+  let ariId: number;
+
+  beforeAll(async () => {
+    const { user } = await createUser();
+    ariId = user.id;
+    ari = await signedIn(user);
   });
 
   // API-01
   it("creates a Ticket with a valid body", async () => {
-    const res = await request(app).post("/api/tickets").send(validBody);
+    const res = await ari.post("/api/tickets").send(validBody);
 
     expect(res.status).toBe(201);
     expect(res.body.ticketNumber).toMatch(/^TKT-\d{4}-\d{6,}$/);
     expect(res.body).toMatchObject({
-      requesterId: validBody.requesterId,
+      requesterId: ariId,
       categoryId: validBody.categoryId,
       relatedSystemId: validBody.relatedSystemId,
       summary: validBody.summary,
@@ -37,15 +44,15 @@ describe("POST /api/tickets", () => {
   });
 
   it("generates a unique ticketNumber per Ticket", async () => {
-    const first = await request(app).post("/api/tickets").send(validBody);
-    const second = await request(app).post("/api/tickets").send(validBody);
+    const first = await ari.post("/api/tickets").send(validBody);
+    const second = await ari.post("/api/tickets").send(validBody);
 
     expect(first.body.ticketNumber).not.toBe(second.body.ticketNumber);
   });
 
   // API-02
   it("rejects missing/out-of-range Summary and Description with both field errors", async () => {
-    const res = await request(app)
+    const res = await ari
       .post("/api/tickets")
       .send({ ...validBody, summary: "hi", description: "too short" });
 
@@ -61,7 +68,7 @@ describe("POST /api/tickets", () => {
   });
 
   it("rejects a missing/invalid requestedPriority", async () => {
-    const res = await request(app)
+    const res = await ari
       .post("/api/tickets")
       .send({ ...validBody, requestedPriority: "URGENT" });
 
@@ -71,7 +78,7 @@ describe("POST /api/tickets", () => {
 
   // API-03
   it("rejects an unknown categoryId/relatedSystemId", async () => {
-    const res = await request(app)
+    const res = await ari
       .post("/api/tickets")
       .send({ ...validBody, categoryId: 999999, relatedSystemId: 999999 });
 
@@ -88,7 +95,7 @@ describe("POST /api/tickets", () => {
       where: { isActive: false },
     });
 
-    const res = await request(app)
+    const res = await ari
       .post("/api/tickets")
       .send({
         ...validBody,
@@ -101,44 +108,48 @@ describe("POST /api/tickets", () => {
     expect(res.body.fields.relatedSystemId).toBeDefined();
   });
 
-  it("rejects an unknown or inactive requesterId", async () => {
-    const inactiveRequester = await getPrisma().user.findFirst({
-      where: { isActive: false, role: "REQUESTER" },
-    });
-
-    const res = await request(app)
-      .post("/api/tickets")
-      .send({ ...validBody, requesterId: inactiveRequester!.id });
-
-    expect(res.status).toBe(400);
-    expect(res.body.fields.requesterId).toBeDefined();
-  });
-
   it("rejects non-integer ids (e.g. 1.5) rather than passing them through to the database", async () => {
-    const res = await request(app)
+    const res = await ari
       .post("/api/tickets")
-      .send({ ...validBody, categoryId: 1.5, relatedSystemId: 1.5, requesterId: 1.5 });
+      .send({ ...validBody, categoryId: 1.5, relatedSystemId: 1.5 });
 
     expect(res.status).toBe(400);
     expect(res.body.error).toBe("VALIDATION_ERROR");
     expect(res.body.fields.categoryId).toBeDefined();
     expect(res.body.fields.relatedSystemId).toBeDefined();
-    expect(res.body.fields.requesterId).toBeDefined();
+  });
+
+  // Lab 2 rejected an unknown or inactive requesterId with a 400. That input no
+  // longer exists (BR-11); the equivalent guarantee is that a Requester who is
+  // deactivated can no longer create anything (BR-08).
+  it("returns 401 once the Requester has been deactivated, and creates nothing", async () => {
+    const { user } = await createUser();
+    const session = await signedIn(user);
+    expect((await session.post("/api/tickets").send(validBody)).status).toBe(201);
+
+    await getPrisma().user.update({ where: { id: user.id }, data: { isActive: false } });
+    const after = await session.post("/api/tickets").send({ ...validBody, summary: "After deactivation" });
+
+    expect(after.status).toBe(401);
+    expect(await getPrisma().ticket.findFirst({ where: { summary: "After deactivation" } })).toBeNull();
   });
 
   it("returns the documented safe 500 shape when a reference lookup fails", async () => {
-    vi.spyOn(prismaModule, "getPrisma").mockReturnValue({
-      user: { findFirst: () => Promise.reject(new Error("connection refused")) },
-      category: { findFirst: () => Promise.resolve(null) },
-      relatedSystem: { findFirst: () => Promise.resolve(null) },
-    } as unknown as ReturnType<typeof prismaModule.getPrisma>);
+    // A targeted spy on the isolated client's delegate. Session lookup still works,
+    // so the request gets past authentication and reaches the failing lookup.
+    const spy = vi
+      .spyOn(iso.db.client.category, "findFirst")
+      .mockRejectedValueOnce(new Error("connection refused"));
+    try {
+      const res = await ari.post("/api/tickets").send(validBody);
 
-    const res = await request(app).post("/api/tickets").send(validBody);
-
-    expect(res.status).toBe(500);
-    expect(res.body).toEqual({
-      error: "INTERNAL_ERROR",
-      message: "Unable to create the Ticket.",
-    });
+      expect(res.status).toBe(500);
+      expect(res.body).toEqual({
+        error: "INTERNAL_ERROR",
+        message: "Unable to create the Ticket.",
+      });
+    } finally {
+      spy.mockRestore();
+    }
   });
 });

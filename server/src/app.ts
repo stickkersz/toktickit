@@ -18,6 +18,8 @@ import { parseTicketListQuery } from "./ticketListQuery.js";
 import { isValidId } from "./ids.js";
 import { buildCorsOptions } from "./cors.js";
 import { authRouter } from "./routes/auth.js";
+import { requireAuth } from "./middleware/requireAuth.js";
+import { requireRole } from "./middleware/requireRole.js";
 
 const upload = multer({
   storage: multer.diskStorage({
@@ -83,21 +85,15 @@ app.get("/api/related-systems", async (_req: Request, res: Response) => {
 });
 
 // ---------------------------------------------------------------------------
-// Lab 2 — Development Requester Selection
-// GET /api/requesters -> active Development Requesters (api-spec.md §3, BR-04).
+// Lab 3 identity rule (BR-11, BR-49, BR-55): every Ticket and Attachment
+// endpoint below takes the caller from the session cookie, never from a
+// `requesterId` in the body or query, which is ignored if a client still sends
+// one. GET /api/requesters no longer exists. Until the staff Issues land, these
+// endpoints are Requester-only, so IT Staff and Administrators get 403 from the
+// role alone, before anything is looked up; the read endpoints are opened to them
+// later (BR-54), and upload and removal never are (BR-55).
 // ---------------------------------------------------------------------------
-app.get("/api/requesters", async (_req: Request, res: Response) => {
-  try {
-    const requesters = await getPrisma().user.findMany({
-      where: { isActive: true, role: "REQUESTER" },
-      select: { id: true, name: true, email: true },
-      orderBy: { id: "asc" },
-    });
-    res.status(200).json(requesters);
-  } catch {
-    res.status(500).json({ error: "INTERNAL_ERROR", message: "Unable to load requesters." });
-  }
-});
+const requesterOnly = [requireAuth, requireRole("REQUESTER")];
 
 // ---------------------------------------------------------------------------
 // Lab 2 — Create Ticket
@@ -128,7 +124,7 @@ function serializeAttachment(attachment: {
   return { ...base, removedAt: attachment.removedAt, removalReason: attachment.removalReason };
 }
 
-app.post("/api/tickets", async (req: Request, res: Response) => {
+app.post("/api/tickets", ...requesterOnly, async (req: Request, res: Response) => {
   try {
     const fields: Record<string, string> = {};
 
@@ -141,15 +137,10 @@ app.post("/api/tickets", async (req: Request, res: Response) => {
     const priorityResult = validateRequestedPriority(req.body?.requestedPriority);
     if (priorityResult.error) fields.requestedPriority = priorityResult.error;
 
-    const requesterId = Number(req.body?.requesterId);
+    // BR-11: the Ticket belongs to the authenticated Requester, whatever the body says.
+    const requesterId = req.user!.id;
     const categoryId = Number(req.body?.categoryId);
     const relatedSystemId = Number(req.body?.relatedSystemId);
-
-    if (!isValidId(requesterId)) {
-      fields.requesterId = "A valid requesterId is required.";
-    } else if (!(await getPrisma().user.findFirst({ where: { id: requesterId, isActive: true, role: "REQUESTER" } }))) {
-      fields.requesterId = "requesterId must reference an active Requester.";
-    }
 
     if (!isValidId(categoryId)) {
       fields.categoryId = "A valid categoryId is required.";
@@ -218,10 +209,12 @@ app.post("/api/tickets", async (req: Request, res: Response) => {
 // ---------------------------------------------------------------------------
 app.post(
   "/api/tickets/:id/attachments",
+  // Before multer: an unauthorized upload must never write a byte to disk.
+  ...requesterOnly,
   upload.array("files"),
   async (req: Request, res: Response) => {
     const ticketId = Number(req.params.id);
-    const requesterId = Number(req.body?.requesterId);
+    const requesterId = req.user!.id;
     const files = (req.files as Express.Multer.File[] | undefined) ?? [];
 
     // Files already persisted as an Attachment row (or already rejected and
@@ -234,13 +227,6 @@ app.post(
           .filter((file) => !settledFilenames.has(file.filename))
           .map((file) => unlink(path.join(UPLOAD_DIR, file.filename)).catch(() => {})),
       );
-
-    if (!isValidId(requesterId)) {
-      await cleanupUnsettledFiles();
-      return res
-        .status(400)
-        .json({ error: "VALIDATION_ERROR", message: "A valid requesterId is required." });
-    }
 
     if (!isValidId(ticketId)) {
       await cleanupUnsettledFiles();
@@ -362,18 +348,9 @@ app.post(
 // Lab 2 — My Tickets
 // GET /api/tickets (api-spec.md §5, FR-04, BR-20..24a).
 // ---------------------------------------------------------------------------
-app.get("/api/tickets", async (req: Request, res: Response) => {
+app.get("/api/tickets", ...requesterOnly, async (req: Request, res: Response) => {
   try {
-    const requesterId = Number(req.query.requesterId);
-    if (
-      !isValidId(requesterId) ||
-      !(await getPrisma().user.findFirst({ where: { id: requesterId, isActive: true, role: "REQUESTER" } }))
-    ) {
-      return res.status(400).json({
-        error: "VALIDATION_ERROR",
-        message: "requesterId is required and must reference an active Requester.",
-      });
-    }
+    const requesterId = req.user!.id;
 
     const query = parseTicketListQuery(req.query as Record<string, unknown>);
 
@@ -423,16 +400,10 @@ app.get("/api/tickets", async (req: Request, res: Response) => {
 // Lab 2 — Requester Ticket Detail
 // GET /api/tickets/:id (api-spec.md §6, FR-05).
 // ---------------------------------------------------------------------------
-app.get("/api/tickets/:id", async (req: Request, res: Response) => {
+app.get("/api/tickets/:id", ...requesterOnly, async (req: Request, res: Response) => {
   try {
     const ticketId = Number(req.params.id);
-    const requesterId = Number(req.query.requesterId);
-
-    if (!isValidId(requesterId)) {
-      return res
-        .status(400)
-        .json({ error: "VALIDATION_ERROR", message: "A valid requesterId is required." });
-    }
+    const requesterId = req.user!.id;
 
     if (!isValidId(ticketId)) {
       return res.status(404).json({ error: "NOT_FOUND", message: "Ticket not found." });
@@ -481,16 +452,10 @@ app.get("/api/tickets/:id", async (req: Request, res: Response) => {
 // GET /api/attachments/:id, GET /api/attachments/:id/download,
 // DELETE /api/attachments/:id (api-spec.md §8-10, FR-07/FR-08, BR-29/BR-30).
 // ---------------------------------------------------------------------------
-app.get("/api/attachments/:id", async (req: Request, res: Response) => {
+app.get("/api/attachments/:id", ...requesterOnly, async (req: Request, res: Response) => {
   try {
     const attachmentId = Number(req.params.id);
-    const requesterId = Number(req.query.requesterId);
-
-    if (!isValidId(requesterId)) {
-      return res
-        .status(400)
-        .json({ error: "VALIDATION_ERROR", message: "A valid requesterId is required." });
-    }
+    const requesterId = req.user!.id;
 
     if (!isValidId(attachmentId)) {
       return res.status(404).json({ error: "NOT_FOUND", message: "Attachment not found." });
@@ -511,16 +476,10 @@ app.get("/api/attachments/:id", async (req: Request, res: Response) => {
   }
 });
 
-app.get("/api/attachments/:id/download", async (req: Request, res: Response) => {
+app.get("/api/attachments/:id/download", ...requesterOnly, async (req: Request, res: Response) => {
   try {
     const attachmentId = Number(req.params.id);
-    const requesterId = Number(req.query.requesterId);
-
-    if (!isValidId(requesterId)) {
-      return res
-        .status(400)
-        .json({ error: "VALIDATION_ERROR", message: "A valid requesterId is required." });
-    }
+    const requesterId = req.user!.id;
 
     if (!isValidId(attachmentId)) {
       return res.status(404).json({ error: "NOT_FOUND", message: "Attachment not found." });
@@ -556,18 +515,10 @@ app.get("/api/attachments/:id/download", async (req: Request, res: Response) => 
   }
 });
 
-app.delete("/api/attachments/:id", async (req: Request, res: Response) => {
+app.delete("/api/attachments/:id", ...requesterOnly, async (req: Request, res: Response) => {
   try {
     const attachmentId = Number(req.params.id);
-    const requesterId = Number(req.body?.requesterId);
-
-    if (!isValidId(requesterId)) {
-      return res.status(400).json({
-        error: "VALIDATION_ERROR",
-        message: "A valid requesterId is required.",
-        fields: { requesterId: "A valid requesterId is required." },
-      });
-    }
+    const requesterId = req.user!.id;
 
     const reasonResult = validateRemovalReason(req.body?.reason);
     if (reasonResult.error) {

@@ -15,12 +15,6 @@ export interface Category {
   name: string;
 }
 
-export interface Requester {
-  id: number;
-  name: string;
-  email: string;
-}
-
 export interface RelatedSystem {
   id: number;
   name: string;
@@ -41,8 +35,8 @@ export interface Ticket {
   createdAt: string;
 }
 
+// No requesterId: the Ticket belongs to whoever is signed in (BR-11).
 export interface CreateTicketInput {
-  requesterId: number;
   categoryId: number;
   relatedSystemId: number;
   summary: string;
@@ -134,7 +128,6 @@ export interface TicketListResult {
 }
 
 export interface TicketListParams {
-  requesterId: number;
   search?: string;
   category?: number;
   requestedPriority?: TicketPriority;
@@ -173,15 +166,6 @@ export class NotFoundError extends ApiError {
   constructor(message: string) {
     super(message, 404, "NOT_FOUND");
   }
-}
-
-// Lab 2 — Development Requester Selection (api-spec.md §3).
-export async function getRequesters(): Promise<Requester[]> {
-  const res = await apiFetch(`/api/requesters`);
-  if (!res.ok) {
-    throw new ApiError("Unable to load Development Requesters.", res.status);
-  }
-  return res.json();
 }
 
 // Lab 2 — Create Ticket reference data (api-spec.md §1).
@@ -246,7 +230,6 @@ export async function createTicket(input: CreateTicketInput): Promise<Ticket> {
 // Lab 2 — My Tickets (api-spec.md §5, FR-04).
 export async function getTickets(params: TicketListParams): Promise<TicketListResult> {
   const query = new URLSearchParams();
-  query.set("requesterId", String(params.requesterId));
   if (params.search) query.set("search", params.search);
   if (params.category) query.set("category", String(params.category));
   if (params.requestedPriority) query.set("requestedPriority", params.requestedPriority);
@@ -265,13 +248,8 @@ export async function getTickets(params: TicketListParams): Promise<TicketListRe
 // Lab 2 — Attachment upload during/after creation (api-spec.md §7, BR-25).
 // A 400 ALL_FILES_REJECTED is not thrown: it carries the same
 // { uploaded, failed } shape as a 201, so the caller handles both uniformly.
-export async function uploadAttachments(
-  ticketId: number,
-  requesterId: number,
-  files: File[],
-): Promise<UploadAttachmentsResult> {
+export async function uploadAttachments(ticketId: number, files: File[]): Promise<UploadAttachmentsResult> {
   const formData = new FormData();
-  formData.append("requesterId", String(requesterId));
   files.forEach((file) => formData.append("files", file));
 
   const res = await apiFetch(`/api/tickets/${ticketId}/attachments`, {
@@ -291,8 +269,8 @@ export async function uploadAttachments(
 }
 
 // Lab 2 — Requester Ticket Detail (api-spec.md §6, FR-05).
-export async function getTicketDetail(ticketId: number, requesterId: number): Promise<TicketDetail> {
-  const res = await apiFetch(`/api/tickets/${ticketId}?requesterId=${requesterId}`);
+export async function getTicketDetail(ticketId: number): Promise<TicketDetail> {
+  const res = await apiFetch(`/api/tickets/${ticketId}`);
   if (res.status === 404) {
     throw new NotFoundError("Ticket not found.");
   }
@@ -303,15 +281,11 @@ export async function getTicketDetail(ticketId: number, requesterId: number): Pr
 }
 
 // Lab 2 — Attachment removal (api-spec.md §10, FR-07, BR-29).
-export async function removeAttachment(
-  attachmentId: number,
-  requesterId: number,
-  reason: string,
-): Promise<Attachment> {
+export async function removeAttachment(attachmentId: number, reason: string): Promise<Attachment> {
   const res = await apiFetch(`/api/attachments/${attachmentId}`, {
     method: "DELETE",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ requesterId, reason }),
+    body: JSON.stringify({ reason }),
   });
   const body = await res.json();
   if (!res.ok) {
@@ -323,8 +297,8 @@ export async function removeAttachment(
 // Lab 2 — Attachment download (api-spec.md §9, FR-08). A plain URL, not a
 // fetch: the server sets Content-Disposition so the browser handles the
 // save itself.
-export function getAttachmentDownloadUrl(attachmentId: number, requesterId: number): string {
-  return `${API_BASE}/api/attachments/${attachmentId}/download?requesterId=${requesterId}`;
+export function getAttachmentDownloadUrl(attachmentId: number): string {
+  return `${API_BASE}/api/attachments/${attachmentId}/download`;
 }
 
 // ---------------------------------------------------------------------------

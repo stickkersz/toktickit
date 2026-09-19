@@ -1,16 +1,14 @@
 import "@testing-library/jest-dom";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { screen } from "@testing-library/react";
 import * as api from "../../src/api.js";
-import type { AuthUser, Requester } from "../../src/api.js";
-import { AuthProvider } from "../../src/authContext.js";
-import { RequesterProvider, useRequester } from "../../src/requesterContext.js";
+import type { AuthUser } from "../../src/api.js";
 import { ADMIN, REQUESTER, STAFF, renderApp } from "./support.js";
 
 const STORAGE_KEY = "toktickit.currentRequesterId";
-// A Development Requester left over from the Lab 2 selector, in browser storage.
-const LEGACY: Requester = { id: 1, name: "Legacy Selected Requester", email: "legacy@toktickit.test" };
+// What the Lab 2 Development Requester selector left in browser storage. The selector
+// and everything that read this key are gone (BR-49); a stale value must do nothing.
+const LEGACY_KEY = "toktickit.currentRequesterId";
 
 const QUEUE_DENIED = "You do not have access to the Ticket Queue.";
 const USERS_DENIED = "You do not have access to User Management.";
@@ -47,10 +45,15 @@ describe("role based route protection", () => {
 
     expect(await screen.findByText(message)).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Access denied" })).toBeInTheDocument();
-    // The protected screen never rendered, and no Requester navigation is offered.
+    // The protected screen never rendered.
     expect(screen.queryByRole("heading", { name: /^Signed in as/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "My Tickets" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: "Create Ticket" })).not.toBeInTheDocument();
+    // The refusal sits inside the caller's own shell, so only their own role's
+    // navigation is offered: staff and administrators never see Requester links.
+    if (user.role !== "REQUESTER") {
+      expect(screen.queryByRole("link", { name: "Create Ticket" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("link", { name: "My Tickets" })).not.toBeInTheDocument();
+    }
     expectNoProtectedRequests();
     // The way out is the user's own home screen, not the screen they were refused.
     expect(screen.getByRole("link", { name: "Go to your home screen" })).toHaveAttribute(
@@ -70,6 +73,15 @@ describe("role based route protection", () => {
     expect(screen.queryByRole("heading", { name: "Access denied" })).not.toBeInTheDocument();
   });
 
+  // Lab 2 guaranteed that no ticket screen rendered without a current Requester and sent
+  // the visitor to the selector; the same guarantee now sends them to Login (AC-13).
+  it.each(["/tickets", "/tickets/new", "/tickets/42"])("sends a signed-out visitor to Login instead of %s, requesting nothing", async (path) => {
+    renderApp(path, null);
+    expect(await screen.findByRole("heading", { name: "Sign in to your account" })).toBeInTheDocument();
+    expect(screen.queryByRole("navigation", { name: "Main" })).not.toBeInTheDocument();
+    expectNoProtectedRequests();
+  });
+
   it.each(["/staff/tickets", "/admin/users"])("sends a signed-out visitor to Login instead of %s", async (path) => {
     renderApp(path, null);
     expect(await screen.findByRole("heading", { name: "Sign in to your account" })).toBeInTheDocument();
@@ -87,89 +99,46 @@ describe("role based route protection", () => {
   });
 });
 
-describe("the legacy Development Requester selection", () => {
-  function storeLegacySelection() {
-    localStorage.setItem(STORAGE_KEY, String(LEGACY.id));
-  }
+describe("a stale Lab 2 Development Requester selection in browser storage", () => {
+  beforeEach(() => localStorage.setItem(LEGACY_KEY, "1"));
 
-  // UI-32 / AC-46, BR-63
+  // UI-32 / AC-46, BR-63, BR-49
   it.each<[string, string, AuthUser]>([
     ["IT Staff", "/tickets", STAFF],
     ["IT Staff", "/tickets/new", STAFF],
     ["an Administrator", "/tickets", ADMIN],
     ["an Administrator", "/tickets/9", ADMIN],
-  ])("is ignored for %s, who cannot use it to reach the Requester screen %s", async (_who, path, user) => {
-    storeLegacySelection();
-    renderApp(path, user, { requesters: [LEGACY] });
+  ])("gives %s no way onto the Requester screen %s", async (_who, path, user) => {
+    renderApp(path, user);
 
     expect(await screen.findByText("You do not have access to Requester tickets.")).toBeInTheDocument();
-    expect(screen.queryByText(LEGACY.name)).not.toBeInTheDocument();
     expectNoProtectedRequests();
-    // Ignoring is not clearing: the stored value is left alone for the Lab 2 flow.
-    expect(localStorage.getItem(STORAGE_KEY)).toBe(String(LEGACY.id));
+    // Nothing reads the key any more, so nothing clears it either.
+    expect(localStorage.getItem(LEGACY_KEY)).toBe("1");
   });
 
-  it.each([STAFF, ADMIN])("never shows the selector to a signed-in %#, even with a stored selection", async (user) => {
-    storeLegacySelection();
-    renderApp("/select-requester", user, { requesters: [LEGACY] });
+  it("does not let it stand in for signing in", async () => {
+    renderApp("/tickets", null);
+    expect(await screen.findByRole("heading", { name: "Sign in to your account" })).toBeInTheDocument();
+    expectNoProtectedRequests();
+  });
 
-    expect(await screen.findByRole("heading", { name: `Signed in as ${user.name}` })).toBeInTheDocument();
+  it("has no selector screen to go to: /select-requester is an unknown URL, for every role", async () => {
+    renderApp("/select-requester", null);
+    expect(await screen.findByRole("heading", { name: "Sign in to your account" })).toBeInTheDocument();
+    expect(screen.queryByText("Select Development Requester")).not.toBeInTheDocument();
+
+    vi.restoreAllMocks();
+    renderApp("/select-requester", STAFF);
+    expect(await screen.findByRole("heading", { name: `Signed in as ${STAFF.name}` })).toBeInTheDocument();
     expect(screen.queryByText("Select Development Requester")).not.toBeInTheDocument();
   });
 
-  it("never lets a stored selection override the identity of a signed-in Requester", async () => {
-    storeLegacySelection();
-    renderApp("/tickets", REQUESTER, { requesters: [LEGACY] });
+  it("leaves a signed-in Requester acting as themselves", async () => {
+    renderApp("/tickets", REQUESTER);
 
     expect(await screen.findByRole("heading", { name: "My Tickets" })).toBeInTheDocument();
     expect(screen.getByText(REQUESTER.name)).toBeInTheDocument();
-    expect(screen.queryByText(LEGACY.name)).not.toBeInTheDocument();
-    // Requests are made as the signed-in user (id 7), never as the stored id (1).
-    const calls = vi.mocked(api.getTickets).mock.calls;
-    expect(calls.length).toBeGreaterThan(0);
-    expect(calls.every(([params]) => params.requesterId === REQUESTER.id)).toBe(true);
-  });
-});
-
-// The role check on the Requester routes would catch these users first, so the
-// context is exercised on its own: whoever is signed in, the requester it hands
-// to the Lab 2 screens must come from the session and never from storage.
-describe("the requester context under a signed-in user", () => {
-  function Probe() {
-    const { requester, status } = useRequester();
-    return <p data-testid="probe">{`${status}:${requester?.name ?? "none"}`}</p>;
-  }
-
-  async function probe(currentUser: AuthUser | null) {
-    localStorage.setItem(STORAGE_KEY, String(LEGACY.id));
-    vi.spyOn(api, "getCurrentUser").mockResolvedValue(currentUser);
-    vi.spyOn(api, "getRequesters").mockResolvedValue([LEGACY]);
-    render(
-      <MemoryRouter>
-        <AuthProvider>
-          <RequesterProvider>
-            <Probe />
-          </RequesterProvider>
-        </AuthProvider>
-      </MemoryRouter>,
-    );
-    await screen.findByText(/^resolved:/);
-    return screen.getByTestId("probe").textContent;
-  }
-
-  // UI-32 / AC-46, BR-63
-  it.each([
-    ["IT Staff", STAFF],
-    ["an Administrator", ADMIN],
-  ])("gives %s no requester at all, whatever is stored", async (_who, user) => {
-    expect(await probe(user)).toBe("resolved:none");
-  });
-
-  it("gives a signed-in Requester themselves, not the stored selection", async () => {
-    expect(await probe(REQUESTER)).toBe(`resolved:${REQUESTER.name}`);
-  });
-
-  it("still honours the stored selection while nobody is signed in, so the Lab 2 flow is unchanged", async () => {
-    expect(await probe(null)).toBe(`resolved:${LEGACY.name}`);
+    expect(api.getTickets).toHaveBeenCalled();
   });
 });

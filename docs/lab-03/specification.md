@@ -186,7 +186,7 @@ Editing and deleting a Public Comment or Internal Note are also excluded: both a
 
 ### Screen access in the client
 
-- BR-63 The client renders a screen only for the roles the section 6 matrix permits. A signed-in user whose role is not permitted, opening that screen's URL directly, sees the forbidden state and none of the screen's data is requested; a signed-out visitor is sent to Login; an unknown URL goes to the signed-in user's own landing route, never to a Requester screen. Once anyone is signed in the legacy Development Requester selection is ignored, so IT Staff and Administrators cannot act as a Requester through a selection left in browser storage. This is presentation only (BR-16): the server enforces the same rules on every endpoint.
+- BR-63 The client renders a screen only for the roles the section 6 matrix permits. A signed-in user whose role is not permitted, opening that screen's URL directly, sees the forbidden state and none of the screen's data is requested; a signed-out visitor is sent to Login; an unknown URL goes to the signed-in user's own landing route, never to a Requester screen. The Development Requester selector no longer exists (BR-49), and a `toktickit.currentRequesterId` value left in browser storage by Lab 2 is inert: nothing reads it, so it cannot make IT Staff or an Administrator act as a Requester. This is presentation only (BR-16): the server enforces the same rules on every endpoint.
 
 ## 6. Authorization matrix
 
@@ -395,7 +395,7 @@ Full shapes, statuses, and error bodies are in `docs/lab-03/api-spec.md`. Every 
 - AC-43 Given a Requester whose role is changed to IT Staff, when they use the application afterwards, then their Tickets keep them as requester, every Requester-only operation returns 403, and they can open those Tickets only as staff do.
 - AC-44 Given a Public Comment written by IT Staff who is later changed to the Requester role, when the Ticket is read, then the comment still shows the `IT_STAFF` badge it was written with.
 - AC-45 Given a browser page served from an allowed origin, when it makes a credentialed request, then the response echoes that exact origin with `Access-Control-Allow-Credentials: true`, and given any other origin, then no CORS headers are sent.
-- AC-46 Given a signed-in user whose role does not permit a screen, when its URL is opened directly, then the forbidden state is shown and none of that screen's data is requested; and given IT Staff or an Administrator with a Development Requester selection left in browser storage, then the selection is ignored and it cannot be used to reach a Requester screen.
+- AC-46 Given a signed-in user whose role does not permit a screen, when its URL is opened directly, then the forbidden state is shown and none of that screen's data is requested; and given a stale Development Requester value left in browser storage by Lab 2, then IT Staff and an Administrator still cannot reach a Requester screen, and it does not stand in for signing in.
 
 ## 11. Definition of Done
 

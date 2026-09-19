@@ -12,7 +12,9 @@ const API_URL = `http://127.0.0.1:${API_PORT}`;
 const CLIENT_URL = `http://127.0.0.1:${CLIENT_PORT}`;
 
 export default defineConfig({
-  testDir: "./e2e/lab-02",
+  // The whole e2e folder, not one lab: Lab 2 specs keep running as the regression
+  // evidence the Lab 3 handout grades, and Lab 3 specs land in e2e/lab-03.
+  testDir: "./e2e",
   // The specs share one seeded database and create real Tickets, so they run
   // serially rather than racing each other's list assertions.
   fullyParallel: false,

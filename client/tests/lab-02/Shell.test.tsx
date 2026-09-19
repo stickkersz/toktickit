@@ -4,10 +4,9 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import App from "../../src/App.js";
 import * as api from "../../src/api.js";
-import type { Requester, TicketDetail } from "../../src/api.js";
+import type { AuthUser, TicketDetail } from "../../src/api.js";
 
-const STORAGE_KEY = "toktickit.currentRequesterId";
-const ARI: Requester = { id: 1, name: "Ari Anan", email: "ari.anan@example.com" };
+const ARI: AuthUser = { id: 1, name: "Ari Anan", email: "ari.anan@example.com", role: "REQUESTER", mustChangePassword: false };
 
 function ticketDetail(): TicketDetail {
   return {
@@ -30,8 +29,8 @@ function ticketDetail(): TicketDetail {
 }
 
 function renderAt(path: string) {
-  localStorage.setItem(STORAGE_KEY, String(ARI.id));
-  vi.spyOn(api, "getRequesters").mockResolvedValue([ARI]);
+  vi.spyOn(api, "getCurrentUser").mockResolvedValue(ARI);
+  vi.spyOn(api, "getCurrentUser").mockResolvedValue(ARI);
   vi.spyOn(api, "getCategories").mockResolvedValue([]);
   vi.spyOn(api, "getTickets").mockResolvedValue({
     data: [],
@@ -46,7 +45,6 @@ function renderAt(path: string) {
 }
 
 afterEach(() => {
-  localStorage.clear();
   vi.restoreAllMocks();
 });
 

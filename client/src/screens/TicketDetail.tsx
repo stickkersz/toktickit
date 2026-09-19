@@ -9,7 +9,7 @@ import {
   removeAttachment,
   uploadAttachments,
 } from "../api.js";
-import { useRequester } from "../requesterContext.js";
+import { useAuth } from "../authContext.js";
 import { PriorityBadge, StatusBadge } from "../Badge.js";
 import {
   ATTACHMENT_REJECT_MESSAGES,
@@ -63,7 +63,7 @@ function TruncatedFilename({ name }: { name: string }) {
 export default function TicketDetail() {
   const { id } = useParams();
   const ticketId = Number(id);
-  const { requester } = useRequester();
+  const { user } = useAuth();
   const navigate = useNavigate();
 
   const [loadState, setLoadState] = useState<LoadState>("loading");
@@ -79,9 +79,9 @@ export default function TicketDetail() {
   const [removeError, setRemoveError] = useState<string | null>(null);
 
   function load() {
-    if (!requester) return;
+    if (!user) return;
     setLoadState("loading");
-    getTicketDetail(ticketId, requester.id)
+    getTicketDetail(ticketId)
       .then((data) => {
         setTicket(data);
         setLoadState("ready");
@@ -92,14 +92,14 @@ export default function TicketDetail() {
   }
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(load, [ticketId, requester]);
+  useEffect(load, [ticketId, user?.id]);
 
   const activeCount = ticket?.attachments.filter((a) => !a.isRemoved).length ?? 0;
 
   async function handleFilesSelected(event: React.ChangeEvent<HTMLInputElement>) {
     const chosen = Array.from(event.target.files ?? []);
     event.target.value = "";
-    if (!requester || !ticket) return;
+    if (!user || !ticket) return;
 
     const validFiles: File[] = [];
     const rejected: PickerError[] = [];
@@ -120,7 +120,7 @@ export default function TicketDetail() {
 
     setPendingUploads(validFiles);
     try {
-      const result = await uploadAttachments(ticket.id, requester.id, validFiles);
+      const result = await uploadAttachments(ticket.id, validFiles);
       setTicket((current) =>
         current ? { ...current, attachments: [...result.uploaded, ...current.attachments] } : current,
       );
@@ -156,11 +156,11 @@ export default function TicketDetail() {
   const isReasonValid = trimmedReasonLength >= 5 && trimmedReasonLength <= 200;
 
   async function confirmRemove(attachment: Attachment) {
-    if (!requester || !isReasonValid) return;
+    if (!user || !isReasonValid) return;
     setRemoveSubmitting(true);
     setRemoveError(null);
     try {
-      const updated = await removeAttachment(attachment.id, requester.id, removeReason.trim());
+      const updated = await removeAttachment(attachment.id, removeReason.trim());
       setTicket((current) =>
         current
           ? {
@@ -350,7 +350,7 @@ export default function TicketDetail() {
                     <>
                       <a
                         className="btn btn-sm btn-outline-secondary"
-                        href={getAttachmentDownloadUrl(attachment.id, requester!.id)}
+                        href={getAttachmentDownloadUrl(attachment.id)}
                       >
                         Download
                       </a>
