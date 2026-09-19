@@ -16,6 +16,7 @@ import { validateAttachment, ATTACHMENT_REJECT_MESSAGES } from "./attachmentVali
 import { UPLOAD_DIR, ensureUploadDir, generateStoredFilename } from "./attachmentStorage.js";
 import { parseTicketListQuery } from "./ticketListQuery.js";
 import { isValidId } from "./ids.js";
+import { buildCorsOptions } from "./cors.js";
 import { authRouter } from "./routes/auth.js";
 
 const upload = multer({
@@ -32,7 +33,7 @@ const upload = multer({
 // Supertest can import `app` without opening a port. Do not merge these files.
 export const app = express();
 
-app.use(cors());          // already wired: lets the Vite dev server call this API
+app.use(cors(buildCorsOptions())); // credentialed, allow-listed (BR-62): src/cors.ts
 app.use(express.json());
 app.use(authRouter); // Lab 3: /api/auth/*
 

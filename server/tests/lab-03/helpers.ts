@@ -4,10 +4,11 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "no
 import { tmpdir } from "node:os";
 import path from "node:path";
 import express from "express";
-import { afterAll } from "vitest";
+import { afterAll, beforeAll, vi } from "vitest";
 import request from "supertest";
 import { PrismaClient, type UserRole } from "@prisma/client";
 import { app } from "../../src/app.js";
+import * as prismaModule from "../../src/prisma.js";
 import { getPrisma } from "../../src/prisma.js";
 import { hashPassword } from "../../src/auth/password.js";
 import { requireAuth } from "../../src/middleware/requireAuth.js";
@@ -22,25 +23,49 @@ export function uniqueEmail(label = "user"): string {
   return `${label}-${randomUUID()}@toktickit.test`;
 }
 
-// Users are created in the shared development database, and the Lab 2 suite
-// asserts the exact list of active Requesters, so nothing a test creates may be
-// left behind. Every user built here is removed, with its sessions, when the
-// test file finishes; a user that somehow gained a Ticket is deactivated instead.
-const createdUserIds: number[] = [];
+// Lab 3 API tests create users, and the Lab 2 suite asserts the exact list of
+// active Requesters in the shared development database. Vitest runs test files in
+// parallel, so cleaning up afterwards is not enough: a Lab 3 user would still be
+// visible to that Lab 2 test while it runs. The rule is therefore structural:
+// createUser refuses to run unless the file called useIsolatedDatabase(), which
+// points every getPrisma() call at a throwaway migrated database. The shared
+// database never sees a Lab 3 test user.
+let isolated = false;
 
-afterAll(async () => {
-  const ids = createdUserIds.splice(0);
-  if (ids.length === 0) return;
-  const db = getPrisma();
-  await db.session.deleteMany({ where: { userId: { in: ids } } });
-  for (const id of ids) {
-    try {
-      await db.user.delete({ where: { id } });
-    } catch {
-      await db.user.update({ where: { id }, data: { isActive: false } });
-    }
-  }
-});
+export interface IsolatedDatabase {
+  readonly db: ScratchDb;
+  // Runs the seed against the isolated database, for tests that need the fixtures.
+  seed: () => Promise<void>;
+}
+
+export function useIsolatedDatabase(): IsolatedDatabase {
+  let scratch: ScratchDb | undefined;
+  let spy: ReturnType<typeof vi.spyOn> | undefined;
+
+  beforeAll(async () => {
+    scratch = await createScratchDb();
+    migrateDeploy(scratch.url);
+    spy = vi.spyOn(prismaModule, "getPrisma").mockReturnValue(scratch.client);
+    isolated = true;
+  }, 90_000);
+
+  afterAll(async () => {
+    isolated = false;
+    spy?.mockRestore();
+    await scratch?.destroy();
+  }, 90_000);
+
+  return {
+    get db() {
+      if (!scratch) throw new Error("useIsolatedDatabase: the database is not ready yet");
+      return scratch;
+    },
+    seed: async () => {
+      const { seedUsers } = await import("../../prisma/seedUsers.js");
+      await seedUsers(scratch!.client);
+    },
+  };
+}
 
 export async function createUser(
   opts: {
@@ -51,6 +76,9 @@ export async function createUser(
     prisma?: PrismaClient;
   } = {},
 ) {
+  if (!opts.prisma && !isolated) {
+    throw new Error("createUser needs useIsolatedDatabase() in this test file: it must never write to the shared database");
+  }
   const email = uniqueEmail(opts.role?.toLowerCase() ?? "requester");
   const password = opts.password ?? TEST_PASSWORD;
   const user = await (opts.prisma ?? getPrisma()).user.create({
@@ -63,7 +91,6 @@ export async function createUser(
       passwordHash: await hashPassword(password),
     },
   });
-  if (!opts.prisma) createdUserIds.push(user.id);
   return { user, email, password };
 }
 

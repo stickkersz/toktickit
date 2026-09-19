@@ -77,6 +77,7 @@ The database must be running, migrated, and seeded first. Playwright's `testDir`
 | API-50 | API | AC-42, BR-60 | Deactivate a Requester who has Tickets: read the queue, attempt login, post a Public Comment as IT Staff, then reactivate and read as the Requester | Tickets remain with `requesterIsActive` false; login 401 `ACCOUNT_INACTIVE`; comment 201; after reactivation the Requester sees the Ticket and that comment | `server/tests/lab-03/account-change-tickets.api.test.ts` | Planned |
 | API-51 | API | AC-43, BR-55, BR-60 | Change a Requester who created Tickets to IT Staff, sign in again, and exercise every Requester-only operation | Each Ticket still resolves to the same requester by ticket number; own-list, create, resolution indication, Attachment upload, and Attachment remove all return 403; `GET /api/tickets/:id` returns 200 as for any staff | `server/tests/lab-03/account-change-tickets.api.test.ts` | Planned |
 | API-52 | API | AC-44, BR-61, BR-35 | An IT Staff user writes a Public Comment and an Internal Note and is then changed to Requester | The comment still reads `authorRole` `IT_STAFF` for the owning Requester; the former author now gets 403 on the notes endpoint while another IT Staff user still reads the note | `server/tests/lab-03/account-change-tickets.api.test.ts` | Planned |
+| API-53 | API | AC-45, BR-62 | A preflight and a real request from an allowed origin, from an unlisted origin, and with no `Origin`; and `CORS_ORIGINS` parsing including a `*` entry | The allowed origin is echoed exactly with `Access-Control-Allow-Credentials: true` and `Vary: Origin`, never `*`; any other origin gets no CORS headers; a wildcard entry is dropped | `server/tests/lab-03/cors.api.test.ts` | Pass |
 | UI-01 | UI | AC-01 | Login screen: valid submission | Calls the API once, stores nothing in `localStorage`, navigates to the role landing screen | `client/tests/lab-03/Login.test.tsx` | Planned |
 | UI-02 | UI | FR-01 | Login: missing email, malformed email, missing password | Per-field messages shown, no API call made | `client/tests/lab-03/Login.test.tsx` | Planned |
 | UI-03 | UI | AC-06 | Login: credential failure response | Generic callout, email preserved, password cleared | `client/tests/lab-03/Login.test.tsx` | Planned |
@@ -173,8 +174,9 @@ The database must be running, migrated, and seeded first. Playwright's `testDir`
 | AC-42 | API-50, UI-30 |
 | AC-43 | API-51 |
 | AC-44 | API-52 |
+| AC-45 | API-53 |
 
-Every AC-01 through AC-44 appears above, and every test row names a real file path that must exist before its row may be marked Pass.
+Every AC-01 through AC-45 appears above, and every test row names a real file path that must exist before its row may be marked Pass.
 
 ## 4. Migration and regression evidence
 
@@ -196,11 +198,11 @@ To be completed as each Issue lands. Final counts from `main`, with the `Final` 
 
 ### Issue 02: auth foundation
 
-Twenty rows moved from `Planned` to `Pass` (UNIT-01, UNIT-02, UNIT-03, UNIT-09, API-01 to API-08, MIG-01 to MIG-03, MIG-05 to MIG-09), each only after that row's test ran green.
+Twenty-one rows moved from `Planned` to `Pass` (UNIT-01, UNIT-02, UNIT-03, UNIT-09, API-01 to API-08, API-53, MIG-01 to MIG-03, MIG-05 to MIG-09), each only after that row's test ran green.
 
 | Suite | Result |
 |---|---|
-| `cd server && npm test` | 16 files, 109 tests passed: the 82 Lab 2 tests plus 27 new Lab 3 tests |
+| `cd server && npm test` | 17 files, 114 tests passed: the 82 Lab 2 tests plus 32 new Lab 3 tests. Five consecutive full runs all passed. |
 | `cd client && npm test` | 8 files, 44 tests passed, unchanged |
 | `npx playwright test` | 8 of 9 passed. `e2e/lab-02/submission-evidence.spec.ts:132` fails because it asserts exactly 3 Network Tickets for requester index 2, who already holds 9 from earlier runs of this shared development database. It predates Lab 3, is not in the graded traceability table, and is rewritten in Issue 04 together with the removal of `GET /api/requesters`. |
 
@@ -215,3 +217,5 @@ Migration evidence, from the migration applied to the development database that 
 | Rows holding the `!` marker, after `prisma db seed` | n/a | 0 |
 
 The same migration was first run on a copy of that database, and `prisma migrate diff` against `schema.prisma` reported no difference. The migration tests run the same steps on throwaway databases, so they never touch shared data. A first run of the seed left 60 migrated rows without a credential because it only handled its own fixture emails; the seed now credentials every row still holding the marker, and MIG-03 asserts it.
+
+Test isolation: every Lab 3 API test file that creates users calls `useIsolatedDatabase()`, which builds a throwaway migrated database and points `getPrisma()` at it, and `createUser` throws if a file forgot to. Vitest runs files in parallel, and `server/tests/lab-02/requesters.api.test.ts` asserts the exact list of active Requesters in the shared development database, so the Lab 3 tests must never write there. After the change the shared database was byte-for-byte unchanged by a run of the auth tests (78 users, highest id 194, 0 sessions before and after), and no `toktickit_scratch_*` database remained.

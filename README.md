@@ -37,6 +37,8 @@ npm run prisma:seed       # then, as a SEPARATE second step: Categories, Related
 npm run dev                # http://localhost:3000 (PORT from .env)
 ```
 
+The API accepts credentialed cross-origin requests (the session cookie) only from an allow-list of browser origins: the Vite dev server and the Playwright client on `localhost` and `127.0.0.1`. Serve the client from another port or host by adding it to `CORS_ORIGINS` in `server/.env`.
+
 **Run the migration first and the seed second, always in that order.** The Lab 3 migration renames the Lab 2 `RequesterUser` table to `User` in place and cannot compute a password hash in SQL, so it gives every existing account an unusable placeholder credential. Until the seed has run, no migrated account can sign in. The seed is what issues the real initial password, and it never overwrites a password that a user has already chosen, so running it again is always safe. See `docs/adr/0002-rename-requesteruser-to-user-in-place.md`.
 
 Use `prisma migrate deploy`, not `prisma migrate dev`, on a database that already holds data: `migrate dev` would regenerate the rename as a destructive drop and create.

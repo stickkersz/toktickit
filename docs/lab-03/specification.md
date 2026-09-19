@@ -180,6 +180,10 @@ Editing and deleting a Public Comment or Internal Note are also excluded: both a
 - BR-60 A deactivated Requester's Tickets remain, unchanged, and stay fully visible to IT Staff and Administrators. The Requester cannot authenticate (BR-01), so cannot comment or signal resolution. IT Staff may still post Public Comments on those Tickets, since BR-34 restricts only Requesters, and the comments are waiting if the account is reactivated. A Requester whose role changes to IT Staff or Administrator keeps `requesterId` on every Ticket they created. They lose every Requester-only operation, receiving 403, and see those Tickets only as any staff member does.
 - BR-61 `PublicComment` and `InternalNote` store `authorRole` when they are created, so the role badge shows the role the author held when writing and a later role change does not relabel history. An Internal Note by a user who is no longer IT Staff stays visible to current staff, and its former author can no longer read it, because BR-35 evaluates the reader's current role.
 
+### Cross-origin browser access
+
+- BR-62 A browser page served from another origin may call the API with the session cookie only through credentialed CORS against an exact allow-list. The API echoes an origin back, with `Access-Control-Allow-Credentials: true` and `Vary: Origin`, only when that origin is listed in `CORS_ORIGINS`; the default list is the Vite dev server (5173) and the Playwright client (5180) on both `localhost` and `127.0.0.1`. Every other origin receives no CORS headers, so the browser blocks it. A `*` entry is ignored, because browsers refuse a wildcard on a credentialed request and reflecting arbitrary origins would let any website use a signed-in user's cookie. This is a fallback path: the client normally reaches the API through the Vite proxy, which is same-origin (section 12).
+
 ## 6. Authorization matrix
 
 Every protected operation, against each role. `own` means the operation is additionally restricted to resources the authenticated user owns, enforced by folding the identity into the database query.
@@ -386,6 +390,7 @@ Full shapes, statuses, and error bodies are in `docs/lab-03/api-spec.md`. Every 
 - AC-42 Given a Requester who is deactivated, when IT Staff view the queue, then their Tickets remain and are marked as belonging to an inactive Requester, they cannot sign in, and after reactivation they see their Tickets and any staff comments posted meanwhile.
 - AC-43 Given a Requester whose role is changed to IT Staff, when they use the application afterwards, then their Tickets keep them as requester, every Requester-only operation returns 403, and they can open those Tickets only as staff do.
 - AC-44 Given a Public Comment written by IT Staff who is later changed to the Requester role, when the Ticket is read, then the comment still shows the `IT_STAFF` badge it was written with.
+- AC-45 Given a browser page served from an allowed origin, when it makes a credentialed request, then the response echoes that exact origin with `Access-Control-Allow-Credentials: true`, and given any other origin, then no CORS headers are sent.
 
 ## 11. Definition of Done
 
@@ -410,7 +415,7 @@ Full shapes, statuses, and error bodies are in `docs/lab-03/api-spec.md`. Every 
 
 - Sessions are server-side rows rather than stateless tokens, because the handout requires logout invalidation and blocked access after logout, which a self-contained token cannot provide without a revocation list that is itself server state.
 - Password hashing uses `node:crypto` scrypt rather than bcrypt or argon2, so the project gains no native build step and `npm install` cannot fail on a reviewer's machine. The cost parameters are documented in BR-03 and are tunable in one module.
-- The client is served through a Vite dev proxy so the API is same-origin during development. This keeps the session cookie a first-party cookie and avoids `SameSite=None` with `Secure`, which plain-HTTP local development cannot satisfy. CSRF exposure is handled by `SameSite=Lax` together with the rule that no state-changing operation uses GET.
+- The client is served through a Vite dev proxy so the API is same-origin during development. This keeps the session cookie a first-party cookie and avoids `SameSite=None` with `Secure`, which plain-HTTP local development cannot satisfy. CSRF exposure is handled by `SameSite=Lax` together with the rule that no state-changing operation uses GET. Credentialed CORS (BR-62) exists for the case where a page is served from another origin; a `SameSite=Lax` cookie is carried by such a request only when both origins are the same site (`localhost:5173` to `localhost:3000`, but not `127.0.0.1` to `localhost`), which is why the proxy stays the primary path.
 - No new runtime dependency is added for authentication. Cookie parsing is a small first-party helper rather than the `cookie-parser` package, keeping the Lab 2 dependency list unchanged apart from nothing at all.
 - Public Comments and Internal Notes are two tables rather than one table with a visibility flag. A Requester-facing query physically cannot reach the Internal Note table, so the failure that AC-04 guards against is prevented structurally instead of relying on a `where` clause being remembered at every call site.
 - Login attempt throttling and account lockout are not implemented: account unlocking is explicitly excluded by the handout, and a lockout without an unlock path would strand a user. Brute-force resistance rests on the scrypt work factor and the generic failure message in BR-09.

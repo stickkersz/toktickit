@@ -3,10 +3,14 @@ import { describe, expect, it } from "vitest";
 import request from "supertest";
 import { app } from "../../src/app.js";
 import { getPrisma } from "../../src/prisma.js";
-import { TEST_PASSWORD, buildProbeApp, createUser, loginAs, uniqueEmail } from "./helpers.js";
+import { TEST_PASSWORD, buildProbeApp, createUser, loginAs, uniqueEmail, useIsolatedDatabase } from "./helpers.js";
 
-// Requires the DB to be migrated first. Every test builds its own users with a
-// unique email and never asserts on a global row count.
+// Runs against a throwaway database (useIsolatedDatabase), so these tests can
+// create as many users as they like without ever touching the shared development
+// data that the Lab 2 suite asserts on. Every test still builds its own users
+// with a unique email and never asserts on a global row count.
+useIsolatedDatabase();
+
 describe("POST /api/auth/login", () => {
   // API-01 / AC-01, BR-04, BR-05
   it("signs in a valid user, sets a hardened cookie, and returns a safe body", async () => {
@@ -85,18 +89,16 @@ describe("POST /api/auth/login", () => {
   });
 
   it("returns 500 with a safe body when the database fails", async () => {
+    // mockImplementationOnce, not a second spy plus mockRestore: restoring would
+    // also undo the isolation spy and send the later tests to the shared database.
     const { vi } = await import("vitest");
     const prismaModule = await import("../../src/prisma.js");
-    const spy = vi.spyOn(prismaModule, "getPrisma").mockReturnValue({
-      user: { findUnique: () => Promise.reject(new Error("connection refused: secret detail")) },
-    } as never);
-    try {
-      const res = await request(app).post("/api/auth/login").send({ email: "a@b.test", password: "x" });
-      expect(res.status).toBe(500);
-      expect(res.body).toEqual({ error: "INTERNAL_ERROR", message: "Unable to sign in." });
-    } finally {
-      spy.mockRestore();
-    }
+    vi.spyOn(prismaModule, "getPrisma").mockImplementationOnce(
+      () => ({ user: { findUnique: () => Promise.reject(new Error("connection refused: secret detail")) } }) as never,
+    );
+    const res = await request(app).post("/api/auth/login").send({ email: "a@b.test", password: "x" });
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: "INTERNAL_ERROR", message: "Unable to sign in." });
   });
 });
 
