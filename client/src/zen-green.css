@@ -259,3 +259,26 @@ a:focus-visible {
 .btn-link:hover {
   color: var(--color-secondary);
 }
+
+/* The Requester's "problem appears resolved" signal on the staff Ticket Detail: pale, informative,
+   and plainly not a status (ui-spec.md section 8). */
+.zg-banner-pale {
+  background-color: var(--color-pale);
+  color: var(--color-text);
+  border: 1px solid var(--color-secondary);
+}
+
+/* An operational control: visibly editable, against the read-only fields around it (ui-spec.md section 3). */
+.zg-editable {
+  border-color: var(--color-field-editable-border);
+  background-color: var(--color-field-editable-bg);
+}
+
+/* Plain links take the Zen Green tokens too, so no link is ever Bootstrap's default blue. Buttons
+   and nav links set their own colour with a class, which outranks this element selector. */
+a {
+  color: var(--color-primary);
+}
+a:hover {
+  color: var(--color-secondary);
+}

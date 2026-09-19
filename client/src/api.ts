@@ -99,6 +99,9 @@ export interface TicketDetail {
   description: string;
   requestedPriority: TicketPriority;
   currentStatus: string;
+  // BR-27, BR-29: visible to the Requester. Optional so a response without them still types.
+  resolutionSummary?: string | null;
+  requesterResolutionFlaggedAt?: string | null;
   createdAt: string;
   updatedAt: string;
   attachments: Attachment[];
@@ -142,6 +145,8 @@ export interface TicketListParams {
 export class ApiError extends Error {
   status: number;
   code?: string;
+  // On a refused status change, the statuses the Ticket may move to from where it is now.
+  permitted?: string[];
   constructor(message: string, status: number, code?: string) {
     super(message);
     this.status = status;
@@ -341,11 +346,13 @@ async function authRequest(path: string, init?: RequestInit): Promise<{ res: Res
 }
 
 function errorFromResponse(status: number, body: unknown, fallback: string): ApiError {
-  const payload = (body ?? {}) as { error?: string; message?: string; fields?: Record<string, string> };
+  const payload = (body ?? {}) as { error?: string; message?: string; fields?: Record<string, string>; permitted?: string[] };
   if (payload.error === "VALIDATION_ERROR") {
     return new ValidationError(payload.message ?? "Validation failed.", payload.fields ?? {});
   }
-  return new ApiError(payload.message ?? fallback, status, payload.error);
+  const error = new ApiError(payload.message ?? fallback, status, payload.error);
+  if (Array.isArray(payload.permitted)) error.permitted = payload.permitted;
+  return error;
 }
 
 const JSON_HEADERS = { "Content-Type": "application/json" };
@@ -447,4 +454,78 @@ export async function getStaffTickets(params: StaffQueueParams): Promise<StaffQu
   const { res, body } = await authRequest(`/api/staff/tickets?${query.toString()}`);
   if (!res.ok) throw errorFromResponse(res.status, body, "Unable to load the ticket queue.");
   return body as StaffQueueResult;
+}
+
+// ---------------------------------------------------------------------------
+// Lab 3 IT Staff Ticket operations (api-spec.md endpoints 6 and 8 to 10).
+// ---------------------------------------------------------------------------
+
+// GET /api/tickets/:id as an IT Staff member or Administrator sees it (BR-54, BR-57, BR-59).
+export interface StaffTicketDetail extends TicketDetail {
+  itPriority: TicketPriority;
+  ownerId: number | null;
+  ownerName: string | null;
+  ownerIsActive: boolean | null;
+  ownerEligible: boolean | null;
+  requesterIsActive: boolean;
+  // Straight from the server's workflow table: the client carries no copy of BR-25.
+  permittedNextStatuses: string[];
+}
+
+export interface StaffOwner {
+  id: number;
+  name: string;
+  role: UserRole;
+}
+
+export async function getStaffTicketDetail(ticketId: number): Promise<StaffTicketDetail> {
+  const { res, body } = await authRequest(`/api/tickets/${ticketId}`);
+  if (res.status === 404) throw new NotFoundError("Ticket not found.");
+  if (!res.ok) throw errorFromResponse(res.status, body, "Unable to load the Ticket.");
+  return body as StaffTicketDetail;
+}
+
+// Active IT Staff and Administrators, for the Ticket Owner select (BR-18).
+export async function getStaffOwners(): Promise<StaffOwner[]> {
+  const { res, body } = await authRequest("/api/staff/owners");
+  if (!res.ok) throw errorFromResponse(res.status, body, "Unable to load the list of owners.");
+  return body as StaffOwner[];
+}
+
+async function patchTicket(ticketId: number, part: string, data: object, fallback: string): Promise<StaffTicketItem> {
+  const { res, body } = await authRequest(`/api/staff/tickets/${ticketId}/${part}`, {
+    method: "PATCH",
+    headers: JSON_HEADERS,
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw errorFromResponse(res.status, body, fallback);
+  return body as StaffTicketItem;
+}
+
+// Claim, assign, reassign and unassign are one operation: claiming is sending your own id.
+export function setTicketOwner(ticketId: number, ownerId: number | null): Promise<StaffTicketItem> {
+  return patchTicket(ticketId, "owner", { ownerId }, "Unable to change the Ticket Owner.");
+}
+
+export function setTicketPriority(ticketId: number, itPriority: TicketPriority): Promise<StaffTicketItem> {
+  return patchTicket(ticketId, "priority", { itPriority }, "Unable to change the IT Priority.");
+}
+
+export function changeTicketStatus(ticketId: number, currentStatus: string, resolutionSummary?: string): Promise<StaffTicketItem> {
+  return patchTicket(
+    ticketId,
+    "status",
+    resolutionSummary === undefined ? { currentStatus } : { currentStatus, resolutionSummary },
+    "Unable to change the Ticket status.",
+  );
+}
+
+// POST /api/tickets/:id/resolution-indication: the Requester says the problem appears resolved.
+// It records a timestamp and never changes the status.
+export async function flagProblemResolved(
+  ticketId: number,
+): Promise<{ id: number; requesterResolutionFlaggedAt: string; currentStatus: string }> {
+  const { res, body } = await authRequest(`/api/tickets/${ticketId}/resolution-indication`, { method: "POST" });
+  if (!res.ok) throw errorFromResponse(res.status, body, "Unable to record that the problem appears resolved.");
+  return body as { id: number; requesterResolutionFlaggedAt: string; currentStatus: string };
 }

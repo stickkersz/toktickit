@@ -118,7 +118,7 @@ Operational field group, visibly editable with `--color-field-editable-border`:
 
 A Ticket showing the Requester's "problem appears resolved" indication displays a `--color-pale` banner with the timestamp, so staff see the signal without it being mistaken for a status.
 
-Panels below, as labelled tabs with counts: **Public Comments**, **Internal Notes**, **Attachments**.
+Panels below, as labelled tabs with counts: **Public Comments**, **Internal Notes**, **Attachments**. The Attachments panel arrives first, as its own section, with the Issue that delivers this screen; Public Comments and Internal Notes join it as tabs with the Issue that delivers them.
 
 Public Comments and Internal Notes must be impossible to confuse. Internal Notes use a distinct `--color-warning-bg` tinted panel, a lock glyph, and a standing label reading "Internal only. Not visible to the Requester." above its composer. Public Comments use the plain surface background. The two composers never appear simultaneously: only the active tab's composer is rendered, so a note cannot be typed into a comment box by accident.
 

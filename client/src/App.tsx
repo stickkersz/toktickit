@@ -9,7 +9,8 @@ import CreateTicket from "./screens/CreateTicket.js";
 import TicketDetail from "./screens/TicketDetail.js";
 import Login from "./screens/Login.js";
 import ChangePassword from "./screens/ChangePassword.js";
-import RoleLanding, { StaffTicketDetailPlaceholder } from "./screens/RoleLanding.js";
+import RoleLanding from "./screens/RoleLanding.js";
+import StaffTicketDetail from "./screens/StaffTicketDetail.js";
 import StaffTicketQueue from "./screens/StaffTicketQueue.js";
 import Forbidden from "./screens/Forbidden.js";
 
@@ -118,7 +119,7 @@ function AppRoutes() {
           path="/staff/tickets/:id"
           element={
             <RequireRole roles={["IT_STAFF", "ADMINISTRATOR"]} message="You do not have access to the Ticket Queue.">
-              <StaffTicketDetailPlaceholder />
+              <StaffTicketDetail />
             </RequireRole>
           }
         />

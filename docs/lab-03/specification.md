@@ -336,6 +336,7 @@ Full shapes, statuses, and error bodies are in `docs/lab-03/api-spec.md`. Every 
 | DELETE `/api/attachments/:id` | soft removal | Requester, own only (BR-55) |
 | POST `/api/tickets/:id/resolution-indication` | Requester marks problem as appearing resolved | Requester, own |
 | GET `/api/staff/tickets` | Ticket Queue, search, filter, sort, paginate | IT Staff, Administrator |
+| GET `/api/staff/owners` | active IT Staff and Administrators, for the owner select | IT Staff, Administrator |
 | PATCH `/api/staff/tickets/:id/owner` | claim, assign, reassign, unassign | IT Staff, Administrator |
 | PATCH `/api/staff/tickets/:id/priority` | set IT Priority | IT Staff, Administrator |
 | PATCH `/api/staff/tickets/:id/status` | permitted status transition | IT Staff, Administrator |

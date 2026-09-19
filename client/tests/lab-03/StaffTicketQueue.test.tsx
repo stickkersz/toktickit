@@ -102,18 +102,43 @@ describe("Staff Ticket Queue: rows", () => {
 
   it("opens the Ticket Detail by click, by Enter, and by Space", async () => {
     openQueue();
+    // The Ticket Detail itself is tested in StaffTicketDetail.test.tsx: here only that the row gets there.
+    vi.mocked(api.getStaffTicketDetail).mockResolvedValue({
+      id: 1,
+      ticketNumber: "TKT-2026-000001",
+      requesterId: 3,
+      requesterName: "Kanokwan Srisuwan",
+      categoryId: 4,
+      categoryName: "Network",
+      relatedSystemId: 1,
+      relatedSystemName: "Staff VPN",
+      summary: "Cannot connect to the VPN",
+      description: "It times out.",
+      requestedPriority: "MEDIUM",
+      currentStatus: "OPEN",
+      createdAt: "2026-09-10T09:00:00.000Z",
+      updatedAt: "2026-09-11T09:00:00.000Z",
+      attachments: [],
+      itPriority: "HIGH",
+      ownerId: null,
+      ownerName: null,
+      ownerIsActive: null,
+      ownerEligible: null,
+      requesterIsActive: true,
+      permittedNextStatuses: ["IN_PROGRESS"],
+    });
     const user = userEvent.setup();
     let rows = await within(await screen.findByRole("table")).findAllByRole("button");
     await user.click(rows[0]);
-    expect(await screen.findByRole("heading", { name: "Ticket Detail" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Ticket Queue" })).toHaveAttribute("aria-current", "page");
+    expect(await screen.findByRole("navigation", { name: "Breadcrumb" })).toHaveTextContent("Ticket Detail");
+    expect(screen.getByRole("link", { name: "Ticket Queue", current: "page" })).toBeInTheDocument();
 
     for (const key of ["{Enter}", " "]) {
-      await user.click(screen.getByRole("link", { name: "Back to Queue" }));
+      await user.click(screen.getByRole("button", { name: /back to queue/i }));
       rows = await within(await screen.findByRole("table")).findAllByRole("button");
       rows[0].focus();
       await user.keyboard(key);
-      expect(await screen.findByRole("heading", { name: "Ticket Detail" })).toBeInTheDocument();
+      expect(await screen.findByRole("navigation", { name: "Breadcrumb" })).toBeInTheDocument();
     }
   });
 
