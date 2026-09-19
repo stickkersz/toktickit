@@ -208,6 +208,7 @@ export function migrationSql(dir: string): string {
 
 export const LAB2_MIGRATIONS = ["20260809090130_init", "20260828162803_lab2_models"];
 export const LAB3_MIGRATION = "20260919090000_lab3_auth_foundation";
+export const LAB3_IT_PRIORITY_BACKFILL = "20260919100000_lab3_it_priority_backfill";
 
 // Runs a (possibly multi-statement) SQL script against a database.
 export function runSql(url: string, sql: string): void {
@@ -277,7 +278,10 @@ export async function buildLegacyDb(): Promise<ScratchDb> {
 INSERT INTO "RelatedSystem" (id, name, "isActive", "createdAt") VALUES (1, 'Legacy System', true, now());
 INSERT INTO "RequesterUser" (id, name, email, "isActive", "createdAt") VALUES ${users};
 SELECT setval(pg_get_serial_sequence('"RequesterUser"', 'id'), (SELECT max(id) FROM "RequesterUser"));
-INSERT INTO "Ticket" (id, "ticketNumber", "requesterId", "categoryId", "relatedSystemId", summary, description, "requestedPriority", "currentStatus", "createdAt", "updatedAt") VALUES ${tickets};`,
+INSERT INTO "Ticket" (id, "ticketNumber", "requesterId", "categoryId", "relatedSystemId", summary, description, "requestedPriority", "currentStatus", "createdAt", "updatedAt") VALUES ${tickets};
+-- Lab 2 never set IT Priority. One row already holds a value that differs from its Requested
+-- Priority, so a backfill that overwrote it would be caught.
+UPDATE "Ticket" SET "itPriority" = 'HIGH' WHERE id = 3;`,
   );
   return db;
 }

@@ -5,6 +5,7 @@ import { app } from "../../src/app.js";
 import { UNUSABLE_PASSWORD_HASH } from "../../src/auth/password.js";
 import { DEV_INITIAL_PASSWORD, seedUsers } from "../../prisma/seedUsers.js";
 import {
+  LAB3_IT_PRIORITY_BACKFILL,
   LAB3_MIGRATION,
   LEGACY_REQUESTERS,
   buildLegacyDb,
@@ -103,6 +104,32 @@ describe("Lab 3 migration applied to a Lab 2 database that holds rows", () => {
       spy.mockRestore();
     }
   });
+
+  // MIG-10 / BR-22
+  it("backfills IT Priority from the Requested Priority for every Ticket that has none, and keeps one already set", async () => {
+    const before = await db.client.$queryRawUnsafe<{ id: number; itPriority: string | null; requestedPriority: string }[]>(
+      `SELECT id, "itPriority", "requestedPriority" FROM "Ticket" ORDER BY id`,
+    );
+    expect(before.filter((t) => t.itPriority === null)).toHaveLength(4);
+    expect(before.find((t) => t.id === 3)).toMatchObject({ itPriority: "HIGH", requestedPriority: "LOW" });
+
+    runSql(db.url, migrationSql(LAB3_IT_PRIORITY_BACKFILL));
+
+    const after = await db.client.$queryRawUnsafe<{ id: number; itPriority: string; requestedPriority: string }[]>(
+      `SELECT id, "itPriority", "requestedPriority" FROM "Ticket" ORDER BY id`,
+    );
+    expect(after).toHaveLength(5);
+    for (const t of after) {
+      expect(t.itPriority, `ticket ${t.id}`).toBe(t.id === 3 ? "HIGH" : t.requestedPriority);
+    }
+    // Requested Priority is untouched (BR-21).
+    expect(after.map((t) => t.requestedPriority)).toEqual(before.map((t) => t.requestedPriority));
+    // Running it again changes nothing.
+    runSql(db.url, migrationSql(LAB3_IT_PRIORITY_BACKFILL));
+    expect(await db.client.$queryRawUnsafe(`SELECT id, "itPriority" FROM "Ticket" ORDER BY id`)).toEqual(
+      after.map(({ id, itPriority }) => ({ id, itPriority })),
+    );
+  }, SETUP_TIMEOUT);
 
   // MIG-03 / BR-48, BR-52
   it("gives every migrated row a real hash once seeded, including rows the seed does not know", async () => {

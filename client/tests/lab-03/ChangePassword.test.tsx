@@ -134,7 +134,7 @@ describe("Change Password screen", () => {
     await user.type(next, "Fresh!Pass456");
     await user.type(confirm, "Fresh!Pass456");
     await user.click(submit);
-    expect(await screen.findByRole("heading", { name: `Signed in as ${STAFF.name}` })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Ticket Queue" })).toBeInTheDocument();
   });
 
   it("puts a server field error and a wrong current password under the right fields", async () => {

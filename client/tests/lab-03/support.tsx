@@ -25,6 +25,11 @@ export function renderApp(
   vi.spyOn(api, "getCurrentUser").mockResolvedValue(currentUser);
   vi.spyOn(api, "getCategories").mockResolvedValue([]);
   vi.spyOn(api, "getRelatedSystems").mockResolvedValue([]);
+  // The staff queue, which IT Staff and Administrators now land on.
+  vi.spyOn(api, "getStaffTickets").mockResolvedValue({
+    tickets: [],
+    pagination: { page: 1, pageSize: 10, total: 0, totalPages: 0 },
+  });
   vi.spyOn(api, "getTicketDetail").mockRejectedValue(new api.NotFoundError("Ticket not found."));
   vi.spyOn(api, "getTickets").mockResolvedValue({
     data: [],
