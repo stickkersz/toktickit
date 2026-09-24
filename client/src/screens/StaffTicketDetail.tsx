@@ -8,7 +8,6 @@ import {
   StaffTicketItem,
   TicketPriority,
   changeTicketStatus,
-  getAttachmentDownloadUrl,
   getStaffOwners,
   getStaffTicketDetail,
   setTicketOwner,
@@ -16,7 +15,8 @@ import {
 } from "../api.js";
 import { useAuth } from "../authContext.js";
 import { PriorityBadge, StatusBadge } from "../Badge.js";
-import { TruncatedFilename, fileTypeLabel, formatDate, formatFileSize } from "../attachmentDisplay.js";
+import { formatDate } from "../attachmentDisplay.js";
+import StaffTicketPanels from "./StaffTicketPanels.js";
 
 type LoadState = "loading" | "ready" | "notfound" | "error";
 type Control = "owner" | "priority" | "status";
@@ -292,7 +292,6 @@ function StaffTicketDetail() {
     );
   }
 
-  const activeCount = ticket.attachments.filter((a) => !a.isRemoved).length;
   const ownerMissingFromList = ticket.ownerId !== null && !owners.some((o) => o.id === ticket.ownerId);
   const canClaim = ticket.ownerId === null || ticket.ownerEligible === false;
   // Options come from the last reload: while that is missing, offer nothing but the current status.
@@ -538,44 +537,7 @@ function StaffTicketDetail() {
 
       <hr />
 
-      {/* Read only for staff: a Requester adds and removes Attachments, staff only read them (BR-54,
-          BR-55). The upload and Remove controls are absent from the page, not merely disabled. */}
-      <section aria-labelledby="staff-attachments-heading">
-        <h2 id="staff-attachments-heading" className="h5 mb-3">
-          Attachments ({activeCount} active)
-        </h2>
-        {ticket.attachments.length === 0 ? (
-          <p className="text-muted">No attachments.</p>
-        ) : (
-          <ul className="list-group">
-            {ticket.attachments.map((attachment) => (
-              <li key={attachment.id} className="list-group-item d-flex justify-content-between align-items-start gap-2">
-                <div className={attachment.isRemoved ? "text-muted" : ""}>
-                  <div>
-                    <span className="badge text-bg-light border me-1">{fileTypeLabel(attachment.mimeType)}</span>
-                    <TruncatedFilename name={attachment.originalFilename} />{" "}
-                    <span className="text-muted small">({formatFileSize(attachment.sizeBytes)})</span>
-                    {attachment.isRemoved && <span className="badge text-bg-secondary ms-2">Removed</span>}
-                  </div>
-                  <div className="text-muted small">Uploaded {formatDate(attachment.uploadedAt)}</div>
-                  {attachment.isRemoved && (
-                    <div className="text-muted small">
-                      Removed {attachment.removedAt ? formatDate(attachment.removedAt) : ""}: {attachment.removalReason}
-                    </div>
-                  )}
-                </div>
-                {attachment.isRemoved ? (
-                  <span className="text-muted small align-self-center">Unavailable</span>
-                ) : (
-                  <a className="btn btn-sm btn-outline-secondary zg-touch-target" href={getAttachmentDownloadUrl(attachment.id)}>
-                    Download
-                  </a>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+      <StaffTicketPanels ticketId={ticketId} attachments={ticket.attachments} />
     </div>
   );
 }

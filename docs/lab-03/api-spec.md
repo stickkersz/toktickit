@@ -362,6 +362,8 @@ Errors:
 
 Author and creation time are always taken from the session and the server clock; supplying them in the body has no effect (BR-32).
 
+The checks run in this order: the role (403, for notes), the Ticket id (404), the request body (400), then the Ticket (404). The Requester's terminal check and the insert are one transaction holding a share lock on the Ticket row, so a close that lands at the same moment either finishes first, and the comment is refused with 409, or waits for the comment; a comment can never be written after a close.
+
 ## 12. GET and POST /api/tickets/:id/notes
 
 Purpose: read and append Internal Notes (FR-15).
@@ -374,7 +376,7 @@ Errors:
 
 - 400 `VALIDATION_ERROR`: same body rules as endpoint 11.
 - 401.
-- 403 `FORBIDDEN` for any Requester, with no note content and no note count in the body (AC-04). This is the one place where a Requester receives 403 rather than 404 for a Ticket they own, because the refusal is about the whole capability and not about a particular record, so nothing is disclosed.
+- 403 `FORBIDDEN` for any Requester, with no note content and no note count in the body (AC-04). It comes from the role alone, before the Ticket is looked at, so it is the same 403 for their own Ticket, another Requester's, a Ticket that does not exist and a malformed id: the body is only `error` and `message`. This is the one place where a Requester receives 403 rather than 404 for a Ticket they own, because the refusal is about the whole capability and not about a particular record, so nothing is disclosed.
 - 404 when the Ticket does not exist.
 
 ## 13. GET /api/admin/users

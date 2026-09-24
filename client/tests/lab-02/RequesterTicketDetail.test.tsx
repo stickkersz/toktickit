@@ -43,9 +43,12 @@ afterEach(() => {
 
 describe("Requester Ticket Detail", () => {
   // UI-10
-  it("renders read-only Ticket detail with no Comments/Notes/Actions/status controls (handout §8.5)", async () => {
+  // Lab 3 changed this test: Public Comments now exist on this screen (UI-21), so the Lab 2 assertion
+  // that no Public Comment text appears is gone. Internal Notes, actions and status controls stay absent.
+  it("renders read-only Ticket detail with no Internal Notes/Actions/status controls (handout §8.5)", async () => {
     vi.spyOn(api, "getCurrentUser").mockResolvedValue(ARI);
     vi.spyOn(api, "getTicketDetail").mockResolvedValue(ticketDetail());
+    vi.spyOn(api, "getTicketComments").mockResolvedValue([]);
 
     renderAtDetail();
 
@@ -55,7 +58,6 @@ describe("Requester Ticket Detail", () => {
     // read-only field state, unlike a disabled control.
     expect(summaryField).toHaveAttribute("readonly");
     expect(summaryField).not.toBeDisabled();
-    expect(screen.queryByText(/public comment/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/internal note/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/actions taken/i)).not.toBeInTheDocument();
     expect(screen.queryByRole("combobox", { name: /status/i })).not.toBeInTheDocument();

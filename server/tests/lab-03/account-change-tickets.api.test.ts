@@ -139,3 +139,53 @@ describe("claiming a Ticket that already has an eligible owner", () => {
     expect(res.body).toMatchObject({ ownerId: back, ownerEligible: true });
   });
 });
+
+describe("an author whose role changes after writing", () => {
+  // API-52 / AC-44, BR-61, BR-35: the role stored when a comment was written is the one shown,
+  // and a note stays readable to current staff while its former author, now a Requester, is shut out.
+  it("keeps the IT_STAFF badge on the Public Comment for the owning Requester, and shuts the former author out of the notes while other staff still read the note", async () => {
+    const owner = await createUser();
+    const ownerSession = await signedIn(owner.user);
+    const author = await createUser({ role: "IT_STAFF" });
+    const authorSession = await signedIn(author.user);
+    const other = await createUser({ role: "IT_STAFF" });
+    const otherSession = await signedIn(other.user);
+    n += 1;
+    const ticket = await iso.db.client.ticket.create({
+      data: {
+        ticketNumber: `TKT-2026-6${String(n).padStart(5, "0")}`,
+        requesterId: owner.user.id,
+        categoryId: 1,
+        relatedSystemId: 1,
+        summary: `Role change fixture ${n}`,
+        description: "A fixture for the role change tests, long enough to be valid.",
+        requestedPriority: "MEDIUM",
+        itPriority: "MEDIUM",
+        currentStatus: "OPEN",
+      },
+    });
+
+    const comment = await authorSession.post(`/api/tickets/${ticket.id}/comments`).send({ body: "Written while I was IT Staff." });
+    const note = await authorSession.post(`/api/tickets/${ticket.id}/notes`).send({ body: "Internal remark from when I was IT Staff." });
+    expect([comment.status, note.status]).toEqual([201, 201]);
+
+    // The author is now a Requester: the Administrator screen will do this, here it is done directly.
+    await iso.db.client.user.update({ where: { id: author.user.id }, data: { role: "REQUESTER" } });
+
+    const seen = await ownerSession.get(`/api/tickets/${ticket.id}/comments`);
+    expect(seen.body).toHaveLength(1);
+    expect(seen.body[0].authorRole).toBe("IT_STAFF");
+    expect(seen.body[0].body).toBe("Written while I was IT Staff.");
+
+    // Reader's current role decides (BR-35): the former author is refused, current staff still read it.
+    expect((await authorSession.get(`/api/tickets/${ticket.id}/notes`)).status).toBe(403);
+    const stillThere = await otherSession.get(`/api/tickets/${ticket.id}/notes`);
+    expect(stillThere.status).toBe(200);
+    expect(stillThere.body).toHaveLength(1);
+    expect(stillThere.body[0]).toMatchObject({ body: "Internal remark from when I was IT Staff.", authorRole: "IT_STAFF" });
+
+    // A new comment by the same person now carries the role they hold now.
+    // (They are a Requester on someone else's Ticket, so it is refused rather than mislabelled.)
+    expect((await authorSession.post(`/api/tickets/${ticket.id}/comments`).send({ body: "Now I am a Requester." })).status).toBe(404);
+  });
+});
