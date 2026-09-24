@@ -9,7 +9,7 @@ import CreateTicket from "./screens/CreateTicket.js";
 import TicketDetail from "./screens/TicketDetail.js";
 import Login from "./screens/Login.js";
 import ChangePassword from "./screens/ChangePassword.js";
-import RoleLanding from "./screens/RoleLanding.js";
+import UserManagement from "./screens/UserManagement.js";
 import StaffTicketDetail from "./screens/StaffTicketDetail.js";
 import StaffTicketQueue from "./screens/StaffTicketQueue.js";
 import Forbidden from "./screens/Forbidden.js";
@@ -127,7 +127,7 @@ function AppRoutes() {
           path="/admin/users"
           element={
             <RequireRole roles={["ADMINISTRATOR"]} message="You do not have access to User Management.">
-              <RoleLanding destination="Administrator User Management" />
+              <UserManagement />
             </RequireRole>
           }
         />

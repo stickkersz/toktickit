@@ -141,6 +141,8 @@ Feedback this screen must make unmissable:
 - Last active Administrator: attempting to deactivate or to change the role of the only remaining active Administrator shows an error callout reading "At least one active Administrator is required." and no change is saved.
 - Forbidden: a non-Administrator reaching the route sees "You do not have access to User Management." and no user data at all.
 
+Screen details: below 768px the table becomes a list of cards with the same information. On anything narrower than a wide desktop (992px) the panel takes over the width and the list is hidden while it is open, so a tablet has one pane. Save stays off until something has changed and sends only the fields that changed. A refused change puts the form back to what is stored rather than showing a state that was not saved. The Administrator's own Role select stays usable and a refused change to it says so; only the Active toggle is disabled on the own row. The disabled toggle's reason is written under it as well as in the tooltip, since a disabled control shows no tooltip and a phone has no hover. On the own row "Set new initial password" is replaced by a pointer to Change password. A user who has not yet replaced their initial password is marked in the panel.
+
 No screen offers a delete action, because Users are never deleted.
 
 ## 10. Screen modes and user feedback

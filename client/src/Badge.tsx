@@ -42,3 +42,9 @@ export function StatusBadge({ value }: { value: string }) {
 export function RoleBadge({ role }: { role: UserRole }) {
   return <span className="zg-badge zg-badge-role">{ROLE_LABEL[role]}</span>;
 }
+
+// An account's state, in words as well as color: Active is the green outline used for Open, Inactive
+// the muted grey used for Closed. Colour is only ever a second signal.
+export function UserStatusBadge({ isActive }: { isActive: boolean }) {
+  return <span className={`zg-badge ${isActive ? "zg-badge-open" : "zg-badge-closed"}`}>{isActive ? "Active" : "Inactive"}</span>;
+}
