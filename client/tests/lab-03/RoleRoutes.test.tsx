@@ -46,7 +46,7 @@ describe("role based route protection", () => {
     expect(await screen.findByText(message)).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Access denied" })).toBeInTheDocument();
     // The protected screen never rendered.
-    expect(screen.queryByRole("heading", { name: /^Signed in as/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "User Management" })).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "My Tickets" })).not.toBeInTheDocument();
     // The refusal sits inside the caller's own shell, so only their own role's
     // navigation is offered: staff and administrators never see Requester links.
@@ -65,7 +65,7 @@ describe("role based route protection", () => {
   it.each<[string, AuthUser, string, RegExp]>([
     ["IT Staff on the staff queue", STAFF, "/staff/tickets", /^Ticket Queue$/],
     ["an Administrator on the staff queue", ADMIN, "/staff/tickets", /^Ticket Queue$/],
-    ["an Administrator on User Management", ADMIN, "/admin/users", /^Signed in as Aekkarat Wongsa$/],
+    ["an Administrator on User Management", ADMIN, "/admin/users", /^User Management$/],
     ["a Requester on My Tickets", REQUESTER, "/tickets", /^My Tickets$/],
   ])("still lets %s in", async (_who, user, path, heading) => {
     renderApp(path, user);
@@ -98,7 +98,8 @@ describe("role based route protection", () => {
 
     vi.restoreAllMocks();
     renderApp("/still/not/a/page", ADMIN);
-    expect(await screen.findAllByRole("heading", { name: `Signed in as ${ADMIN.name}` })).not.toHaveLength(0);
+    // An Administrator lands on User Management.
+    expect(await screen.findByRole("heading", { name: "User Management" })).toBeInTheDocument();
   });
 });
 

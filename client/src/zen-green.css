@@ -119,6 +119,7 @@ a:focus-visible {
   border-radius: 999px;
   font-size: 0.75rem;
   font-weight: 600;
+  white-space: nowrap;
 }
 .zg-badge-low,
 .zg-badge-new {
@@ -371,4 +372,34 @@ a:hover {
 .zg-content-body {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+/* User Management (ui-spec.md section 9). The create and edit panel is a bordered surface beside the
+   list; on a phone the list becomes cards. */
+.zg-user-panel {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-field-editable-border);
+  border-radius: 0.375rem;
+  padding: 1rem;
+}
+.zg-user-card {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-field-editable-border);
+  border-radius: 0.375rem;
+  padding: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+/* Toggles and checkboxes. Bootstrap's checked state is its own blue; the Zen Green primary is applied
+   explicitly, and the focus ring matches the other controls. */
+.form-check-input:checked {
+  background-color: var(--color-primary);
+  border-color: var(--color-primary);
+}
+.form-check-input:focus {
+  border-color: var(--color-secondary);
+  box-shadow: 0 0 0 0.2rem rgba(11, 122, 70, 0.35);
+}
+.form-check-input:disabled {
+  opacity: 0.5;
 }

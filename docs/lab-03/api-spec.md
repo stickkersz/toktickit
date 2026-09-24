@@ -451,6 +451,8 @@ Errors:
 - 409 `SELF_DEACTIVATION`: the Administrator is deactivating their own account, or changing their own role (BR-42, AC-31).
 - 409 `LAST_ADMINISTRATOR`: the change would leave zero active Administrators, whether by deactivating one or by changing their role away from `ADMINISTRATOR` (BR-43, AC-32).
 
+Checks run in this order: the role (403), the id (404), the body (400, and an empty request is a 400), then, inside one transaction that locks the acting Administrator, the user and every active Administrator: that the caller is still an active Administrator (403), that the user exists (404), `LAST_ADMINISTRATOR`, `SELF_DEACTIVATION`, then `EMAIL_TAKEN`. The lock means two Administrators removing each other at the same moment cannot both succeed. Fields other than `name`, `email`, `role` and `isActive`, such as `mustChangePassword` or `passwordHash`, are ignored. The last Administrator can only be the caller acting on themselves, so when the only active Administrator deactivates or demotes their own account the answer is `LAST_ADMINISTRATOR`, the more basic reason, and `SELF_DEACTIVATION` is what an Administrator gets while others exist. Sending the current role or `isActive` again is not a change and is not refused.
+
 Deactivating a user, or changing their role, revokes that user's active sessions as part of the same operation (BR-45). It writes to no Ticket, Comment, Note, or Attachment row: Tickets they owned keep their `ownerId` and are reported as `ownerEligible: false` until reassigned (BR-56, AC-40). It is never refused because the user still owns open Tickets.
 
 ## 16. POST /api/admin/users/:id/initial-password
@@ -471,7 +473,7 @@ Errors:
 
 The target user's active sessions are revoked, so a holder of the previous password is returned to Login and is then forced through the mandatory change (BR-41, AC-30).
 
-The endpoint returns the updated user only. It never echoes the password back, and the password is never written to a log.
+The endpoint returns the updated user only. It never echoes the password back, and the password is never written to a log. An Administrator may issue one for their own account too, which ends their own session; the screen does not offer it on the own row and points to Change password instead.
 
 ## 17. GET /api/staff/owners
 

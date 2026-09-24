@@ -35,6 +35,8 @@ export function renderApp(
   // Public Comments and Internal Notes: empty unless a test says otherwise.
   vi.spyOn(api, "getTicketComments").mockResolvedValue([]);
   vi.spyOn(api, "getTicketNotes").mockResolvedValue([]);
+  // User Management: no users unless a test says otherwise.
+  vi.spyOn(api, "getAdminUsers").mockResolvedValue([]);
   vi.spyOn(api, "getTicketDetail").mockRejectedValue(new api.NotFoundError("Ticket not found."));
   vi.spyOn(api, "getTickets").mockResolvedValue({
     data: [],

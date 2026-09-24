@@ -147,6 +147,8 @@ export class ApiError extends Error {
   code?: string;
   // On a refused status change, the statuses the Ticket may move to from where it is now.
   permitted?: string[];
+  // On a refusal that names a field, such as EMAIL_TAKEN: the message for that field.
+  fields?: Record<string, string>;
   constructor(message: string, status: number, code?: string) {
     super(message);
     this.status = status;
@@ -352,6 +354,7 @@ function errorFromResponse(status: number, body: unknown, fallback: string): Api
   }
   const error = new ApiError(payload.message ?? fallback, status, payload.error);
   if (Array.isArray(payload.permitted)) error.permitted = payload.permitted;
+  if (payload.fields) error.fields = payload.fields;
   return error;
 }
 
@@ -563,3 +566,54 @@ export const postTicketComment = (ticketId: number, body: string) => postContent
 // IT Staff and Administrators only: a Requester never calls these (BR-35).
 export const getTicketNotes = (ticketId: number) => getContent(ticketId, "notes", "Unable to load the notes.");
 export const postTicketNote = (ticketId: number, body: string) => postContent(ticketId, "notes", body, "Unable to add the note.");
+
+// Administrator user management (api-spec.md endpoints 13 to 16). No password hash ever comes back.
+export interface AdminUser {
+  id: number;
+  name: string;
+  email: string;
+  role: UserRole;
+  isActive: boolean;
+  mustChangePassword: boolean;
+}
+
+export interface AdminUserInput {
+  name: string;
+  email: string;
+  role: UserRole;
+  isActive: boolean;
+  initialPassword: string;
+}
+
+export async function getAdminUsers(params: { search?: string; role?: UserRole | "" } = {}): Promise<AdminUser[]> {
+  const query = new URLSearchParams();
+  if (params.search) query.set("search", params.search);
+  if (params.role) query.set("role", params.role);
+  const suffix = query.toString();
+  const { res, body } = await authRequest(`/api/admin/users${suffix ? `?${suffix}` : ""}`);
+  if (!res.ok) throw errorFromResponse(res.status, body, "Unable to load the users.");
+  return body as AdminUser[];
+}
+
+export async function createAdminUser(input: AdminUserInput): Promise<AdminUser> {
+  const { res, body } = await authRequest("/api/admin/users", { method: "POST", headers: JSON_HEADERS, body: JSON.stringify(input) });
+  if (!res.ok) throw errorFromResponse(res.status, body, "Unable to create the user.");
+  return body as AdminUser;
+}
+
+// Only the fields that changed are sent.
+export async function updateAdminUser(id: number, changes: Partial<Pick<AdminUserInput, "name" | "email" | "role" | "isActive">>): Promise<AdminUser> {
+  const { res, body } = await authRequest(`/api/admin/users/${id}`, { method: "PATCH", headers: JSON_HEADERS, body: JSON.stringify(changes) });
+  if (!res.ok) throw errorFromResponse(res.status, body, "Unable to save the user.");
+  return body as AdminUser;
+}
+
+export async function setInitialPassword(id: number, initialPassword: string): Promise<AdminUser> {
+  const { res, body } = await authRequest(`/api/admin/users/${id}/initial-password`, {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ initialPassword }),
+  });
+  if (!res.ok) throw errorFromResponse(res.status, body, "Unable to set the initial password.");
+  return body as AdminUser;
+}
