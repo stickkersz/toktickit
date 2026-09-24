@@ -32,6 +32,9 @@ export function renderApp(
   });
   vi.spyOn(api, "getStaffOwners").mockResolvedValue([]);
   vi.spyOn(api, "getStaffTicketDetail").mockRejectedValue(new api.NotFoundError("Ticket not found."));
+  // Public Comments and Internal Notes: empty unless a test says otherwise.
+  vi.spyOn(api, "getTicketComments").mockResolvedValue([]);
+  vi.spyOn(api, "getTicketNotes").mockResolvedValue([]);
   vi.spyOn(api, "getTicketDetail").mockRejectedValue(new api.NotFoundError("Ticket not found."));
   vi.spyOn(api, "getTickets").mockResolvedValue({
     data: [],

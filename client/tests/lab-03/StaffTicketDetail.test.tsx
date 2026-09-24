@@ -1,11 +1,11 @@
 import "@testing-library/jest-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, useNavigate } from "react-router-dom";
 import App from "../../src/App.js";
 import * as api from "../../src/api.js";
-import { ApiError, type StaffOwner, type StaffTicketDetail, type StaffTicketItem } from "../../src/api.js";
+import { ApiError, type ContentItem, type StaffOwner, type StaffTicketDetail, type StaffTicketItem } from "../../src/api.js";
 import { ADMIN, REQUESTER, STAFF, renderApp } from "./support.js";
 
 afterEach(() => {
@@ -349,7 +349,7 @@ describe("Staff Ticket Detail: status", () => {
 
     await user.clear(box);
     await user.type(box, "  Replaced the faulty access point.  ");
-    expect(screen.getByText(/^\d+\/2000$/)).toHaveTextContent("33/2000");
+    expect(within(screen.getByLabelText("Resolution Summary *").parentElement!).getByText(/^\d+\/2000$/)).toHaveTextContent("33/2000");
     await user.click(screen.getByRole("button", { name: "Confirm and resolve" }));
     await waitFor(() => expect(fake.setStatus).toHaveBeenCalledWith(42, "RESOLVED", "Replaced the faulty access point."));
     await waitFor(() => expect(screen.queryByLabelText("Resolution Summary *")).not.toBeInTheDocument());
@@ -750,6 +750,347 @@ describe("Staff Ticket Detail: moving between Tickets", () => {
   });
 });
 
+describe("Staff Ticket Detail: Public Comments and Internal Notes", () => {
+  const item = (overrides: Partial<ContentItem> = {}): ContentItem => ({
+    id: 1,
+    body: "We are investigating the issue on your device.",
+    authorName: "Pimchanok Somboon",
+    authorRole: "IT_STAFF",
+    createdAt: "2026-09-12T10:30:00.000Z",
+    ...overrides,
+  });
+  const deferred = <T,>() => {
+    let resolve!: (v: T) => void;
+    let reject!: (e: unknown) => void;
+    const promise = new Promise<T>((res, rej) => ((resolve = res), (reject = rej)));
+    return { promise, resolve, reject };
+  };
+
+  async function openWith(content: { comments?: ContentItem[]; notes?: ContentItem[] } = {}, ticket = detail(), user = STAFF) {
+    renderApp("/staff/tickets/42", user);
+    backend(ticket);
+    vi.mocked(api.getTicketComments).mockResolvedValue(content.comments ?? []);
+    vi.mocked(api.getTicketNotes).mockResolvedValue(content.notes ?? []);
+    await screen.findByRole("heading", { name: ticket.ticketNumber });
+    await screen.findByRole("tab", { name: /^Public Comments/ });
+  }
+  const tab = (name: RegExp | string) => screen.getByRole("tab", { name });
+  const panel = () => screen.getByRole("tabpanel");
+
+  // UI-19 / BR-30, BR-35
+  it("shows Public Comments, Internal Notes and Attachments as tabs with a count each, Public Comments first and selected", async () => {
+    await openWith({ comments: [item({ id: 1 }), item({ id: 2 })], notes: [item({ id: 3 })] }, detail({ attachments: [{ id: 7, originalFilename: "a.png", mimeType: "image/png", sizeBytes: 10, uploadedAt: "2026-09-10T10:00:00.000Z", isRemoved: false }] }));
+    const tabs = screen.getAllByRole("tab").map((t) => t.textContent?.replace(/\s+/g, " ").trim());
+    expect(tabs).toEqual(["Public Comments (2)", "Internal Notes (1)", "Attachments (1)"]);
+    expect(screen.getByRole("tablist", { name: "Ticket activity" })).toBeInTheDocument();
+    expect(tab(/^Public Comments/)).toHaveAttribute("aria-selected", "true");
+    expect(tab(/^Internal Notes/)).toHaveAttribute("aria-selected", "false");
+    // Exactly one panel is in the page, and it is labelled by its tab.
+    expect(screen.getAllByRole("tabpanel")).toHaveLength(1);
+    expect(panel()).toHaveAccessibleName("Public Comments (2)");
+  });
+
+  it("renders only the active tab's composer: the note box is absent on Public Comments and the comment box is absent on Internal Notes", async () => {
+    await openWith();
+    const user = userEvent.setup();
+    expect(screen.getByLabelText("Add Public Comment")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Add Internal Note")).not.toBeInTheDocument();
+    expect(screen.getAllByRole("textbox").filter((t) => t.tagName === "TEXTAREA" && !t.hasAttribute("readonly") && t.id !== "staff-resolution-summary")).toHaveLength(1);
+
+    await user.click(tab(/^Internal Notes/));
+    expect(screen.getByLabelText("Add Internal Note")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Add Public Comment")).not.toBeInTheDocument();
+
+    await user.click(tab(/^Attachments/));
+    expect(screen.queryByLabelText("Add Internal Note")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Add Public Comment")).not.toBeInTheDocument();
+  });
+
+  it("puts the internal-only warning in words on the Internal Notes tab, above the composer, and nowhere on Public Comments", async () => {
+    await openWith();
+    const user = userEvent.setup();
+    expect(screen.queryByText(/Internal only/)).not.toBeInTheDocument();
+    await user.click(tab(/^Internal Notes/));
+    const warning = screen.getByText("Internal only. Not visible to the Requester.");
+    const composer = screen.getByLabelText("Add Internal Note");
+    // The warning comes before the composer in the page, so it is met first.
+    expect(warning.compareDocumentPosition(composer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // And the panel is the distinct, tinted one; the comments panel is not.
+    expect(panel()).toHaveClass("zg-notes-panel");
+    await user.click(tab(/^Public Comments/));
+    expect(panel()).not.toHaveClass("zg-notes-panel");
+  });
+
+  it("lists each entry with its author, role badge, time and body, oldest first as the server sends them", async () => {
+    await openWith({
+      comments: [
+        item({ id: 1, body: "first entry", authorName: "Kanokwan Srisuwan", authorRole: "REQUESTER" }),
+        item({ id: 2, body: "second entry", authorName: "Pimchanok Somboon", authorRole: "IT_STAFF" }),
+        item({ id: 3, body: "third entry", authorName: "Aekkarat Wongsa", authorRole: "ADMINISTRATOR" }),
+      ],
+    });
+    const entries = within(panel()).getAllByRole("listitem");
+    expect(entries.map((e) => within(e).getByText(/entry$/).textContent)).toEqual(["first entry", "second entry", "third entry"]);
+    expect(within(entries[0]).getByText("Kanokwan Srisuwan")).toBeInTheDocument();
+    expect(within(entries[0]).getByText("Requester", { selector: ".zg-badge" })).toBeInTheDocument();
+    expect(within(entries[1]).getByText("IT Staff", { selector: ".zg-badge" })).toBeInTheDocument();
+    expect(within(entries[2]).getByText("Administrator", { selector: ".zg-badge" })).toBeInTheDocument();
+    expect(entries[0].querySelector("time")).toHaveAttribute("datetime", "2026-09-12T10:30:00.000Z");
+  });
+
+  it("says so when there are no comments and no notes yet", async () => {
+    await openWith();
+    expect(screen.getByText("No comments yet.")).toBeInTheDocument();
+    await userEvent.click(tab(/^Internal Notes/));
+    expect(screen.getByText("No notes yet.")).toBeInTheDocument();
+  });
+
+  it("posts a Public Comment, appends it without reloading, clears the box and raises the count", async () => {
+    await openWith({ comments: [item({ id: 1 })] });
+    const user = userEvent.setup();
+    const post = vi.spyOn(api, "postTicketComment").mockResolvedValue(item({ id: 2, body: "Thanks, restarting now.", authorName: STAFF.name }));
+
+    await user.type(screen.getByLabelText("Add Public Comment"), "  Thanks, restarting now.  ");
+    await user.click(screen.getByRole("button", { name: "Post Comment" }));
+
+    expect(post).toHaveBeenCalledWith(42, "Thanks, restarting now.");
+    expect(await within(panel()).findByText("Thanks, restarting now.")).toBeInTheDocument();
+    expect(screen.getByLabelText("Add Public Comment")).toHaveValue("");
+    expect(tab(/^Public Comments/)).toHaveTextContent("Public Comments (2)");
+    expect(api.getTicketComments).toHaveBeenCalledTimes(1); // no reload
+    expect(within(panel()).getAllByRole("listitem")).toHaveLength(2);
+  });
+
+  it("posts an Internal Note through the notes call, never the comments call", async () => {
+    await openWith();
+    const user = userEvent.setup();
+    const postNote = vi.spyOn(api, "postTicketNote").mockResolvedValue(item({ id: 5, body: "Switch port looks fine." }));
+    const postComment = vi.spyOn(api, "postTicketComment");
+
+    await user.click(tab(/^Internal Notes/));
+    await user.type(screen.getByLabelText("Add Internal Note"), "Switch port looks fine.");
+    await user.click(screen.getByRole("button", { name: "Add Note" }));
+
+    expect(postNote).toHaveBeenCalledWith(42, "Switch port looks fine.");
+    expect(postComment).not.toHaveBeenCalled();
+    expect(await within(panel()).findByText("Switch port looks fine.")).toBeInTheDocument();
+    expect(tab(/^Internal Notes/)).toHaveTextContent("Internal Notes (1)");
+    expect(tab(/^Public Comments/)).toHaveTextContent("Public Comments (0)");
+  });
+
+  it("keeps what was typed in each tab's box when switching away and back", async () => {
+    await openWith();
+    const user = userEvent.setup();
+    await user.type(screen.getByLabelText("Add Public Comment"), "half a comment");
+    await user.click(tab(/^Internal Notes/));
+    await user.type(screen.getByLabelText("Add Internal Note"), "half a note");
+    await user.click(tab(/^Public Comments/));
+    expect(screen.getByLabelText("Add Public Comment")).toHaveValue("half a comment");
+    await user.click(tab(/^Internal Notes/));
+    expect(screen.getByLabelText("Add Internal Note")).toHaveValue("half a note");
+  });
+
+  it("shows a character counter and refuses a body outside 2 to 2000 characters without sending anything", async () => {
+    await openWith();
+    const user = userEvent.setup();
+    const post = vi.spyOn(api, "postTicketComment");
+    const box = screen.getByLabelText("Add Public Comment");
+    expect(screen.getByText("0/2000")).toBeInTheDocument();
+
+    await user.type(box, "   a   ");
+    expect(screen.getByText("1/2000")).toBeInTheDocument(); // the counter counts what would be stored
+    await user.click(screen.getByRole("button", { name: "Post Comment" }));
+    expect(await screen.findByText("Content must be between 2 and 2000 characters.")).toBeInTheDocument();
+    expect(box).toHaveAttribute("aria-invalid", "true");
+
+    await user.clear(box);
+    await user.click(screen.getByRole("button", { name: "Post Comment" }));
+    expect(screen.getByText("Content must be between 2 and 2000 characters.")).toBeInTheDocument();
+
+    await user.click(box);
+    await user.paste("x".repeat(2001));
+    await user.click(screen.getByRole("button", { name: "Post Comment" }));
+    expect(screen.getByText("2001/2000")).toBeInTheDocument();
+    expect(post).not.toHaveBeenCalled();
+    // Typing again clears the complaint.
+    await user.type(box, "!");
+    expect(screen.queryByText("Content must be between 2 and 2000 characters.")).not.toBeInTheDocument();
+  });
+
+  it("keeps the typed text, says nothing was added, and lets the user try again when the request fails", async () => {
+    await openWith();
+    const user = userEvent.setup();
+    const post = vi.spyOn(api, "postTicketComment").mockRejectedValueOnce(new ApiError("down", 500)).mockResolvedValueOnce(item({ id: 9, body: "second try" }));
+    await user.type(screen.getByLabelText("Add Public Comment"), "second try");
+    await user.click(screen.getByRole("button", { name: "Post Comment" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Unable to add the comment. Nothing was added.");
+    expect(screen.getByLabelText("Add Public Comment")).toHaveValue("second try");
+    expect(within(panel()).queryAllByRole("listitem")).toHaveLength(0);
+    expect(screen.getByRole("button", { name: "Post Comment" })).toBeEnabled();
+
+    await user.click(screen.getByRole("button", { name: "Post Comment" }));
+    expect(await within(panel()).findByText("second try")).toBeInTheDocument();
+    expect(post).toHaveBeenCalledTimes(2);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("shows the server's own complaint when it refuses the body", async () => {
+    await openWith();
+    const user = userEvent.setup();
+    vi.spyOn(api, "postTicketComment").mockRejectedValue(new api.ValidationError("bad", { body: "Content must be between 2 and 2000 characters." }));
+    await user.type(screen.getByLabelText("Add Public Comment"), "fine here");
+    await user.click(screen.getByRole("button", { name: "Post Comment" }));
+    expect(await screen.findByText("Content must be between 2 and 2000 characters.")).toBeInTheDocument();
+    expect(screen.getByLabelText("Add Public Comment")).toHaveValue("fine here");
+  });
+
+  it("sends one request however many times Post is pressed while it is in flight, and disables the box and button meanwhile", async () => {
+    await openWith();
+    const user = userEvent.setup();
+    const pending = deferred<ContentItem>();
+    const post = vi.spyOn(api, "postTicketComment").mockReturnValue(pending.promise);
+    await user.type(screen.getByLabelText("Add Public Comment"), "only once please");
+    const button = screen.getByRole("button", { name: "Post Comment" });
+    await user.click(button);
+    await user.click(screen.getByRole("button", { name: "Posting…" }));
+    await user.click(screen.getByRole("button", { name: "Posting…" }));
+    expect(post).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("button", { name: "Posting…" })).toBeDisabled();
+    expect(screen.getByLabelText("Add Public Comment")).toBeDisabled();
+    pending.resolve(item({ id: 4, body: "only once please" }));
+    expect(await within(panel()).findByText("only once please")).toBeInTheDocument();
+    expect(screen.getByLabelText("Add Public Comment")).toBeEnabled();
+  });
+
+  it("sends one request when the form is submitted twice in a row, whatever the button is doing", async () => {
+    await openWith();
+    const user = userEvent.setup();
+    const pending = deferred<ContentItem>();
+    const post = vi.spyOn(api, "postTicketComment").mockReturnValue(pending.promise);
+    await user.type(screen.getByLabelText("Add Public Comment"), "submitted twice");
+    const form = screen.getByLabelText("Add Public Comment").closest("form")!;
+    fireEvent.submit(form);
+    fireEvent.submit(form);
+    expect(post).toHaveBeenCalledTimes(1);
+    pending.resolve(item({ id: 4, body: "submitted twice" }));
+    expect(await within(panel()).findByText("submitted twice")).toBeInTheDocument();
+  });
+
+  it("shows a body containing markup as the literal text it is, never as elements (BR-36)", async () => {
+    const markup = `<img src=x onerror="alert(1)"> and <b>bold</b> & <script>alert(2)</script>`;
+    await openWith({ comments: [item({ id: 1, body: markup })], notes: [item({ id: 2, body: markup })] });
+    expect(within(panel()).getByText(markup)).toBeInTheDocument();
+    expect(panel().querySelector("img, b, script")).toBeNull();
+    await userEvent.click(tab(/^Internal Notes/));
+    expect(within(panel()).getByText(markup)).toBeInTheDocument();
+    expect(panel().querySelector("img, b, script")).toBeNull();
+  });
+
+  it("keeps line breaks in a body", async () => {
+    await openWith({ comments: [item({ id: 1, body: "line one\nline two" })] });
+    // The wrapping itself is CSS (.zg-content-body: pre-wrap), which jsdom does not load; it is checked in the browser pass.
+    expect(within(panel()).getByText(/line one/)).toHaveClass("zg-content-body");
+    expect(within(panel()).getByText(/line one/).textContent).toBe("line one\nline two");
+  });
+
+  it("lets IT Staff comment on a closed Ticket, where a Requester could not", async () => {
+    await openWith({}, detail({ currentStatus: "CLOSED" }));
+    expect(screen.getByLabelText("Add Public Comment")).toBeEnabled();
+    await userEvent.click(tab(/^Internal Notes/));
+    expect(screen.getByLabelText("Add Internal Note")).toBeEnabled();
+  });
+
+  it("offers Retry when the comments cannot be loaded, keeps the composer off until they can, and shows no count for them", async () => {
+    renderApp("/staff/tickets/42", STAFF);
+    backend(detail());
+    vi.mocked(api.getTicketComments).mockRejectedValueOnce(new ApiError("down", 500)).mockResolvedValueOnce([item({ id: 1 })]);
+    vi.mocked(api.getTicketNotes).mockResolvedValue([]);
+    await screen.findByRole("heading", { name: "TKT-2026-000042" });
+    expect(await screen.findByRole("tab", { name: "Public Comments" })).toBeInTheDocument(); // no "(n)" for what is not known
+    expect(tab("Internal Notes (0)")).toBeInTheDocument(); // the other list is unaffected
+    expect(await screen.findByRole("alert")).toHaveTextContent("Unable to load the comments.");
+    expect(screen.queryByLabelText("Add Public Comment")).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(await within(panel()).findByText("We are investigating the issue on your device.")).toBeInTheDocument();
+    expect(tab(/^Public Comments/)).toHaveTextContent("Public Comments (1)");
+    expect(screen.getByLabelText("Add Public Comment")).toBeInTheDocument();
+  });
+
+  it("moves between tabs with the arrow keys, Home and End, with only the selected tab in the tab order", async () => {
+    await openWith();
+    const user = userEvent.setup();
+    expect(tab(/^Public Comments/)).toHaveAttribute("tabindex", "0");
+    expect(tab(/^Internal Notes/)).toHaveAttribute("tabindex", "-1");
+    tab(/^Public Comments/).focus();
+    await user.keyboard("{ArrowRight}");
+    expect(tab(/^Internal Notes/)).toHaveFocus();
+    expect(tab(/^Internal Notes/)).toHaveAttribute("aria-selected", "true");
+    await user.keyboard("{End}");
+    expect(tab(/^Attachments/)).toHaveFocus();
+    await user.keyboard("{ArrowRight}");
+    expect(tab(/^Public Comments/)).toHaveFocus(); // wraps
+    await user.keyboard("{ArrowLeft}");
+    expect(tab(/^Attachments/)).toHaveFocus();
+    await user.keyboard("{Home}");
+    expect(tab(/^Public Comments/)).toHaveFocus();
+    expect(tab(/^Public Comments/)).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("asks for the comments and the notes of the Ticket it is showing, once each", async () => {
+    await openWith();
+    expect(api.getTicketComments).toHaveBeenCalledWith(42);
+    expect(api.getTicketNotes).toHaveBeenCalledWith(42);
+    expect(api.getTicketComments).toHaveBeenCalledTimes(1);
+    expect(api.getTicketNotes).toHaveBeenCalledTimes(1);
+  });
+
+  it("never shows what was loaded or posted for one Ticket on the next Ticket opened", async () => {
+    function Jump({ to }: { to: string }) {
+      const navigate = useNavigate();
+      return (
+        <button type="button" onClick={() => navigate(to)}>
+          jump to {to}
+        </button>
+      );
+    }
+    vi.spyOn(api, "getCurrentUser").mockResolvedValue(STAFF);
+    vi.spyOn(api, "getStaffOwners").mockResolvedValue(OWNERS);
+    vi.spyOn(api, "getStaffTicketDetail").mockImplementation(async (id: number) => detail({ id, ticketNumber: `TKT-2026-0000${id}` }));
+    const slowList = deferred<ContentItem[]>();
+    const slowPost = deferred<ContentItem>();
+    vi.spyOn(api, "getTicketComments").mockImplementation((id: number) => (id === 42 ? slowList.promise : Promise.resolve([item({ id: 77, body: "belongs to Ticket 43" })])));
+    vi.spyOn(api, "getTicketNotes").mockResolvedValue([]);
+    vi.spyOn(api, "postTicketNote").mockReturnValue(slowPost.promise);
+    render(
+      <MemoryRouter initialEntries={["/staff/tickets/42"]}>
+        <App />
+        <Jump to="/staff/tickets/43" />
+      </MemoryRouter>,
+    );
+    const user = userEvent.setup();
+    await screen.findByRole("heading", { name: "TKT-2026-000042" });
+    await user.click(await screen.findByRole("tab", { name: /^Internal Notes/ }));
+    await user.type(screen.getByLabelText("Add Internal Note"), "for Ticket 42 only");
+    await user.click(screen.getByRole("button", { name: "Add Note" }));
+
+    // The comments list and the note post for Ticket 42 are both still in flight when Ticket 43 opens.
+    await user.click(screen.getByRole("button", { name: "jump to /staff/tickets/43" }));
+    await screen.findByRole("heading", { name: "TKT-2026-000043" });
+    expect(await within(screen.getByRole("tabpanel")).findByText("belongs to Ticket 43")).toBeInTheDocument();
+    expect(screen.getByLabelText("Add Public Comment")).toHaveValue("");
+
+    slowList.resolve([item({ id: 1, body: "belongs to Ticket 42" })]);
+    slowPost.resolve(item({ id: 2, body: "for Ticket 42 only" }));
+    await new Promise((r) => setTimeout(r, 30));
+    expect(screen.queryByText("belongs to Ticket 42")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("tab", { name: /^Internal Notes/ }));
+    expect(screen.queryByText("for Ticket 42 only")).not.toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Internal Notes (0)" })).toBeInTheDocument();
+  });
+});
+
 describe("Staff Ticket Detail: Attachments", () => {
   const attachments = [
     { id: 7, originalFilename: "screenshot.png", mimeType: "image/png", sizeBytes: 2048, uploadedAt: "2026-09-10T10:00:00.000Z", isRemoved: false },
@@ -764,12 +1105,13 @@ describe("Staff Ticket Detail: Attachments", () => {
       removalReason: "Uploaded the wrong log",
     },
   ];
+  const attachmentsTab = (count: number) => screen.findByRole("tab", { name: `Attachments (${count})` });
 
   // UI-28 / AC-38, AC-39, BR-54, BR-55
   it("lists each Attachment with a Download for an active one, and a reason and no Download for a removed one", async () => {
     await openDetail(detail({ attachments }));
-    expect(screen.getByRole("heading", { name: "Attachments (1 active)" })).toBeInTheDocument();
-    const [active, removed] = within(screen.getByRole("region", { name: /^Attachments/ })).getAllByRole("listitem");
+    await userEvent.click(await attachmentsTab(1));
+    const [active, removed] = within(screen.getByRole("tabpanel", { name: /^Attachments/ })).getAllByRole("listitem");
     expect(within(active).getByText("screenshot.png")).toBeInTheDocument();
     expect(within(active).getByText("(2.0 KB)")).toBeInTheDocument();
     expect(within(active).getByRole("link", { name: "Download" })).toHaveAttribute("href", "/api/attachments/7/download");
@@ -784,7 +1126,8 @@ describe("Staff Ticket Detail: Attachments", () => {
     for (const user of [STAFF, ADMIN]) {
       const { unmount } = renderApp("/staff/tickets/42", user);
       backend(detail({ attachments }));
-      await screen.findByRole("heading", { name: "Attachments (1 active)" });
+      await userEvent.click(await attachmentsTab(1));
+      expect(await screen.findByRole("link", { name: "Download" })).toBeInTheDocument();
       expect(document.querySelector('input[type="file"]')).toBeNull();
       expect(screen.queryByRole("button", { name: /remove|add attachment|upload/i })).not.toBeInTheDocument();
       expect(screen.queryByText(/\+ Add Attachment/i)).not.toBeInTheDocument();
@@ -795,7 +1138,7 @@ describe("Staff Ticket Detail: Attachments", () => {
 
   it("says so when a Ticket has no Attachments", async () => {
     await openDetail(detail({ attachments: [] }));
-    expect(screen.getByRole("heading", { name: "Attachments (0 active)" })).toBeInTheDocument();
+    await userEvent.click(await attachmentsTab(0));
     expect(screen.getByText("No attachments.")).toBeInTheDocument();
   });
 });

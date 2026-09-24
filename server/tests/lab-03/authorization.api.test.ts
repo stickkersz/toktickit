@@ -89,7 +89,7 @@ describe("the authenticated identity, not a client-supplied requesterId", () => 
 });
 
 describe("a Requester asking for another Requester's resources", () => {
-  // API-14 / AC-15, BR-15. The Public Comments leg is added with the comments endpoint.
+  // API-14 / AC-15, BR-15.
   it("gets 404 in every case, never 403, and the answer matches a resource that does not exist", async () => {
     const cases: [string, () => Promise<{ status: number; body: unknown }>, () => Promise<{ status: number; body: unknown }>][] = [
       ["Ticket Detail", () => a.get(`/api/tickets/${bTicketId}`), () => a.get("/api/tickets/999999")],
@@ -115,6 +115,16 @@ describe("a Requester asking for another Requester's resources", () => {
             .post("/api/tickets/999999/attachments")
             .attach("files", Buffer.from("x"), { filename: "x.jpg", contentType: "image/jpeg" }),
       ],
+      [
+        "Public Comments read",
+        () => a.get(`/api/tickets/${bTicketId}/comments`),
+        () => a.get("/api/tickets/999999/comments"),
+      ],
+      [
+        "Public Comment post",
+        () => a.post(`/api/tickets/${bTicketId}/comments`).send({ body: "Not my Ticket to comment on" }),
+        () => a.post("/api/tickets/999999/comments").send({ body: "Not my Ticket to comment on" }),
+      ],
     ];
 
     for (const [label, foreign, missing] of cases) {
@@ -124,6 +134,40 @@ describe("a Requester asking for another Requester's resources", () => {
       expect(notThere.status, `${label} that does not exist`).toBe(404);
       // Ownership and existence stay indistinguishable (L2-BR-35).
       expect(notMine.body, label).toEqual(notThere.body);
+    }
+  });
+});
+
+describe("a Requester asking for Internal Notes", () => {
+  // API-11 / AC-04, BR-35: 403 even on their own Ticket, with no note content and no note count.
+  it("gets 403 on their own Ticket, with nothing about the notes in the body, and writes none", async () => {
+    const author = (await createUser({ role: "IT_STAFF" })).user;
+    const secret = "SECRET-INTERNAL-NOTE-CONTENT";
+    for (const body of [secret, "a second internal note"]) {
+      await getPrisma().internalNote.create({ data: { ticketId: bTicketId, authorId: author.id, authorRole: "IT_STAFF", body } });
+    }
+    const notesBefore = await getPrisma().internalNote.count({ where: { ticketId: bTicketId } });
+
+    const read = await b.get(`/api/tickets/${bTicketId}/notes`);
+    const write = await b.post(`/api/tickets/${bTicketId}/notes`).send({ body: "A Requester writing a note" });
+    for (const res of [read, write]) {
+      expect(res.status).toBe(403);
+      expect(res.body.error).toBe("FORBIDDEN");
+      // No note content, no note count, nothing shaped like a list.
+      expect(Array.isArray(res.body)).toBe(false);
+      expect(Object.keys(res.body).sort()).toEqual(["error", "message"]);
+      expect(JSON.stringify(res.body)).not.toContain(secret);
+      expect(JSON.stringify(res.body)).not.toMatch(/\b2\b|count|notes?\b.*\[/i);
+    }
+    expect(await getPrisma().internalNote.count({ where: { ticketId: bTicketId } })).toBe(notesBefore);
+  });
+
+  it("gets the same 403 for a Ticket that is not theirs or does not exist, so the refusal discloses nothing about either", async () => {
+    const own = await b.get(`/api/tickets/${bTicketId}/notes`);
+    for (const url of [`/api/tickets/${bTicketId}/notes`, "/api/tickets/999999/notes", "/api/tickets/abc/notes"]) {
+      const res = await a.get(url);
+      expect(res.status, url).toBe(403);
+      expect(res.body, url).toEqual(own.body);
     }
   });
 });

@@ -118,7 +118,7 @@ Operational field group, visibly editable with `--color-field-editable-border`:
 
 A Ticket showing the Requester's "problem appears resolved" indication displays a `--color-pale` banner with the timestamp, so staff see the signal without it being mistaken for a status.
 
-Panels below, as labelled tabs with counts: **Public Comments**, **Internal Notes**, **Attachments**. The Attachments panel arrives first, as its own section, with the Issue that delivers this screen; Public Comments and Internal Notes join it as tabs with the Issue that delivers them.
+Panels below, as labelled tabs with counts: **Public Comments**, **Internal Notes**, **Attachments**. A tab reads "Label (n)" and leaves the count off while the list has not loaded, never showing 0 for an unknown. Only the selected tab's panel is in the page. The tabs follow the WAI-ARIA tabs pattern: arrow keys, Home and End move between them and the selected tab alone is in the tab order. The text typed in each composer is kept when switching tabs. On a phone the three tabs share the width and wrap their labels, so none hides off the edge. If a list cannot be loaded its panel says so with a Retry and shows no composer.
 
 Public Comments and Internal Notes must be impossible to confuse. Internal Notes use a distinct `--color-warning-bg` tinted panel, a lock glyph, and a standing label reading "Internal only. Not visible to the Requester." above its composer. Public Comments use the plain surface background. The two composers never appear simultaneously: only the active tab's composer is rendered, so a note cannot be typed into a comment box by accident.
 

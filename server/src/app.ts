@@ -21,6 +21,7 @@ import { escapeLike } from "./searchText.js";
 import { isEligibleOwner } from "./routes/staffTickets.js";
 import { permittedNext, TERMINAL_STATUSES } from "./ticketStatus.js";
 import { authRouter } from "./routes/auth.js";
+import { ticketContentRouter } from "./routes/ticketContent.js";
 import { staffTicketsRouter } from "./routes/staffTickets.js";
 import { requireAuth } from "./middleware/requireAuth.js";
 import { requireRole } from "./middleware/requireRole.js";
@@ -43,6 +44,7 @@ app.use(cors(buildCorsOptions())); // credentialed, allow-listed (BR-62): src/co
 app.use(express.json());
 app.use(authRouter); // Lab 3: /api/auth/*
 app.use(staffTicketsRouter); // Lab 3: /api/staff/tickets
+app.use(ticketContentRouter); // Lab 3: /api/tickets/:id/comments and /notes
 
 // ---------------------------------------------------------------------------
 // Issue 2 — API health check

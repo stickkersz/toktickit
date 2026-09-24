@@ -282,3 +282,93 @@ a {
 a:hover {
   color: var(--color-secondary);
 }
+
+/* Ticket activity tabs (ui-spec.md section 8). Bootstrap's tab defaults are blue on hover and when
+   selected, so the Zen Green tokens are applied explicitly. The selected tab is marked by a heavier
+   weight and an underline as well as its color. */
+.zg-tabs {
+  border-bottom: 1px solid var(--color-field-editable-border);
+  overflow-x: auto;
+}
+.zg-tabs .zg-tab.nav-link {
+  color: var(--color-text);
+  background: transparent;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  border-radius: 0;
+  margin-bottom: -1px;
+  padding: 0.6rem 1rem;
+  white-space: nowrap;
+  min-height: 44px;
+}
+.zg-tabs .zg-tab.nav-link:hover {
+  color: var(--color-primary);
+  border-bottom-color: var(--color-field-editable-border);
+}
+.zg-tabs .zg-tab.nav-link.active,
+.zg-tabs .zg-tab.nav-link.active:hover {
+  color: var(--color-primary);
+  font-weight: 600;
+  background: transparent;
+  border-bottom-color: var(--color-primary);
+}
+/* On a phone the three tabs share the width and wrap their labels, so none is hidden off the edge of a
+   scrolling strip where its existence would go unnoticed. */
+@media (max-width: 767.98px) {
+  .zg-tabs {
+    overflow-x: visible;
+  }
+  .zg-tabs .zg-tab.nav-link {
+    flex: 1 1 0;
+    min-width: 0;
+    white-space: normal;
+    text-align: center;
+    padding: 0.5rem 0.25rem;
+  }
+}
+.zg-tabs .zg-tab.nav-link:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 0.2rem rgba(11, 122, 70, 0.35);
+}
+.zg-tab .zg-lock {
+  margin-right: 0.35rem;
+  vertical-align: -1px;
+}
+.zg-tabpanel {
+  padding-top: 1rem;
+}
+.zg-tabpanel:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 0.2rem rgba(11, 122, 70, 0.35);
+}
+
+/* Internal Notes must never be mistaken for Public Comments: a tinted panel, a lock, and the words
+   "Internal only" (color is never the only signal). */
+.zg-notes-panel {
+  background-color: var(--color-warning-bg);
+  border: 1px solid var(--color-warning);
+  border-top: 0;
+  border-radius: 0 0 0.375rem 0.375rem;
+  padding: 1rem;
+}
+.zg-internal-label {
+  color: var(--color-text);
+}
+.zg-internal-label .zg-lock {
+  margin-right: 0.4rem;
+  vertical-align: -1px;
+}
+
+/* One Public Comment or Internal Note. Bodies keep their line breaks and wrap anywhere, so a long
+   unbroken string cannot push the page sideways. */
+.zg-content-entry {
+  padding: 0.75rem 0;
+  border-bottom: 1px solid var(--color-field-editable-border);
+}
+.zg-content-entry:last-child {
+  border-bottom: 0;
+}
+.zg-content-body {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

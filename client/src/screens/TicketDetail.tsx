@@ -7,13 +7,17 @@ import {
   TicketDetail as TicketDetailData,
   flagProblemResolved,
   getAttachmentDownloadUrl,
+  getTicketComments,
   getTicketDetail,
+  postTicketComment,
   removeAttachment,
   uploadAttachments,
 } from "../api.js";
 import { useAuth } from "../authContext.js";
 import { TruncatedFilename, fileTypeLabel, formatDate, formatFileSize } from "../attachmentDisplay.js";
 import { PriorityBadge, StatusBadge } from "../Badge.js";
+import { ContentPanel } from "../ContentPanel.js";
+import { TERMINAL_MESSAGE, useContentThread } from "../content.js";
 import {
   ATTACHMENT_REJECT_MESSAGES,
   AttachmentRejectReason,
@@ -458,6 +462,25 @@ export default function TicketDetail() {
           ))}
         </ul>
       )}
+
+      <hr />
+
+      <PublicComments ticketId={ticket.id} closed={isTerminal} />
     </div>
+  );
+}
+
+// The Requester's view of the conversation (ui-spec.md section 6): Public Comments only. There is no
+// Internal Notes tab, heading or request anywhere on this screen, and the notes endpoint refuses a
+// Requester regardless (BR-35). A closed or cancelled Ticket can still be read but not added to (BR-34).
+function PublicComments({ ticketId, closed }: { ticketId: number; closed: boolean }) {
+  const thread = useContentThread(ticketId, getTicketComments, postTicketComment, "comment");
+  return (
+    <section aria-labelledby="ticket-comments-heading">
+      <h2 id="ticket-comments-heading" className="h5 mb-3">
+        Public Comments{thread.count !== null ? ` (${thread.count})` : ""}
+      </h2>
+      <ContentPanel kind="comments" thread={thread} blockedReason={closed ? TERMINAL_MESSAGE : undefined} />
+    </section>
   );
 }

@@ -529,3 +529,37 @@ export async function flagProblemResolved(
   if (!res.ok) throw errorFromResponse(res.status, body, "Unable to record that the problem appears resolved.");
   return body as { id: number; requesterResolutionFlaggedAt: string; currentStatus: string };
 }
+
+// Public Comments and Internal Notes (api-spec.md endpoints 11 and 12). Both kinds have the same
+// shape. `authorRole` is the role the author held when they wrote it (BR-61); no author id or
+// email is ever sent.
+export interface ContentItem {
+  id: number;
+  body: string;
+  authorName: string;
+  authorRole: UserRole;
+  createdAt: string;
+}
+
+async function getContent(ticketId: number, path: "comments" | "notes", fallback: string): Promise<ContentItem[]> {
+  const { res, body } = await authRequest(`/api/tickets/${ticketId}/${path}`);
+  if (res.status === 404) throw new NotFoundError("Ticket not found.");
+  if (!res.ok) throw errorFromResponse(res.status, body, fallback);
+  return body as ContentItem[];
+}
+
+async function postContent(ticketId: number, path: "comments" | "notes", text: string, fallback: string): Promise<ContentItem> {
+  const { res, body } = await authRequest(`/api/tickets/${ticketId}/${path}`, {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ body: text }),
+  });
+  if (!res.ok) throw errorFromResponse(res.status, body, fallback);
+  return body as ContentItem;
+}
+
+export const getTicketComments = (ticketId: number) => getContent(ticketId, "comments", "Unable to load the comments.");
+export const postTicketComment = (ticketId: number, body: string) => postContent(ticketId, "comments", body, "Unable to add the comment.");
+// IT Staff and Administrators only: a Requester never calls these (BR-35).
+export const getTicketNotes = (ticketId: number) => getContent(ticketId, "notes", "Unable to load the notes.");
+export const postTicketNote = (ticketId: number, body: string) => postContent(ticketId, "notes", body, "Unable to add the note.");
