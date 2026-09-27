@@ -24,7 +24,7 @@ Only three endpoints need no session: `GET /api/health`, and the two reference l
 
 ### Cross-origin access
 
-From Issue 03 the client calls a relative `/api` through a Vite dev proxy, so the cookie is first-party and CORS is not involved. That proxy does not exist yet. Until Issue 03 lands, the Lab 2 client calls the API at `VITE_API_URL` (`http://localhost:3000`) from `http://localhost:5173`, which is cross-origin and does not yet send `credentials`, so credentialed CORS is what lets a page use the session cookie in the meantime, and it stays as the fallback afterwards. For a page served from another origin the API supports credentialed CORS (BR-62, AC-45):
+The client calls a relative `/api` through the Vite dev proxy, so the cookie is first-party and CORS is not involved. Credentialed CORS is the fallback for a page served from another origin, such as a client that still sets `VITE_API_URL` and calls the API directly. For such a page the API supports credentialed CORS (BR-62, AC-45):
 
 - An `Origin` listed in `CORS_ORIGINS` (default: `http://localhost:5173`, `http://127.0.0.1:5173`, `http://localhost:5180`, `http://127.0.0.1:5180`) gets that exact origin in `Access-Control-Allow-Origin`, plus `Access-Control-Allow-Credentials: true` and `Vary: Origin`, on both the preflight `OPTIONS` and the real response. The client must send `credentials: "include"`.
 - Any other origin gets no CORS headers, so the browser blocks it. A request with no `Origin` header, such as a same-origin call, is untouched.
