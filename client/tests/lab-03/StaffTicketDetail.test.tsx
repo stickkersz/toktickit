@@ -441,6 +441,7 @@ describe("Staff Ticket Detail: status", () => {
 // response may only ever change the field its own operation was for. A whole-snapshot merge let an
 // older response, carrying a stale value for a different control, overwrite another successful save.
 describe("Staff Ticket Detail: concurrent saves", () => {
+  // UI-33 / AC-18, AC-19, AC-23: responses that arrive out of order, and a reload read before a later save
   // What a mutation returns is a snapshot of the whole Ticket at the moment the server answered it, so
   // a slow response can carry values for the other controls that are older than what is on screen.
   const snapshot = (overrides: Partial<StaffTicketItem>): StaffTicketItem =>
@@ -708,6 +709,7 @@ describe("Staff Ticket Detail: a reload that fails", () => {
 });
 
 describe("Staff Ticket Detail: moving between Tickets", () => {
+  // UI-33 / AC-18, AC-19, AC-23: a save still in flight when another Ticket is opened
   function Jump({ to }: { to: string }) {
     const navigate = useNavigate();
     return (

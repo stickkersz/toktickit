@@ -402,6 +402,7 @@ describe("PATCH /api/staff/tickets/:id/status", () => {
   // the status that had been checked, so an unvalidated move, even out of a terminal state, went
   // through. These tests change the Ticket in the gap between the check and the write itself.
   describe("a change that lands between the check and the write", () => {
+    // API-57 / AC-23, BR-25, BR-26, BR-28
     // Wraps the isolated client so that, right after the validation read returns, the Ticket is
     // changed by someone else, exactly as a concurrent request would.
     function interfereAfterValidation(ticketId: number, change: () => Promise<unknown>) {

@@ -25,10 +25,10 @@ export function uniqueEmail(label = "user"): string {
   return `${label}-${randomUUID()}@toktickit.test`;
 }
 
-// Lab 3 API tests create users, and the Lab 2 suite asserts the exact list of
-// active Requesters in the shared development database. Vitest runs test files in
-// parallel, so cleaning up afterwards is not enough: a Lab 3 user would still be
-// visible to that Lab 2 test while it runs. The rule is therefore structural:
+// Lab 3 API tests create users. Vitest runs test files in parallel, so a user one
+// file creates in the shared development database would be visible to every other
+// file while it runs, and cleaning up afterwards cannot prevent that. The rule is
+// therefore structural:
 // createUser refuses to run unless the file called useIsolatedDatabase(), which
 // points every getPrisma() call at a throwaway migrated database. The shared
 // database never sees a Lab 3 test user.

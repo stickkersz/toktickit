@@ -21,6 +21,12 @@ test.describe("Staff Ticket flow and Requester regression", () => {
     await expect(page).toHaveURL(new RegExp(`/staff/tickets/${ticket.id}$`));
     await expect(page.getByRole("heading", { name: ticket.ticketNumber })).toBeVisible();
     await expect(page.getByRole("link", { name: "Ticket Queue" }).first()).toHaveAttribute("aria-current", "page");
+    // ui-spec section 8: the breadcrumb reads "Ticket Queue > Ticket Detail".
+    const separator = await page
+      .getByRole("navigation", { name: "Breadcrumb" })
+      .locator(".breadcrumb-item.active")
+      .evaluate((item) => getComputedStyle(item, "::before").content);
+    expect(separator).toBe('">"');
 
     const owner = page.getByLabel("Ticket Owner");
     const priority = page.getByLabel("IT Priority");
