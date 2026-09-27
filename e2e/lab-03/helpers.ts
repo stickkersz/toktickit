@@ -71,13 +71,28 @@ export interface CreatedTicket {
   summary: string;
 }
 
+// The Category and Related System every Lab 3 Ticket is filed under, found by name so the
+// specs never depend on the ids a particular database happened to assign.
+export const TICKET_CATEGORY = "Account and Access";
+export const TICKET_RELATED_SYSTEM = "Staff VPN";
+
+// The id of the active entry with this name in a public reference list.
+export async function referenceId(api: APIRequestContext, list: "/api/categories" | "/api/related-systems", name: string): Promise<number> {
+  const res = await api.get(list);
+  if (!res.ok()) throw new Error(`referenceId: GET ${list} failed (${res.status()})`);
+  const entries = (await res.json()) as { id: number; name: string }[];
+  const found = entries.find((entry) => entry.name === name);
+  if (!found) throw new Error(`referenceId: no active entry named "${name}" in ${list} (found: ${entries.map((e) => e.name).join(", ")})`);
+  return found.id;
+}
+
 // A Ticket owned by the Lab 3 Requester, created through the API.
 export async function createTicketAsRequester(summary: string): Promise<CreatedTicket> {
   const api = await apiSignedIn(REQUESTER.email);
   const res = await api.post("/api/tickets", {
     data: {
-      categoryId: 1,
-      relatedSystemId: 1,
+      categoryId: await referenceId(api, "/api/categories", TICKET_CATEGORY),
+      relatedSystemId: await referenceId(api, "/api/related-systems", TICKET_RELATED_SYSTEM),
       summary,
       description: "Created by the Lab 3 Playwright suite to drive the staff workflow.",
       requestedPriority: "MEDIUM",

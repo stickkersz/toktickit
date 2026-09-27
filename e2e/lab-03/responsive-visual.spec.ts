@@ -132,8 +132,12 @@ test.describe("Lab 3 screenshots (RESP-02)", () => {
       await expect(status).toHaveValue(next);
     }
     await status.selectOption("RESOLVED");
-    await page.getByLabel("Resolution Summary *").fill("Reissued the VPN profile and confirmed the connection with the user.");
+    const resolution = "Reissued the VPN profile and confirmed the connection with the user.";
+    await page.getByLabel("Resolution Summary *").fill(resolution);
     await page.getByRole("button", { name: "Confirm and resolve" }).click();
+    // The select shows Resolved while the save is still in flight, so wait for what only the saved Ticket shows.
+    await expect(page.getByLabel("Resolution Summary", { exact: true })).toHaveValue(resolution);
+    await expect(page.getByText("Saving…")).toHaveCount(0);
     await expect(status).toHaveValue("RESOLVED");
     await capture(page, "staff-ticket-detail", "resolved");
   });
