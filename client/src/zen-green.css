@@ -226,6 +226,12 @@ a:focus-visible {
   border: 1px solid var(--color-warning);
 }
 
+/* The staff Ticket Detail breadcrumb reads "Ticket Queue > Ticket Detail" (ui-spec.md section 8),
+   not Bootstrap's default "/". */
+.breadcrumb {
+  --bs-breadcrumb-divider: ">";
+}
+
 /* A whole table row or card that opens a screen. */
 .zg-clickable-row {
   cursor: pointer;
