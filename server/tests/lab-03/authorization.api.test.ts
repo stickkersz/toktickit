@@ -1,5 +1,9 @@
 import { beforeAll, describe, expect, it } from "vitest";
+import request from "supertest";
+import type { Router } from "express";
+import { app } from "../../src/app.js";
 import { getPrisma } from "../../src/prisma.js";
+import { SESSION_COOKIE } from "../../src/auth/session.js";
 import { createUser, signedIn, useIsolatedDatabase } from "./helpers.js";
 
 // Authorization by direct API call, never through the UI (BR-16). Later Issues extend
@@ -169,5 +173,187 @@ describe("a Requester asking for Internal Notes", () => {
       expect(res.status, url).toBe(403);
       expect(res.body, url).toEqual(own.body);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The authorization sweep (API-09, API-10, API-12): every protected endpoint, by role.
+// ---------------------------------------------------------------------------
+
+type Method = "get" | "post" | "patch" | "delete";
+type Ids = { ticket: number; attachment: number; user: number };
+type Endpoint = { method: Method; path: string; url: (ids: Ids) => string; body?: object | ((ids: Ids) => object); file?: boolean };
+
+const endpoint = (method: Method, path: string, extra: Partial<Endpoint> = {}): Endpoint => ({
+  method,
+  path,
+  url: (ids) =>
+    path
+      .replace(/^\/api\/tickets\/:id/, `/api/tickets/${ids.ticket}`)
+      .replace(/^\/api\/staff\/tickets\/:id/, `/api/staff/tickets/${ids.ticket}`)
+      .replace(/^\/api\/attachments\/:id/, `/api/attachments/${ids.attachment}`)
+      .replace(/^\/api\/admin\/users\/:id/, `/api/admin/users/${ids.user}`),
+  ...extra,
+});
+
+// api-spec "Public endpoints": the only four routes that answer without a session.
+const PUBLIC = ["GET /api/health", "GET /api/categories", "GET /api/related-systems", "POST /api/auth/login"];
+
+// Bodies are valid, so a missing guard would show up as a success or a write, not as a 400.
+const STAFF: Endpoint[] = [
+  endpoint("get", "/api/staff/tickets"),
+  endpoint("get", "/api/staff/owners"),
+  endpoint("patch", "/api/staff/tickets/:id/owner", { body: (ids) => ({ ownerId: ids.user }) }),
+  endpoint("patch", "/api/staff/tickets/:id/priority", { body: { itPriority: "HIGH" } }),
+  endpoint("patch", "/api/staff/tickets/:id/status", { body: { currentStatus: "OPEN" } }),
+  endpoint("get", "/api/tickets/:id/notes"),
+  endpoint("post", "/api/tickets/:id/notes", { body: { body: "A note nobody may write" } }),
+];
+
+const ADMIN: Endpoint[] = [
+  endpoint("get", "/api/admin/users"),
+  endpoint("post", "/api/admin/users", {
+    body: { name: "Should Not Exist", email: "should.not.exist@toktickit.test", role: "ADMINISTRATOR", initialPassword: "Str0ng!Pass" },
+  }),
+  endpoint("patch", "/api/admin/users/:id", { body: { role: "ADMINISTRATOR", isActive: false } }),
+  endpoint("post", "/api/admin/users/:id/initial-password", { body: { initialPassword: "N3w!Initial" } }),
+];
+
+const OTHER_PROTECTED: Endpoint[] = [
+  endpoint("post", "/api/auth/logout"),
+  endpoint("get", "/api/auth/me"),
+  endpoint("post", "/api/auth/change-password", { body: { currentPassword: "Str0ng!Pass", newPassword: "An0ther!Pass", confirmPassword: "An0ther!Pass" } }),
+  endpoint("get", "/api/tickets"),
+  endpoint("post", "/api/tickets", {
+    body: { categoryId: 1, relatedSystemId: 1, summary: "Should not exist", description: "Nobody signed in may create this.", requestedPriority: "LOW" },
+  }),
+  endpoint("get", "/api/tickets/:id"),
+  endpoint("post", "/api/tickets/:id/attachments", { file: true }),
+  endpoint("post", "/api/tickets/:id/resolution-indication"),
+  endpoint("get", "/api/attachments/:id"),
+  endpoint("get", "/api/attachments/:id/download"),
+  endpoint("delete", "/api/attachments/:id", { body: { reason: "Nobody may remove this" } }),
+  endpoint("get", "/api/tickets/:id/comments"),
+  endpoint("post", "/api/tickets/:id/comments", { body: { body: "A comment nobody may write" } }),
+];
+
+const PROTECTED = [...OTHER_PROTECTED, ...STAFF, ...ADMIN];
+const key = (e: Endpoint) => `${e.method.toUpperCase()} ${e.path}`;
+
+// Every route the running app registers, read from Express's own router stack.
+function registeredRoutes(): string[] {
+  const found: string[] = [];
+  const walk = (stack: Router["stack"]) => {
+    for (const layer of stack) {
+      if (layer.route) {
+        const methods = Object.keys((layer.route as unknown as { methods: Record<string, boolean> }).methods);
+        for (const m of methods) found.push(`${m.toUpperCase()} ${layer.route.path}`);
+      } else if ((layer.handle as unknown as { stack?: Router["stack"] }).stack) {
+        walk((layer.handle as unknown as { stack: Router["stack"] }).stack);
+      }
+    }
+  };
+  walk((app as unknown as { _router: Router })._router.stack);
+  return found;
+}
+
+function send(e: Endpoint, ids: Ids, cookie?: string) {
+  let req = request(app)[e.method](e.url(ids));
+  if (cookie) req = req.set("Cookie", cookie);
+  if (e.file) return req.attach("files", Buffer.from("sweep"), { filename: "sweep.jpg", contentType: "image/jpeg" });
+  if (!e.body) return req;
+  return req.send(typeof e.body === "function" ? e.body(ids) : e.body);
+}
+
+// Everything a refused request could have changed, so a guard that answers correctly
+// but only after writing still fails.
+async function snapshot(ids: Ids) {
+  const db = getPrisma();
+  return {
+    tickets: await db.ticket.count(),
+    attachments: await db.attachment.count({ where: { isRemoved: false } }),
+    comments: await db.publicComment.count(),
+    notes: await db.internalNote.count(),
+    users: await db.user.count(),
+    ticket: await db.ticket.findUniqueOrThrow({
+      where: { id: ids.ticket },
+      select: { currentStatus: true, itPriority: true, ownerId: true, requesterResolutionFlaggedAt: true },
+    }),
+    user: await db.user.findUniqueOrThrow({
+      where: { id: ids.user },
+      select: { role: true, isActive: true, passwordHash: true, mustChangePassword: true },
+    }),
+  };
+}
+
+function expectRefusal(res: { status: number; body: Record<string, unknown> }, status: number, error: string, label: string) {
+  expect(res.status, label).toBe(status);
+  expect(res.body.error, label).toBe(error);
+  // Only the envelope: no record, list, count, or field of any protected resource.
+  expect(Object.keys(res.body).sort(), label).toEqual(["error", "message"]);
+}
+
+describe("the authorization sweep", () => {
+  let ids: Ids;
+  let requesterCookie: string;
+  let staffCookie: string;
+
+  beforeAll(async () => {
+    const owner = (await createUser()).user;
+    const staff = (await createUser({ role: "IT_STAFF" })).user;
+    const target = (await createUser({ role: "IT_STAFF" })).user;
+    const requester = await signedIn(owner);
+    const ticket = await requester.post("/api/tickets").send({
+      categoryId: 1,
+      relatedSystemId: 1,
+      summary: "The sweep's own Ticket",
+      description: "Owned by the Requester who is then refused every staff and admin endpoint.",
+      requestedPriority: "LOW",
+    });
+    const upload = await requester
+      .post(`/api/tickets/${ticket.body.id}/attachments`)
+      .attach("files", Buffer.from("sweep file"), { filename: "s.jpg", contentType: "image/jpeg" });
+    ids = { ticket: ticket.body.id, attachment: upload.body.uploaded[0].id, user: target.id };
+    requesterCookie = requester.cookie;
+    staffCookie = (await signedIn(staff)).cookie;
+  });
+
+  it("covers every route the app registers, and nothing is public beyond the four documented ones", () => {
+    const routes = registeredRoutes();
+    expect(new Set(routes).size, "a route is registered twice").toBe(routes.length);
+    expect([...routes].sort()).toEqual([...PUBLIC, ...PROTECTED.map(key)].sort());
+  });
+
+  // API-09 / AC-13, BR-14
+  it("answers 401 on every protected endpoint with no cookie, or with a forged one, and changes nothing", async () => {
+    const before = await snapshot(ids);
+    for (const e of PROTECTED) {
+      expectRefusal(await send(e, ids), 401, "UNAUTHENTICATED", `${key(e)} with no cookie`);
+      expectRefusal(await send(e, ids, `${SESSION_COOKIE}=forged-token`), 401, "UNAUTHENTICATED", `${key(e)} with a forged cookie`);
+    }
+    expect(await snapshot(ids)).toEqual(before);
+  });
+
+  // API-10 / AC-12, AC-22, BR-14
+  it("answers 403 to a Requester on every staff and admin endpoint, even for their own Ticket, and changes nothing", async () => {
+    const before = await snapshot(ids);
+    for (const e of [...STAFF, ...ADMIN]) {
+      expectRefusal(await send(e, ids, requesterCookie), 403, "FORBIDDEN", `${key(e)} as a Requester`);
+      // The role decides, not the record: a Ticket or user that does not exist gets the same answer.
+      const missing = await send(e, { ticket: 999999, attachment: 999999, user: 999999 }, requesterCookie);
+      expectRefusal(missing, 403, "FORBIDDEN", `${key(e)} as a Requester, missing record`);
+    }
+    expect(await snapshot(ids)).toEqual(before);
+  });
+
+  // API-12 / AC-33, BR-14
+  it("answers 403 to IT Staff on every admin user endpoint, and changes nothing", async () => {
+    const before = await snapshot(ids);
+    for (const e of ADMIN) {
+      expectRefusal(await send(e, ids, staffCookie), 403, "FORBIDDEN", `${key(e)} as IT Staff`);
+      const missing = await send(e, { ...ids, user: 999999 }, staffCookie);
+      expectRefusal(missing, 403, "FORBIDDEN", `${key(e)} as IT Staff, missing user`);
+    }
+    expect(await snapshot(ids)).toEqual(before);
   });
 });
