@@ -426,6 +426,18 @@ A new test under API-06 lets the update run for real and makes the session delet
 | `cd client && npm test` | 16 files, 253 tests passed, unchanged |
 | `npx playwright test` | 19 of 19 passed, unchanged |
 
+### Final results from `main`
+
+After the release Pull Request #57 was approved and merged, all three suites were run from `main` at `3179394` (Merge pull request #57 from stickkersz/lab3-staging), with the database migrated and seeded. The complete output is the Part 3 evidence in the submission PDF.
+
+| Suite | Result on `main` |
+|---|---|
+| `cd server && npm test` | 29 files, 330 tests passed: 3 Lab 1, 78 Lab 2, 249 Lab 3 |
+| `cd client && npm test` | 16 files, 253 tests passed: 35 Lab 2, 218 Lab 3 |
+| `npx playwright test` | 19 of 19 passed: 8 Lab 2, 11 Lab 3 |
+
+All 117 planned tests in section 2 are Pass and none is Planned. The Lab 1 and Lab 2 suites run unchanged beside the Lab 3 ones, which is the regression evidence that Lab 3 evolved the product rather than replacing it.
+
 ## 7. Pre-release code review
 
 Before the release Pull Request, the whole Lab 3 change (`main...lab3-staging`, 18 commits) was reviewed as one piece on three axes: the documented standards, the specification, and security. Each Issue had already been reviewed on its own; this pass looked for what only shows across Issues. Every acceptance criterion, planned test and api-spec error code still holds, all 45 messages the ui-spec quotes appear in the client, and no finding changes documented behaviour.
