@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Category, getCategories, getTickets, TicketListItem, TicketPriority } from "../api.js";
-import { useRequester } from "../requesterContext.js";
+import { useAuth } from "../authContext.js";
 import { PriorityBadge, StatusBadge } from "../Badge.js";
 
 type ListState = "loading" | "ready" | "error";
@@ -14,7 +14,7 @@ function formatDate(iso: string): string {
 }
 
 export default function MyTickets() {
-  const { requester } = useRequester();
+  const { user } = useAuth();
   const navigate = useNavigate();
 
   const [categories, setCategories] = useState<Category[]>([]);
@@ -43,11 +43,10 @@ export default function MyTickets() {
   const requestIdRef = useRef(0);
 
   function load() {
-    if (!requester) return;
+    if (!user) return;
     const requestId = ++requestIdRef.current;
     setListState("loading");
     getTickets({
-      requesterId: requester.id,
       search: search || undefined,
       category: categoryId ? Number(categoryId) : undefined,
       requestedPriority: requestedPriority || undefined,
@@ -86,7 +85,7 @@ export default function MyTickets() {
   }
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(load, [requester, search, categoryId, requestedPriority, currentStatus, sort, page]);
+  useEffect(load, [user?.id, search, categoryId, requestedPriority, currentStatus, sort, page]);
 
   const anyFilterActive = Boolean(search || categoryId || requestedPriority || currentStatus);
 

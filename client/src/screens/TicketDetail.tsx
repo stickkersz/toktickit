@@ -1,16 +1,23 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
+  ApiError,
   Attachment,
   NotFoundError,
   TicketDetail as TicketDetailData,
+  flagProblemResolved,
   getAttachmentDownloadUrl,
+  getTicketComments,
   getTicketDetail,
+  postTicketComment,
   removeAttachment,
   uploadAttachments,
 } from "../api.js";
-import { useRequester } from "../requesterContext.js";
+import { useAuth } from "../authContext.js";
+import { TruncatedFilename, fileTypeLabel, formatDate, formatFileSize } from "../attachmentDisplay.js";
 import { PriorityBadge, StatusBadge } from "../Badge.js";
+import { ContentPanel } from "../ContentPanel.js";
+import { TERMINAL_MESSAGE, useContentThread } from "../content.js";
 import {
   ATTACHMENT_REJECT_MESSAGES,
   AttachmentRejectReason,
@@ -24,50 +31,20 @@ interface PickerError {
   message: string;
 }
 
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleString();
-}
-
-function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-// ui-spec.md §8: each attachment row shows a file-type icon.
-function fileTypeLabel(mimeType: string): string {
-  switch (mimeType) {
-    case "application/pdf":
-      return "PDF";
-    case "image/jpeg":
-      return "JPG";
-    case "image/png":
-      return "PNG";
-    case "image/webp":
-      return "WEBP";
-    default:
-      return "FILE";
-  }
-}
-
-// Long filenames are truncated with an ellipsis; the full name stays
-// available via the native `title` tooltip rather than being lost.
-function TruncatedFilename({ name }: { name: string }) {
-  return (
-    <span className="text-truncate d-inline-block align-bottom" style={{ maxWidth: 320 }} title={name}>
-      {name}
-    </span>
-  );
-}
-
 export default function TicketDetail() {
   const { id } = useParams();
   const ticketId = Number(id);
-  const { requester } = useRequester();
+  const { user } = useAuth();
   const navigate = useNavigate();
 
   const [loadState, setLoadState] = useState<LoadState>("loading");
   const [ticket, setTicket] = useState<TicketDetailData | null>(null);
+
+  // "Problem appears resolved" (FR-09, BR-29): a confirmation step, then a request. It never
+  // changes the status, which only IT Staff move.
+  const [flagStep, setFlagStep] = useState<"idle" | "confirming" | "sending">("idle");
+  const [flagError, setFlagError] = useState<string | null>(null);
+  const [justFlagged, setJustFlagged] = useState(false);
 
   const [pendingUploads, setPendingUploads] = useState<File[]>([]);
   const [pickerErrors, setPickerErrors] = useState<PickerError[]>([]);
@@ -79,9 +56,9 @@ export default function TicketDetail() {
   const [removeError, setRemoveError] = useState<string | null>(null);
 
   function load() {
-    if (!requester) return;
+    if (!user) return;
     setLoadState("loading");
-    getTicketDetail(ticketId, requester.id)
+    getTicketDetail(ticketId)
       .then((data) => {
         setTicket(data);
         setLoadState("ready");
@@ -92,14 +69,34 @@ export default function TicketDetail() {
   }
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(load, [ticketId, requester]);
+  useEffect(load, [ticketId, user?.id]);
 
+  const isTerminal = ticket?.currentStatus === "CLOSED" || ticket?.currentStatus === "CANCELLED";
   const activeCount = ticket?.attachments.filter((a) => !a.isRemoved).length ?? 0;
+
+  async function confirmFlag() {
+    setFlagStep("sending");
+    setFlagError(null);
+    try {
+      const result = await flagProblemResolved(ticketId);
+      // Only the timestamp changes: the status shown above stays exactly as it was.
+      setTicket((t) => (t ? { ...t, requesterResolutionFlaggedAt: result.requesterResolutionFlaggedAt } : t));
+      setJustFlagged(true);
+    } catch (e) {
+      setFlagError(
+        e instanceof ApiError && e.code === "TICKET_TERMINAL"
+          ? "This Ticket is closed, so it can no longer be flagged."
+          : "Unable to tell IT right now. Please try again.",
+      );
+    } finally {
+      setFlagStep("idle");
+    }
+  }
 
   async function handleFilesSelected(event: React.ChangeEvent<HTMLInputElement>) {
     const chosen = Array.from(event.target.files ?? []);
     event.target.value = "";
-    if (!requester || !ticket) return;
+    if (!user || !ticket) return;
 
     const validFiles: File[] = [];
     const rejected: PickerError[] = [];
@@ -120,7 +117,7 @@ export default function TicketDetail() {
 
     setPendingUploads(validFiles);
     try {
-      const result = await uploadAttachments(ticket.id, requester.id, validFiles);
+      const result = await uploadAttachments(ticket.id, validFiles);
       setTicket((current) =>
         current ? { ...current, attachments: [...result.uploaded, ...current.attachments] } : current,
       );
@@ -156,11 +153,11 @@ export default function TicketDetail() {
   const isReasonValid = trimmedReasonLength >= 5 && trimmedReasonLength <= 200;
 
   async function confirmRemove(attachment: Attachment) {
-    if (!requester || !isReasonValid) return;
+    if (!user || !isReasonValid) return;
     setRemoveSubmitting(true);
     setRemoveError(null);
     try {
-      const updated = await removeAttachment(attachment.id, requester.id, removeReason.trim());
+      const updated = await removeAttachment(attachment.id, removeReason.trim());
       setTicket((current) =>
         current
           ? {
@@ -265,6 +262,64 @@ export default function TicketDetail() {
             style={{ whiteSpace: "pre-wrap" }}
           />
         </div>
+        {ticket.resolutionSummary && (
+          <div className="col-12">
+            <label htmlFor="detail-resolution" className="form-label fw-semibold">Resolution Summary</label>
+            <textarea
+              id="detail-resolution"
+              className="form-control"
+              readOnly
+              rows={3}
+              value={ticket.resolutionSummary}
+              style={{ whiteSpace: "pre-wrap" }}
+            />
+          </div>
+        )}
+      </div>
+
+      {/* FR-09: the Requester tells IT the problem appears resolved. It is a signal, not a status
+          change, so the status badge above visibly stays as it was. */}
+      <div className="mb-4">
+        {flagStep === "confirming" ? (
+          <div className="border rounded p-3" role="group" aria-label="Confirm the problem appears resolved">
+            <p className="mb-2">Tell IT the problem appears resolved? They will decide whether to resolve and close the Ticket.</p>
+            <div className="d-flex gap-2">
+              <button type="button" className="btn zg-btn-primary btn-sm zg-touch-target" onClick={() => void confirmFlag()}>
+                Yes, tell IT
+              </button>
+              <button type="button" className="btn btn-outline-secondary btn-sm zg-touch-target" onClick={() => setFlagStep("idle")}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button
+            type="button"
+            className="btn btn-outline-secondary zg-touch-target"
+            disabled={flagStep === "sending" || isTerminal}
+            title={isTerminal ? "This Ticket is closed, so it can no longer be flagged." : undefined}
+            onClick={() => {
+              setFlagError(null);
+              setJustFlagged(false);
+              setFlagStep("confirming");
+            }}
+          >
+            {flagStep === "sending" ? "Sending…" : "Problem appears resolved"}
+          </button>
+        )}
+        {justFlagged && ticket.requesterResolutionFlaggedAt && (
+          <p className="text-success small mt-2 mb-0" role="status">
+            IT has been told the problem appears resolved ({formatDate(ticket.requesterResolutionFlaggedAt)}). The status has not changed.
+          </p>
+        )}
+        {!justFlagged && ticket.requesterResolutionFlaggedAt && (
+          <p className="text-muted small mt-2 mb-0">You told IT the problem appears resolved on {formatDate(ticket.requesterResolutionFlaggedAt)}.</p>
+        )}
+        {flagError && (
+          <p className="zg-field-error small mt-2 mb-0" role="alert">
+            {flagError}
+          </p>
+        )}
       </div>
 
       <hr />
@@ -350,7 +405,7 @@ export default function TicketDetail() {
                     <>
                       <a
                         className="btn btn-sm btn-outline-secondary"
-                        href={getAttachmentDownloadUrl(attachment.id, requester!.id)}
+                        href={getAttachmentDownloadUrl(attachment.id)}
                       >
                         Download
                       </a>
@@ -407,6 +462,25 @@ export default function TicketDetail() {
           ))}
         </ul>
       )}
+
+      <hr />
+
+      <PublicComments ticketId={ticket.id} closed={isTerminal} />
     </div>
+  );
+}
+
+// The Requester's view of the conversation (ui-spec.md section 6): Public Comments only. There is no
+// Internal Notes tab, heading or request anywhere on this screen, and the notes endpoint refuses a
+// Requester regardless (BR-35). A closed or cancelled Ticket can still be read but not added to (BR-34).
+function PublicComments({ ticketId, closed }: { ticketId: number; closed: boolean }) {
+  const thread = useContentThread(ticketId, getTicketComments, postTicketComment, "comment");
+  return (
+    <section aria-labelledby="ticket-comments-heading">
+      <h2 id="ticket-comments-heading" className="h5 mb-3">
+        Public Comments{thread.count !== null ? ` (${thread.count})` : ""}
+      </h2>
+      <ContentPanel kind="comments" thread={thread} blockedReason={closed ? TERMINAL_MESSAGE : undefined} />
+    </section>
   );
 }

@@ -1,14 +1,18 @@
-const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3000";
+// Empty by default: requests are relative (`/api/...`) and travel through the Vite
+// dev proxy, so the API is same-origin and the session cookie is first-party
+// (vite.config.ts, ADR 0001). VITE_API_URL is an optional escape hatch for an API
+// on another origin, which then relies on the server's credentialed CORS
+// allow-list (BR-62).
+const API_BASE: string = import.meta.env.VITE_API_URL ?? "";
+
+// Every request carries the session cookie.
+export function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
+  return fetch(`${API_BASE}${path}`, { ...init, credentials: "include" });
+}
 
 export interface Category {
   id: number;
   name: string;
-}
-
-export interface Requester {
-  id: number;
-  name: string;
-  email: string;
 }
 
 export interface RelatedSystem {
@@ -31,8 +35,8 @@ export interface Ticket {
   createdAt: string;
 }
 
+// No requesterId: the Ticket belongs to whoever is signed in (BR-11).
 export interface CreateTicketInput {
-  requesterId: number;
   categoryId: number;
   relatedSystemId: number;
   summary: string;
@@ -95,6 +99,9 @@ export interface TicketDetail {
   description: string;
   requestedPriority: TicketPriority;
   currentStatus: string;
+  // BR-27, BR-29: visible to the Requester. Optional so a response without them still types.
+  resolutionSummary?: string | null;
+  requesterResolutionFlaggedAt?: string | null;
   createdAt: string;
   updatedAt: string;
   attachments: Attachment[];
@@ -124,7 +131,6 @@ export interface TicketListResult {
 }
 
 export interface TicketListParams {
-  requesterId: number;
   search?: string;
   category?: number;
   requestedPriority?: TicketPriority;
@@ -134,12 +140,28 @@ export interface TicketListParams {
   pageSize?: number;
 }
 
+// Carries the HTTP status (0 when the API could not be reached) and the API's
+// error code, so a screen can tell a credential failure from an outage.
+export class ApiError extends Error {
+  status: number;
+  code?: string;
+  // On a refused status change, the statuses the Ticket may move to from where it is now.
+  permitted?: string[];
+  // On a refusal that names a field, such as EMAIL_TAKEN: the message for that field.
+  fields?: Record<string, string>;
+  constructor(message: string, status: number, code?: string) {
+    super(message);
+    this.status = status;
+    this.code = code;
+  }
+}
+
 // BR-18: thrown on a 400 VALIDATION_ERROR so the form can show per-field
 // errors and keep the entered values, per the API's { fields } shape.
-export class ValidationError extends Error {
+export class ValidationError extends ApiError {
   fields: Record<string, string>;
   constructor(message: string, fields: Record<string, string>) {
-    super(message);
+    super(message, 400, "VALIDATION_ERROR");
     this.fields = fields;
   }
 }
@@ -147,31 +169,26 @@ export class ValidationError extends Error {
 // BR-35: a 404 (not found / not owned / requester unresolved) is never
 // distinguishable from the other two, so Ticket Detail treats all three as
 // one "not found" screen state, never a generic retryable error.
-export class NotFoundError extends Error {}
-
-// Lab 2 — Development Requester Selection (api-spec.md §3).
-export async function getRequesters(): Promise<Requester[]> {
-  const res = await fetch(`${API_URL}/api/requesters`);
-  if (!res.ok) {
-    throw new Error("Unable to load Development Requesters.");
+export class NotFoundError extends ApiError {
+  constructor(message: string) {
+    super(message, 404, "NOT_FOUND");
   }
-  return res.json();
 }
 
 // Lab 2 — Create Ticket reference data (api-spec.md §1).
 export async function getCategories(): Promise<Category[]> {
-  const res = await fetch(`${API_URL}/api/categories`);
+  const res = await apiFetch(`/api/categories`);
   if (!res.ok) {
-    throw new Error("Unable to load Categories.");
+    throw new ApiError("Unable to load Categories.", res.status);
   }
   return res.json();
 }
 
 // Lab 2 — Create Ticket reference data (api-spec.md §2).
 export async function getRelatedSystems(): Promise<RelatedSystem[]> {
-  const res = await fetch(`${API_URL}/api/related-systems`);
+  const res = await apiFetch(`/api/related-systems`);
   if (!res.ok) {
-    throw new Error("Unable to load Related Systems.");
+    throw new ApiError("Unable to load Related Systems.", res.status);
   }
   return res.json();
 }
@@ -187,7 +204,7 @@ export async function getRelatedSystems(): Promise<RelatedSystem[]> {
 export async function createTicket(input: CreateTicketInput): Promise<Ticket> {
   let res: Response;
   try {
-    res = await fetch(`${API_URL}/api/tickets`, {
+    res = await apiFetch(`/api/tickets`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(input),
@@ -212,7 +229,7 @@ export async function createTicket(input: CreateTicketInput): Promise<Ticket> {
     if (payload?.error === "VALIDATION_ERROR") {
       throw new ValidationError(payload.message ?? "Validation failed.", payload.fields ?? {});
     }
-    throw new Error(payload?.message ?? "Unable to create the Ticket.");
+    throw new ApiError(payload?.message ?? "Unable to create the Ticket.", res.status, payload?.error);
   }
   return body as Ticket;
 }
@@ -220,7 +237,6 @@ export async function createTicket(input: CreateTicketInput): Promise<Ticket> {
 // Lab 2 — My Tickets (api-spec.md §5, FR-04).
 export async function getTickets(params: TicketListParams): Promise<TicketListResult> {
   const query = new URLSearchParams();
-  query.set("requesterId", String(params.requesterId));
   if (params.search) query.set("search", params.search);
   if (params.category) query.set("category", String(params.category));
   if (params.requestedPriority) query.set("requestedPriority", params.requestedPriority);
@@ -229,9 +245,9 @@ export async function getTickets(params: TicketListParams): Promise<TicketListRe
   if (params.page) query.set("page", String(params.page));
   if (params.pageSize) query.set("pageSize", String(params.pageSize));
 
-  const res = await fetch(`${API_URL}/api/tickets?${query.toString()}`);
+  const res = await apiFetch(`/api/tickets?${query.toString()}`);
   if (!res.ok) {
-    throw new Error("Unable to load tickets.");
+    throw new ApiError("Unable to load tickets.", res.status);
   }
   return res.json();
 }
@@ -239,16 +255,11 @@ export async function getTickets(params: TicketListParams): Promise<TicketListRe
 // Lab 2 — Attachment upload during/after creation (api-spec.md §7, BR-25).
 // A 400 ALL_FILES_REJECTED is not thrown: it carries the same
 // { uploaded, failed } shape as a 201, so the caller handles both uniformly.
-export async function uploadAttachments(
-  ticketId: number,
-  requesterId: number,
-  files: File[],
-): Promise<UploadAttachmentsResult> {
+export async function uploadAttachments(ticketId: number, files: File[]): Promise<UploadAttachmentsResult> {
   const formData = new FormData();
-  formData.append("requesterId", String(requesterId));
   files.forEach((file) => formData.append("files", file));
 
-  const res = await fetch(`${API_URL}/api/tickets/${ticketId}/attachments`, {
+  const res = await apiFetch(`/api/tickets/${ticketId}/attachments`, {
     method: "POST",
     body: formData,
   });
@@ -259,37 +270,33 @@ export async function uploadAttachments(
   const carriesBatchResult =
     body?.error === "ALL_FILES_REJECTED" || Array.isArray(body?.uploaded);
   if (!res.ok && !carriesBatchResult) {
-    throw new Error(body?.message ?? "Unable to upload attachments.");
+    throw new ApiError(body?.message ?? "Unable to upload attachments.", res.status, body?.error);
   }
   return { uploaded: body.uploaded ?? [], failed: body.failed ?? [] };
 }
 
 // Lab 2 — Requester Ticket Detail (api-spec.md §6, FR-05).
-export async function getTicketDetail(ticketId: number, requesterId: number): Promise<TicketDetail> {
-  const res = await fetch(`${API_URL}/api/tickets/${ticketId}?requesterId=${requesterId}`);
+export async function getTicketDetail(ticketId: number): Promise<TicketDetail> {
+  const res = await apiFetch(`/api/tickets/${ticketId}`);
   if (res.status === 404) {
     throw new NotFoundError("Ticket not found.");
   }
   if (!res.ok) {
-    throw new Error("Unable to load the Ticket.");
+    throw new ApiError("Unable to load the Ticket.", res.status);
   }
   return res.json();
 }
 
 // Lab 2 — Attachment removal (api-spec.md §10, FR-07, BR-29).
-export async function removeAttachment(
-  attachmentId: number,
-  requesterId: number,
-  reason: string,
-): Promise<Attachment> {
-  const res = await fetch(`${API_URL}/api/attachments/${attachmentId}`, {
+export async function removeAttachment(attachmentId: number, reason: string): Promise<Attachment> {
+  const res = await apiFetch(`/api/attachments/${attachmentId}`, {
     method: "DELETE",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ requesterId, reason }),
+    body: JSON.stringify({ reason }),
   });
   const body = await res.json();
   if (!res.ok) {
-    throw new Error(body?.message ?? "Unable to remove the attachment.");
+    throw new ApiError(body?.message ?? "Unable to remove the attachment.", res.status, body?.error);
   }
   return body;
 }
@@ -297,7 +304,316 @@ export async function removeAttachment(
 // Lab 2 — Attachment download (api-spec.md §9, FR-08). A plain URL, not a
 // fetch: the server sets Content-Disposition so the browser handles the
 // save itself.
-export function getAttachmentDownloadUrl(attachmentId: number, requesterId: number): string {
-  return `${API_URL}/api/attachments/${attachmentId}/download?requesterId=${requesterId}`;
+export function getAttachmentDownloadUrl(attachmentId: number): string {
+  return `${API_BASE}/api/attachments/${attachmentId}/download`;
 }
 
+// ---------------------------------------------------------------------------
+// Lab 3 authentication (api-spec.md endpoints 1 to 4).
+// ---------------------------------------------------------------------------
+
+export type UserRole = "REQUESTER" | "IT_STAFF" | "ADMINISTRATOR";
+
+export interface AuthUser {
+  id: number;
+  name: string;
+  email: string;
+  role: UserRole;
+  mustChangePassword: boolean;
+}
+
+export interface ChangePasswordInput {
+  currentPassword: string;
+  newPassword: string;
+  confirmPassword: string;
+}
+
+async function authRequest(path: string, init?: RequestInit): Promise<{ res: Response; body: unknown }> {
+  let res: Response;
+  try {
+    res = await apiFetch(path, init);
+  } catch (cause) {
+    // The raw TypeError text means nothing to a user; the technical detail goes
+    // to the console and the screen gets a stable message.
+    console.error(`${path}: request did not reach the API`, cause);
+    throw new ApiError("Unable to reach the TokTickIT API. Check your connection and try again.", 0, "NETWORK_ERROR");
+  }
+  let body: unknown = null;
+  try {
+    body = await res.json();
+  } catch {
+    // A non-JSON body means the request failed before any route handler ran.
+  }
+  return { res, body };
+}
+
+function errorFromResponse(status: number, body: unknown, fallback: string): ApiError {
+  const payload = (body ?? {}) as { error?: string; message?: string; fields?: Record<string, string>; permitted?: string[] };
+  if (payload.error === "VALIDATION_ERROR") {
+    return new ValidationError(payload.message ?? "Validation failed.", payload.fields ?? {});
+  }
+  const error = new ApiError(payload.message ?? fallback, status, payload.error);
+  if (Array.isArray(payload.permitted)) error.permitted = payload.permitted;
+  if (payload.fields) error.fields = payload.fields;
+  return error;
+}
+
+const JSON_HEADERS = { "Content-Type": "application/json" };
+
+// POST /api/auth/login. 401 INVALID_CREDENTIALS and 401 ACCOUNT_INACTIVE are
+// thrown as an ApiError whose `code` tells the two apart (BR-09).
+export async function login(email: string, password: string): Promise<AuthUser> {
+  const { res, body } = await authRequest("/api/auth/login", {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ email, password }),
+  });
+  if (!res.ok) throw errorFromResponse(res.status, body, "Unable to sign in.");
+  return body as AuthUser;
+}
+
+// GET /api/auth/me. A 401 is the expected "not signed in" answer, not an error.
+export async function getCurrentUser(): Promise<AuthUser | null> {
+  const { res, body } = await authRequest("/api/auth/me");
+  if (res.status === 401) return null;
+  if (!res.ok) throw errorFromResponse(res.status, body, "Unable to load the current user.");
+  return body as AuthUser;
+}
+
+// POST /api/auth/logout. Best effort: the client forgets the user either way.
+export async function logout(): Promise<void> {
+  try {
+    await apiFetch("/api/auth/logout", { method: "POST" });
+  } catch (cause) {
+    console.error("logout: request did not reach the API", cause);
+  }
+}
+
+// POST /api/auth/change-password. A 400 is a ValidationError carrying `fields`;
+// a 401 INVALID_CREDENTIALS means the current password was wrong.
+export async function changePassword(input: ChangePasswordInput): Promise<AuthUser> {
+  const { res, body } = await authRequest("/api/auth/change-password", {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) throw errorFromResponse(res.status, body, "Unable to change the password.");
+  return body as AuthUser;
+}
+
+// ---------------------------------------------------------------------------
+// Lab 3 IT Staff Ticket Queue (api-spec.md endpoint 7).
+// ---------------------------------------------------------------------------
+
+export interface StaffTicketItem {
+  id: number;
+  ticketNumber: string;
+  summary: string;
+  categoryName: string;
+  requesterName: string;
+  requesterIsActive: boolean;
+  requestedPriority: TicketPriority;
+  itPriority: TicketPriority;
+  currentStatus: string;
+  ownerId: number | null;
+  ownerName: string | null;
+  // null when the Ticket is unassigned. `ownerEligible` false means the owner is inactive
+  // or no longer IT Staff or an Administrator (BR-57); `ownerIsActive` tells the two apart.
+  ownerIsActive: boolean | null;
+  ownerEligible: boolean | null;
+  requesterResolutionFlaggedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface StaffQueueParams {
+  search?: string;
+  status?: string;
+  itPriority?: string;
+  category?: number;
+  // A User id, or "unassigned", "me" or "needs-owner".
+  owner?: string;
+  sort?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+export interface StaffQueueResult {
+  tickets: StaffTicketItem[];
+  pagination: TicketListPagination;
+}
+
+export async function getStaffTickets(params: StaffQueueParams): Promise<StaffQueueResult> {
+  const query = new URLSearchParams();
+  if (params.search) query.set("search", params.search);
+  if (params.status) query.set("status", params.status);
+  if (params.itPriority) query.set("itPriority", params.itPriority);
+  if (params.category) query.set("category", String(params.category));
+  if (params.owner) query.set("owner", params.owner);
+  if (params.sort) query.set("sort", params.sort);
+  if (params.page) query.set("page", String(params.page));
+  if (params.pageSize) query.set("pageSize", String(params.pageSize));
+
+  const { res, body } = await authRequest(`/api/staff/tickets?${query.toString()}`);
+  if (!res.ok) throw errorFromResponse(res.status, body, "Unable to load the ticket queue.");
+  return body as StaffQueueResult;
+}
+
+// ---------------------------------------------------------------------------
+// Lab 3 IT Staff Ticket operations (api-spec.md endpoints 6 and 8 to 10).
+// ---------------------------------------------------------------------------
+
+// GET /api/tickets/:id as an IT Staff member or Administrator sees it (BR-54, BR-57, BR-59).
+export interface StaffTicketDetail extends TicketDetail {
+  itPriority: TicketPriority;
+  ownerId: number | null;
+  ownerName: string | null;
+  ownerIsActive: boolean | null;
+  ownerEligible: boolean | null;
+  requesterIsActive: boolean;
+  // Straight from the server's workflow table: the client carries no copy of BR-25.
+  permittedNextStatuses: string[];
+}
+
+export interface StaffOwner {
+  id: number;
+  name: string;
+  role: UserRole;
+}
+
+export async function getStaffTicketDetail(ticketId: number): Promise<StaffTicketDetail> {
+  const { res, body } = await authRequest(`/api/tickets/${ticketId}`);
+  if (res.status === 404) throw new NotFoundError("Ticket not found.");
+  if (!res.ok) throw errorFromResponse(res.status, body, "Unable to load the Ticket.");
+  return body as StaffTicketDetail;
+}
+
+// Active IT Staff and Administrators, for the Ticket Owner select (BR-18).
+export async function getStaffOwners(): Promise<StaffOwner[]> {
+  const { res, body } = await authRequest("/api/staff/owners");
+  if (!res.ok) throw errorFromResponse(res.status, body, "Unable to load the list of owners.");
+  return body as StaffOwner[];
+}
+
+async function patchTicket(ticketId: number, part: string, data: object, fallback: string): Promise<StaffTicketItem> {
+  const { res, body } = await authRequest(`/api/staff/tickets/${ticketId}/${part}`, {
+    method: "PATCH",
+    headers: JSON_HEADERS,
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw errorFromResponse(res.status, body, fallback);
+  return body as StaffTicketItem;
+}
+
+// Claim, assign, reassign and unassign are one operation: claiming is sending your own id.
+export function setTicketOwner(ticketId: number, ownerId: number | null): Promise<StaffTicketItem> {
+  return patchTicket(ticketId, "owner", { ownerId }, "Unable to change the Ticket Owner.");
+}
+
+export function setTicketPriority(ticketId: number, itPriority: TicketPriority): Promise<StaffTicketItem> {
+  return patchTicket(ticketId, "priority", { itPriority }, "Unable to change the IT Priority.");
+}
+
+export function changeTicketStatus(ticketId: number, currentStatus: string, resolutionSummary?: string): Promise<StaffTicketItem> {
+  return patchTicket(
+    ticketId,
+    "status",
+    resolutionSummary === undefined ? { currentStatus } : { currentStatus, resolutionSummary },
+    "Unable to change the Ticket status.",
+  );
+}
+
+// POST /api/tickets/:id/resolution-indication: the Requester says the problem appears resolved.
+// It records a timestamp and never changes the status.
+export async function flagProblemResolved(
+  ticketId: number,
+): Promise<{ id: number; requesterResolutionFlaggedAt: string; currentStatus: string }> {
+  const { res, body } = await authRequest(`/api/tickets/${ticketId}/resolution-indication`, { method: "POST" });
+  if (!res.ok) throw errorFromResponse(res.status, body, "Unable to record that the problem appears resolved.");
+  return body as { id: number; requesterResolutionFlaggedAt: string; currentStatus: string };
+}
+
+// Public Comments and Internal Notes (api-spec.md endpoints 11 and 12). Both kinds have the same
+// shape. `authorRole` is the role the author held when they wrote it (BR-61); no author id or
+// email is ever sent.
+export interface ContentItem {
+  id: number;
+  body: string;
+  authorName: string;
+  authorRole: UserRole;
+  createdAt: string;
+}
+
+async function getContent(ticketId: number, path: "comments" | "notes", fallback: string): Promise<ContentItem[]> {
+  const { res, body } = await authRequest(`/api/tickets/${ticketId}/${path}`);
+  if (res.status === 404) throw new NotFoundError("Ticket not found.");
+  if (!res.ok) throw errorFromResponse(res.status, body, fallback);
+  return body as ContentItem[];
+}
+
+async function postContent(ticketId: number, path: "comments" | "notes", text: string, fallback: string): Promise<ContentItem> {
+  const { res, body } = await authRequest(`/api/tickets/${ticketId}/${path}`, {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ body: text }),
+  });
+  if (!res.ok) throw errorFromResponse(res.status, body, fallback);
+  return body as ContentItem;
+}
+
+export const getTicketComments = (ticketId: number) => getContent(ticketId, "comments", "Unable to load the comments.");
+export const postTicketComment = (ticketId: number, body: string) => postContent(ticketId, "comments", body, "Unable to add the comment.");
+// IT Staff and Administrators only: a Requester never calls these (BR-35).
+export const getTicketNotes = (ticketId: number) => getContent(ticketId, "notes", "Unable to load the notes.");
+export const postTicketNote = (ticketId: number, body: string) => postContent(ticketId, "notes", body, "Unable to add the note.");
+
+// Administrator user management (api-spec.md endpoints 13 to 16). No password hash ever comes back.
+export interface AdminUser {
+  id: number;
+  name: string;
+  email: string;
+  role: UserRole;
+  isActive: boolean;
+  mustChangePassword: boolean;
+}
+
+export interface AdminUserInput {
+  name: string;
+  email: string;
+  role: UserRole;
+  isActive: boolean;
+  initialPassword: string;
+}
+
+export async function getAdminUsers(params: { search?: string; role?: UserRole | "" } = {}): Promise<AdminUser[]> {
+  const query = new URLSearchParams();
+  if (params.search) query.set("search", params.search);
+  if (params.role) query.set("role", params.role);
+  const suffix = query.toString();
+  const { res, body } = await authRequest(`/api/admin/users${suffix ? `?${suffix}` : ""}`);
+  if (!res.ok) throw errorFromResponse(res.status, body, "Unable to load the users.");
+  return body as AdminUser[];
+}
+
+export async function createAdminUser(input: AdminUserInput): Promise<AdminUser> {
+  const { res, body } = await authRequest("/api/admin/users", { method: "POST", headers: JSON_HEADERS, body: JSON.stringify(input) });
+  if (!res.ok) throw errorFromResponse(res.status, body, "Unable to create the user.");
+  return body as AdminUser;
+}
+
+// Only the fields that changed are sent.
+export async function updateAdminUser(id: number, changes: Partial<Pick<AdminUserInput, "name" | "email" | "role" | "isActive">>): Promise<AdminUser> {
+  const { res, body } = await authRequest(`/api/admin/users/${id}`, { method: "PATCH", headers: JSON_HEADERS, body: JSON.stringify(changes) });
+  if (!res.ok) throw errorFromResponse(res.status, body, "Unable to save the user.");
+  return body as AdminUser;
+}
+
+export async function setInitialPassword(id: number, initialPassword: string): Promise<AdminUser> {
+  const { res, body } = await authRequest(`/api/admin/users/${id}/initial-password`, {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ initialPassword }),
+  });
+  if (!res.ok) throw errorFromResponse(res.status, body, "Unable to set the initial password.");
+  return body as AdminUser;
+}

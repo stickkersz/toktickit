@@ -32,28 +32,50 @@ docker run -d --name toktickit-pg \
 cd server
 cp .env.example .env      # edit DATABASE_URL / PORT if needed
 npm install
-npx prisma migrate dev    # creates the Category, RequesterUser, RelatedSystem, Ticket, Attachment tables
-npm run prisma:seed       # seeds Categories, Related Systems, and Development Requesters (active + inactive fixtures)
+npx prisma migrate deploy # applies every migration, in order, without touching existing data
+npm run prisma:seed       # then, as a SEPARATE second step: Categories, Related Systems, and the Lab 3 user accounts
 npm run dev                # http://localhost:3000 (PORT from .env)
 ```
+
+The API accepts credentialed cross-origin requests (the session cookie) only from an allow-list of browser origins: the Vite dev server and the Playwright client on `localhost` and `127.0.0.1`. Serve the client from another port or host by adding it to `CORS_ORIGINS` in `server/.env`.
+
+**Run the migration first and the seed second, always in that order.** The Lab 3 migration renames the Lab 2 `RequesterUser` table to `User` in place and cannot compute a password hash in SQL, so it gives every existing account an unusable placeholder credential. Until the seed has run, no migrated account can sign in. The seed is what issues the real initial password, and it never overwrites a password that a user has already chosen, so running it again is always safe. See `docs/adr/0002-rename-requesteruser-to-user-in-place.md`.
+
+Use `prisma migrate deploy`, not `prisma migrate dev`, on a database that already holds data: `migrate dev` would regenerate the rename as a destructive drop and create.
+
+### Development accounts (local only)
+
+These accounts exist only in a local development database and are created by the seed. The shared initial password is a **local development credential, not a real secret**; every account must replace it at first sign in.
+
+| Role | Accounts | Initial password |
+|---|---|---|
+| Requester | `kanokwan.srisuwan@toktickit.test`, `thanapon.wattana@toktickit.test`, `nutchanon.boonmee@toktickit.test`, `ploypailin.chaisiri@toktickit.test` (active), `somsak.rattanakosin@toktickit.test` (inactive) | `ChangeMe!23` |
+| IT Staff | `pimchanok.somboon@toktickit.test`, `wichai.charoen@toktickit.test`, `anucha.prasert@toktickit.test` (active), `sunisa.kaewmanee@toktickit.test` (inactive) | `ChangeMe!23` |
+| Administrator | `aekkarat.wongsa@toktickit.test` | `ChangeMe!23` |
+
+Sign in at `http://localhost:5173/login`. An account that still holds the initial password is taken straight to Change Password and can reach nothing else until it has chosen a new one. The seed also creates 14 example Tickets (numbers `TKT-2026-900001` to `TKT-2026-900014`) spread over every status, priority and Requester, with some unassigned and two owned by the inactive IT Staff account, so the IT Staff Ticket Queue has something to show and its "Needs new owner" markers have real rows. Twelve of them carry example Public Comments and Internal Notes (15 and 9, containing nothing sensitive). Re-running the seed never changes a Ticket that already exists and never duplicates or overwrites a comment or note. IT Staff and Administrators land on the Ticket Queue; try the Owner filter's "Needs an owner" option, then open a Ticket to claim it, change its IT Priority and status, and read or download its attachments. As the Administrator, the Users screen lists, searches and filters accounts and creates, edits, deactivates and issues initial passwords for them; nobody is ever deleted, and you cannot deactivate yourself or the last active Administrator. On the Ticket Detail, Public Comments, Internal Notes and Attachments are tabs with counts: a Public Comment is visible to the Requester, an Internal Note never is (a Requester gets 403 on the notes endpoint even for their own Ticket), and both are append only. Resolving asks for a Resolution Summary, which the Requester can read; the Requester can answer "Problem appears resolved", which staff see as a banner and which never changes the status by itself.
+
+The Lab 2 Development Requester selector no longer exists: you are always the account you signed in as. Each role sees only its own navigation, and a screen its role may not use shows an "Access denied" state even by direct URL. Once an account has chosen its own password the seed never resets it, so to sign in with `ChangeMe!23` again use an account you have not touched yet.
 
 ### 3. Client
 
 ```bash
 cd client
-cp .env.example .env      # set VITE_API_URL to match the server PORT
+cp .env.example .env      # optional: only needed if your server is not on port 3000
 npm install
 npm run dev                # http://localhost:5173
 ```
 
-Open the client URL. It opens on the Development Requester Selection screen (`/select-requester`, a Lab 2 testing mechanism, not authentication); selecting a Requester and clicking Continue takes you to `/tickets`.
+The client calls a relative `/api`, and the Vite dev server proxies it to the API (`http://127.0.0.1:3000` by default; set `VITE_API_PROXY_TARGET` in `client/.env` if your server uses another port). That keeps the browser on a single origin, so the session cookie is first-party. **Leave `VITE_API_URL` unset**: an older `client/.env` that still sets it sends the browser straight to that URL cross-origin instead of through the proxy.
 
-From there the Lab 2 Requester workflow is complete: create a Ticket with attachments, find it in My Tickets (search, filter, sort, paginate), open its Ticket Detail, and add, download, or soft-remove attachments. A Requester only ever sees their own Tickets; another Requester's Ticket returns "Ticket not found" even by direct URL.
+Open the client URL. Without a session every route sends you to the Login screen. The four active seeded Requesters are listed under Development accounts below.
+
+After signing in as a Requester the Lab 2 workflow is complete: create a Ticket with attachments, find it in My Tickets (search, filter, sort, paginate), open its Ticket Detail, and add, download, or soft-remove attachments. A Requester only ever sees their own Tickets; another Requester's Ticket returns "Ticket not found" even by direct URL.
 
 ## Tests
 
 ```bash
-cd server && npm test      # Vitest/Supertest: unit validators + every Lab 2 API endpoint
+cd server && npm test      # Vitest/Supertest: unit validators + every Lab 2 and Lab 3 API endpoint, plus migration and seed tests
 cd client && npm test      # Vitest + Testing Library: every Lab 2 screen and its states
 ```
 

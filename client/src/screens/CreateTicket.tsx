@@ -12,7 +12,7 @@ import {
   uploadAttachments,
   FailedAttachment,
 } from "../api.js";
-import { useRequester } from "../requesterContext.js";
+import { useAuth } from "../authContext.js";
 import {
   ATTACHMENT_REJECT_MESSAGES,
   AttachmentRejectReason,
@@ -40,7 +40,7 @@ function validCount(rows: AttachmentRow[]): number {
 }
 
 export default function CreateTicket() {
-  const { requester } = useRequester();
+  const { user } = useAuth();
   const navigate = useNavigate();
 
   const [refState, setRefState] = useState<RefState>("loading");
@@ -158,7 +158,7 @@ export default function CreateTicket() {
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
-    if (!requester) return;
+    if (!user) return;
 
     const clientErrors = validateClientSide();
     if (Object.keys(clientErrors).length > 0) {
@@ -172,7 +172,6 @@ export default function CreateTicket() {
 
     try {
       const ticket = await createTicket({
-        requesterId: requester.id,
         categoryId: Number(categoryId),
         relatedSystemId: Number(relatedSystemId),
         summary: summary.trim(),
@@ -196,7 +195,7 @@ export default function CreateTicket() {
       const validFiles = attachments.filter((row) => !row.error).map((row) => row.file);
       if (validFiles.length > 0) {
         try {
-          const result = await uploadAttachments(ticket.id, requester.id, validFiles);
+          const result = await uploadAttachments(ticket.id, validFiles);
           setAttachmentWarnings([...clientRejected, ...result.failed]);
         } catch {
           setAttachmentWarnings([
@@ -297,7 +296,7 @@ export default function CreateTicket() {
         </div>
         <div className="col-md-4">
           <label className="form-label fw-semibold">Requester</label>
-          <input className="form-control" disabled value={requester?.name ?? ""} />
+          <input className="form-control" disabled value={user?.name ?? ""} />
         </div>
       </div>
 

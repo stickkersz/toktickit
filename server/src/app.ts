@@ -15,6 +15,17 @@ import { formatTicketNumber } from "./ticketNumber.js";
 import { validateAttachment, ATTACHMENT_REJECT_MESSAGES } from "./attachmentValidation.js";
 import { UPLOAD_DIR, ensureUploadDir, generateStoredFilename } from "./attachmentStorage.js";
 import { parseTicketListQuery } from "./ticketListQuery.js";
+import { isValidId } from "./ids.js";
+import { buildCorsOptions } from "./cors.js";
+import { escapeLike } from "./searchText.js";
+import { isEligibleOwner } from "./routes/staffTickets.js";
+import { permittedNext, TERMINAL_STATUSES } from "./ticketStatus.js";
+import { authRouter } from "./routes/auth.js";
+import { adminUsersRouter } from "./routes/adminUsers.js";
+import { ticketContentRouter } from "./routes/ticketContent.js";
+import { staffTicketsRouter } from "./routes/staffTickets.js";
+import { requireAuth } from "./middleware/requireAuth.js";
+import { requireRole } from "./middleware/requireRole.js";
 
 const upload = multer({
   storage: multer.diskStorage({
@@ -30,8 +41,12 @@ const upload = multer({
 // Supertest can import `app` without opening a port. Do not merge these files.
 export const app = express();
 
-app.use(cors());          // already wired: lets the Vite dev server call this API
+app.use(cors(buildCorsOptions())); // credentialed, allow-listed (BR-62): src/cors.ts
 app.use(express.json());
+app.use(authRouter); // Lab 3: /api/auth/*
+app.use(staffTicketsRouter); // Lab 3: /api/staff/tickets
+app.use(ticketContentRouter); // Lab 3: /api/tickets/:id/comments and /notes
+app.use(adminUsersRouter); // Lab 3: /api/admin/users
 
 // ---------------------------------------------------------------------------
 // Issue 2 — API health check
@@ -79,29 +94,25 @@ app.get("/api/related-systems", async (_req: Request, res: Response) => {
 });
 
 // ---------------------------------------------------------------------------
-// Lab 2 — Development Requester Selection
-// GET /api/requesters -> active Development Requesters (api-spec.md §3, BR-04).
+// Lab 3 identity rule (BR-11, BR-49, BR-55): every Ticket and Attachment
+// endpoint below takes the caller from the session cookie, never from a
+// `requesterId` in the body or query, which is ignored if a client still sends
+// one. GET /api/requesters no longer exists. IT Staff and Administrators may read
+// any Ticket and Attachment (BR-54); creating, listing one's own Tickets, uploading
+// and removing are Requester-only, so they get 403 from the role alone, before
+// anything is looked up (BR-55).
 // ---------------------------------------------------------------------------
-app.get("/api/requesters", async (_req: Request, res: Response) => {
-  try {
-    const requesters = await getPrisma().requesterUser.findMany({
-      where: { isActive: true },
-      select: { id: true, name: true, email: true },
-      orderBy: { id: "asc" },
-    });
-    res.status(200).json(requesters);
-  } catch {
-    res.status(500).json({ error: "INTERNAL_ERROR", message: "Unable to load requesters." });
-  }
-});
+const requesterOnly = [requireAuth, requireRole("REQUESTER")];
+
+// Reads are open to every role, each seeing what the matrix gives it (BR-54): a Requester their
+// own Tickets, IT Staff and Administrators any Ticket. Only the query differs.
+const anyRole = [requireAuth, requireRole("REQUESTER", "IT_STAFF", "ADMINISTRATOR")];
+const isStaffRole = (req: Request) => req.user!.role !== "REQUESTER";
 
 // ---------------------------------------------------------------------------
 // Lab 2 — Create Ticket
 // POST /api/tickets (api-spec.md §4, FR-02/FR-03, BR-01/BR-08/BR-09/BR-13..19).
 // ---------------------------------------------------------------------------
-function isValidId(value: number): boolean {
-  return Number.isInteger(value) && value > 0;
-}
 
 // Shared shape for endpoints 6, 8, 10 (api-spec.md): removedAt/removalReason
 // are only present once BR-30 actually applies (isRemoved: true).
@@ -127,7 +138,7 @@ function serializeAttachment(attachment: {
   return { ...base, removedAt: attachment.removedAt, removalReason: attachment.removalReason };
 }
 
-app.post("/api/tickets", async (req: Request, res: Response) => {
+app.post("/api/tickets", ...requesterOnly, async (req: Request, res: Response) => {
   try {
     const fields: Record<string, string> = {};
 
@@ -140,15 +151,10 @@ app.post("/api/tickets", async (req: Request, res: Response) => {
     const priorityResult = validateRequestedPriority(req.body?.requestedPriority);
     if (priorityResult.error) fields.requestedPriority = priorityResult.error;
 
-    const requesterId = Number(req.body?.requesterId);
+    // BR-11: the Ticket belongs to the authenticated Requester, whatever the body says.
+    const requesterId = req.user!.id;
     const categoryId = Number(req.body?.categoryId);
     const relatedSystemId = Number(req.body?.relatedSystemId);
-
-    if (!isValidId(requesterId)) {
-      fields.requesterId = "A valid requesterId is required.";
-    } else if (!(await getPrisma().requesterUser.findFirst({ where: { id: requesterId, isActive: true } }))) {
-      fields.requesterId = "requesterId must reference an active Requester.";
-    }
 
     if (!isValidId(categoryId)) {
       fields.categoryId = "A valid categoryId is required.";
@@ -190,6 +196,9 @@ app.post("/api/tickets", async (req: Request, res: Response) => {
           summary: summaryResult.value!,
           description: descriptionResult.value!,
           requestedPriority: priorityResult.value!,
+          // BR-22: IT Priority starts as a copy of the Requested Priority, and only
+          // IT Staff or an Administrator may change it afterwards.
+          itPriority: priorityResult.value!,
         },
       });
     });
@@ -217,10 +226,12 @@ app.post("/api/tickets", async (req: Request, res: Response) => {
 // ---------------------------------------------------------------------------
 app.post(
   "/api/tickets/:id/attachments",
+  // Before multer: an unauthorized upload must never write a byte to disk.
+  ...requesterOnly,
   upload.array("files"),
   async (req: Request, res: Response) => {
     const ticketId = Number(req.params.id);
-    const requesterId = Number(req.body?.requesterId);
+    const requesterId = req.user!.id;
     const files = (req.files as Express.Multer.File[] | undefined) ?? [];
 
     // Files already persisted as an Attachment row (or already rejected and
@@ -233,13 +244,6 @@ app.post(
           .filter((file) => !settledFilenames.has(file.filename))
           .map((file) => unlink(path.join(UPLOAD_DIR, file.filename)).catch(() => {})),
       );
-
-    if (!isValidId(requesterId)) {
-      await cleanupUnsettledFiles();
-      return res
-        .status(400)
-        .json({ error: "VALIDATION_ERROR", message: "A valid requesterId is required." });
-    }
 
     if (!isValidId(ticketId)) {
       await cleanupUnsettledFiles();
@@ -361,26 +365,19 @@ app.post(
 // Lab 2 — My Tickets
 // GET /api/tickets (api-spec.md §5, FR-04, BR-20..24a).
 // ---------------------------------------------------------------------------
-app.get("/api/tickets", async (req: Request, res: Response) => {
+app.get("/api/tickets", ...requesterOnly, async (req: Request, res: Response) => {
   try {
-    const requesterId = Number(req.query.requesterId);
-    if (
-      !isValidId(requesterId) ||
-      !(await getPrisma().requesterUser.findFirst({ where: { id: requesterId, isActive: true } }))
-    ) {
-      return res.status(400).json({
-        error: "VALIDATION_ERROR",
-        message: "requesterId is required and must reference an active Requester.",
-      });
-    }
+    const requesterId = req.user!.id;
 
     const query = parseTicketListQuery(req.query as Record<string, unknown>);
 
     const where: Record<string, unknown> = { requesterId };
     if (query.search) {
+      // Escaped so a typed "%" or "_" matches itself instead of acting as a wildcard.
+      const text = escapeLike(query.search);
       where.OR = [
-        { ticketNumber: { contains: query.search, mode: "insensitive" } },
-        { summary: { contains: query.search, mode: "insensitive" } },
+        { ticketNumber: { contains: text, mode: "insensitive" } },
+        { summary: { contains: text, mode: "insensitive" } },
       ];
     }
     if (query.categoryId !== null) where.categoryId = query.categoryId;
@@ -422,29 +419,25 @@ app.get("/api/tickets", async (req: Request, res: Response) => {
 // Lab 2 — Requester Ticket Detail
 // GET /api/tickets/:id (api-spec.md §6, FR-05).
 // ---------------------------------------------------------------------------
-app.get("/api/tickets/:id", async (req: Request, res: Response) => {
+app.get("/api/tickets/:id", ...anyRole, async (req: Request, res: Response) => {
   try {
     const ticketId = Number(req.params.id);
-    const requesterId = Number(req.query.requesterId);
-
-    if (!isValidId(requesterId)) {
-      return res
-        .status(400)
-        .json({ error: "VALIDATION_ERROR", message: "A valid requesterId is required." });
-    }
+    const staff = isStaffRole(req);
 
     if (!isValidId(ticketId)) {
       return res.status(404).json({ error: "NOT_FOUND", message: "Ticket not found." });
     }
 
     const ticket = await getPrisma().ticket.findFirst({
-      // BR-38: a Requester deactivated after creating a Ticket loses access to
-      // it too, same 404 as any other ownership failure.
-      where: { id: ticketId, requesterId, requester: { isActive: true } },
+      // A Requester is held to their own Ticket, and BR-38: one deactivated after creating it
+      // loses access to it too, same 404 as any other ownership failure. IT Staff and
+      // Administrators can open any Ticket, including one whose Requester is inactive (BR-60).
+      where: staff ? { id: ticketId } : { id: ticketId, requesterId: req.user!.id, requester: { isActive: true } },
       include: {
-        requester: { select: { name: true } },
+        requester: { select: { name: true, isActive: true } },
         category: { select: { name: true } },
         relatedSystem: { select: { name: true } },
+        owner: { select: { name: true, isActive: true, role: true } },
         attachments: { orderBy: { uploadedAt: "desc" } },
       },
     });
@@ -453,7 +446,7 @@ app.get("/api/tickets/:id", async (req: Request, res: Response) => {
       return res.status(404).json({ error: "NOT_FOUND", message: "Ticket not found." });
     }
 
-    res.status(200).json({
+    const base = {
       id: ticket.id,
       ticketNumber: ticket.ticketNumber,
       requesterId: ticket.requesterId,
@@ -466,12 +459,68 @@ app.get("/api/tickets/:id", async (req: Request, res: Response) => {
       description: ticket.description,
       requestedPriority: ticket.requestedPriority,
       currentStatus: ticket.currentStatus,
+      // BR-27: the Resolution Summary is visible to the Requester. The Requester's own
+      // "problem appears resolved" signal is visible to both sides (BR-29).
+      resolutionSummary: ticket.resolutionSummary,
+      requesterResolutionFlaggedAt: ticket.requesterResolutionFlaggedAt,
       createdAt: ticket.createdAt,
       updatedAt: ticket.updatedAt,
       attachments: ticket.attachments.map(serializeAttachment),
+    };
+
+    if (!staff) return res.status(200).json(base);
+
+    // Staff also get IT Priority, ownership, and the statuses the Ticket may move to, taken from
+    // the one workflow table so the client carries no copy of it (BR-25, BR-57, BR-59).
+    res.status(200).json({
+      ...base,
+      itPriority: ticket.itPriority,
+      ownerId: ticket.ownerId,
+      ownerName: ticket.owner?.name ?? null,
+      ownerIsActive: ticket.owner ? ticket.owner.isActive : null,
+      ownerEligible: isEligibleOwner(ticket.owner),
+      requesterIsActive: ticket.requester.isActive,
+      permittedNextStatuses: permittedNext(ticket.currentStatus),
     });
   } catch {
     res.status(500).json({ error: "INTERNAL_ERROR", message: "Unable to load the Ticket." });
+  }
+});
+
+// POST /api/tickets/:id/resolution-indication (api-spec.md endpoint 6, FR-09, BR-29). The
+// Requester says the problem appears resolved. It records a timestamp and never touches the
+// status: only IT Staff resolve or close a Ticket.
+app.post("/api/tickets/:id/resolution-indication", ...requesterOnly, async (req: Request, res: Response) => {
+  try {
+    const ticketId = Number(req.params.id);
+    if (!isValidId(ticketId)) {
+      return res.status(400).json({ error: "VALIDATION_ERROR", message: "A valid Ticket id is required." });
+    }
+    const prisma = getPrisma();
+    const owned = { id: ticketId, requesterId: req.user!.id, requester: { isActive: true } };
+    if (!(await prisma.ticket.findFirst({ where: owned, select: { id: true } }))) {
+      return res.status(404).json({ error: "NOT_FOUND", message: "Ticket not found." });
+    }
+
+    // Conditional on the Ticket not being terminal, so it cannot slip in after a close.
+    const flagged = await prisma.ticket.updateMany({
+      where: { ...owned, currentStatus: { notIn: [...TERMINAL_STATUSES] } },
+      data: { requesterResolutionFlaggedAt: new Date() },
+    });
+    if (flagged.count === 0) {
+      return res.status(409).json({ error: "TICKET_TERMINAL", message: "This Ticket is closed, so it can no longer be flagged." });
+    }
+    const ticket = await prisma.ticket.findUniqueOrThrow({
+      where: { id: ticketId },
+      select: { id: true, requesterResolutionFlaggedAt: true, currentStatus: true },
+    });
+    res.status(200).json({
+      id: ticket.id,
+      requesterResolutionFlaggedAt: ticket.requesterResolutionFlaggedAt,
+      currentStatus: ticket.currentStatus,
+    });
+  } catch {
+    res.status(500).json({ error: "INTERNAL_ERROR", message: "Unable to record that the problem appears resolved." });
   }
 });
 
@@ -480,16 +529,10 @@ app.get("/api/tickets/:id", async (req: Request, res: Response) => {
 // GET /api/attachments/:id, GET /api/attachments/:id/download,
 // DELETE /api/attachments/:id (api-spec.md §8-10, FR-07/FR-08, BR-29/BR-30).
 // ---------------------------------------------------------------------------
-app.get("/api/attachments/:id", async (req: Request, res: Response) => {
+app.get("/api/attachments/:id", ...anyRole, async (req: Request, res: Response) => {
   try {
     const attachmentId = Number(req.params.id);
-    const requesterId = Number(req.query.requesterId);
-
-    if (!isValidId(requesterId)) {
-      return res
-        .status(400)
-        .json({ error: "VALIDATION_ERROR", message: "A valid requesterId is required." });
-    }
+    const requesterId = req.user!.id;
 
     if (!isValidId(attachmentId)) {
       return res.status(404).json({ error: "NOT_FOUND", message: "Attachment not found." });
@@ -497,7 +540,9 @@ app.get("/api/attachments/:id", async (req: Request, res: Response) => {
 
     const attachment = await getPrisma().attachment.findFirst({
       // BR-38: same deactivated-Requester-loses-access rule as Ticket Detail.
-      where: { id: attachmentId, ticket: { requesterId, requester: { isActive: true } } },
+      where: isStaffRole(req)
+        ? { id: attachmentId }
+        : { id: attachmentId, ticket: { requesterId, requester: { isActive: true } } },
     });
 
     if (!attachment) {
@@ -510,16 +555,10 @@ app.get("/api/attachments/:id", async (req: Request, res: Response) => {
   }
 });
 
-app.get("/api/attachments/:id/download", async (req: Request, res: Response) => {
+app.get("/api/attachments/:id/download", ...anyRole, async (req: Request, res: Response) => {
   try {
     const attachmentId = Number(req.params.id);
-    const requesterId = Number(req.query.requesterId);
-
-    if (!isValidId(requesterId)) {
-      return res
-        .status(400)
-        .json({ error: "VALIDATION_ERROR", message: "A valid requesterId is required." });
-    }
+    const requesterId = req.user!.id;
 
     if (!isValidId(attachmentId)) {
       return res.status(404).json({ error: "NOT_FOUND", message: "Attachment not found." });
@@ -527,7 +566,9 @@ app.get("/api/attachments/:id/download", async (req: Request, res: Response) => 
 
     const attachment = await getPrisma().attachment.findFirst({
       // BR-38: same deactivated-Requester-loses-access rule as Ticket Detail.
-      where: { id: attachmentId, ticket: { requesterId, requester: { isActive: true } } },
+      where: isStaffRole(req)
+        ? { id: attachmentId }
+        : { id: attachmentId, ticket: { requesterId, requester: { isActive: true } } },
     });
 
     if (!attachment) {
@@ -555,18 +596,10 @@ app.get("/api/attachments/:id/download", async (req: Request, res: Response) => 
   }
 });
 
-app.delete("/api/attachments/:id", async (req: Request, res: Response) => {
+app.delete("/api/attachments/:id", ...requesterOnly, async (req: Request, res: Response) => {
   try {
     const attachmentId = Number(req.params.id);
-    const requesterId = Number(req.body?.requesterId);
-
-    if (!isValidId(requesterId)) {
-      return res.status(400).json({
-        error: "VALIDATION_ERROR",
-        message: "A valid requesterId is required.",
-        fields: { requesterId: "A valid requesterId is required." },
-      });
-    }
+    const requesterId = req.user!.id;
 
     const reasonResult = validateRemovalReason(req.body?.reason);
     if (reasonResult.error) {

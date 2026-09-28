@@ -4,11 +4,10 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import App from "../../src/App.js";
 import * as api from "../../src/api.js";
-import type { Requester, TicketListItem, TicketListParams, TicketListResult } from "../../src/api.js";
+import type { AuthUser, TicketListItem, TicketListParams, TicketListResult } from "../../src/api.js";
 
-const STORAGE_KEY = "toktickit.currentRequesterId";
-const ARI: Requester = { id: 1, name: "Ari Anan", email: "ari.anan@example.com" };
-const BEN: Requester = { id: 2, name: "Ben Boon", email: "ben.boon@example.com" };
+const ARI: AuthUser = { id: 1, name: "Ari Anan", email: "ari.anan@example.com", role: "REQUESTER", mustChangePassword: false };
+const BEN: AuthUser = { id: 2, name: "Ben Boon", email: "ben.boon@example.com", role: "REQUESTER", mustChangePassword: false };
 
 function ticket(overrides: Partial<TicketListItem> = {}): TicketListItem {
   return {
@@ -40,8 +39,8 @@ function listResult(
   };
 }
 
-function renderAtTickets(requester: Requester = ARI) {
-  localStorage.setItem(STORAGE_KEY, String(requester.id));
+function renderAtTickets(requester: AuthUser = ARI) {
+  vi.spyOn(api, "getCurrentUser").mockResolvedValue(requester);
   return render(
     <MemoryRouter initialEntries={["/tickets"]}>
       <App />
@@ -50,14 +49,13 @@ function renderAtTickets(requester: Requester = ARI) {
 }
 
 afterEach(() => {
-  localStorage.clear();
   vi.restoreAllMocks();
 });
 
 describe("My Tickets", () => {
   // UI-07
   it("shows the create-your-first-ticket empty state with filters hidden (AC-21)", async () => {
-    vi.spyOn(api, "getRequesters").mockResolvedValue([ARI]);
+    vi.spyOn(api, "getCurrentUser").mockResolvedValue(ARI);
     vi.spyOn(api, "getCategories").mockResolvedValue([]);
     vi.spyOn(api, "getTickets").mockResolvedValue(listResult([]));
 
@@ -70,7 +68,7 @@ describe("My Tickets", () => {
 
   // UI-08
   it("shows the no-results state with filters still visible once a search narrows to zero (AC-12)", async () => {
-    vi.spyOn(api, "getRequesters").mockResolvedValue([ARI]);
+    vi.spyOn(api, "getCurrentUser").mockResolvedValue(ARI);
     vi.spyOn(api, "getCategories").mockResolvedValue([]);
     const getTicketsSpy = vi
       .spyOn(api, "getTickets")
@@ -93,7 +91,7 @@ describe("My Tickets", () => {
 
   // UI-17
   it("renders pagination controls and requests the next page on click (AC-13)", async () => {
-    vi.spyOn(api, "getRequesters").mockResolvedValue([ARI]);
+    vi.spyOn(api, "getCurrentUser").mockResolvedValue(ARI);
     vi.spyOn(api, "getCategories").mockResolvedValue([]);
     const page1 = listResult(
       Array.from({ length: 10 }, (_, i) => ticket({ id: i + 1, summary: `Ticket ${i + 1}` })),
@@ -120,7 +118,7 @@ describe("My Tickets", () => {
   });
 
   it("ignores a slower, superseded request's result (out-of-order search responses)", async () => {
-    vi.spyOn(api, "getRequesters").mockResolvedValue([ARI]);
+    vi.spyOn(api, "getCurrentUser").mockResolvedValue(ARI);
     vi.spyOn(api, "getCategories").mockResolvedValue([]);
 
     let resolveSlow: (value: TicketListResult) => void = () => {};
@@ -156,7 +154,7 @@ describe("My Tickets", () => {
   });
 
   it("shows a failure state with Retry and clears stale rows when a later request fails (AC-13-adjacent)", async () => {
-    vi.spyOn(api, "getRequesters").mockResolvedValue([ARI]);
+    vi.spyOn(api, "getCurrentUser").mockResolvedValue(ARI);
     vi.spyOn(api, "getCategories").mockResolvedValue([]);
     const getTicketsSpy = vi
       .spyOn(api, "getTickets")
@@ -181,7 +179,7 @@ describe("My Tickets", () => {
   });
 
   it("provides a reduced tablet table and a separate mobile card list for the same data (ui-spec.md §7)", async () => {
-    vi.spyOn(api, "getRequesters").mockResolvedValue([ARI]);
+    vi.spyOn(api, "getCurrentUser").mockResolvedValue(ARI);
     vi.spyOn(api, "getCategories").mockResolvedValue([]);
     vi.spyOn(api, "getTickets").mockResolvedValue(
       listResult([ticket({ summary: "Responsive ticket" })]),
@@ -207,7 +205,7 @@ describe("My Tickets", () => {
   });
 
   it("makes sortable headers and ticket rows keyboard-operable", async () => {
-    vi.spyOn(api, "getRequesters").mockResolvedValue([ARI]);
+    vi.spyOn(api, "getCurrentUser").mockResolvedValue(ARI);
     vi.spyOn(api, "getCategories").mockResolvedValue([]);
     const getTicketsSpy = vi
       .spyOn(api, "getTickets")
@@ -230,36 +228,38 @@ describe("My Tickets", () => {
     }
   });
 
-  // UI-09
-  it("clears previously rendered rows before the newly selected Requester's data loads (AC-18)", async () => {
-    vi.spyOn(api, "getRequesters").mockResolvedValue([ARI, BEN]);
+  // UI-09. Lab 2 changed the Development Requester on a selector screen. Under Lab 3
+  // the same guarantee applies across a sign out and a sign in as someone else:
+  // the first person's rows never linger while the second person's data loads (AC-18).
+  it("clears previously rendered rows before the next signed-in user's data loads (AC-18)", async () => {
     vi.spyOn(api, "getCategories").mockResolvedValue([]);
+    vi.spyOn(api, "logout").mockResolvedValue();
+    vi.spyOn(api, "login").mockResolvedValue(BEN);
 
     let resolveBenFetch: (value: TicketListResult) => void = () => {};
-    vi.spyOn(api, "getTickets").mockImplementation((params: TicketListParams) => {
-      if (params.requesterId === ARI.id) {
-        return Promise.resolve(listResult([ticket({ summary: "Ari's ticket" })]));
-      }
-      return new Promise((resolve) => {
-        resolveBenFetch = resolve;
-      });
-    });
+    vi.spyOn(api, "getTickets")
+      .mockResolvedValueOnce(listResult([ticket({ summary: "Ari's ticket" })]))
+      .mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            resolveBenFetch = resolve;
+          }),
+      );
 
     renderAtTickets(ARI);
     expect((await screen.findAllByText("Ari's ticket"))[0]).toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole("button", { name: /change requester/i }));
-    await screen.findByText(/select development requester/i);
+    await userEvent.click(screen.getByRole("button", { name: "Logout" }));
+    await screen.findByRole("heading", { name: "Sign in to your account" });
     expect(screen.queryByText("Ari's ticket")).not.toBeInTheDocument();
 
-    await userEvent.selectOptions(
-      await screen.findByLabelText(/development requester \*/i),
-      String(BEN.id),
-    );
-    await userEvent.click(screen.getByRole("button", { name: /continue/i }));
+    await userEvent.type(screen.getByLabelText("Email address *"), BEN.email);
+    await userEvent.type(screen.getByLabelText("Password *"), "Str0ng!Pass");
+    await userEvent.click(screen.getByRole("button", { name: "Sign In" }));
 
-    // Landed back on My Tickets for Ben; his fetch hasn't resolved yet, so
-    // Ari's rows must not still be showing (no stale flash, BR-06/AC-18).
+    // Landed on My Tickets for Ben; his fetch has not resolved yet, so Ari's rows
+    // must not still be showing (no stale flash).
+    await screen.findByRole("heading", { name: "My Tickets" });
     expect(screen.queryByText("Ari's ticket")).not.toBeInTheDocument();
 
     resolveBenFetch(listResult([ticket({ summary: "Ben's ticket" })]));

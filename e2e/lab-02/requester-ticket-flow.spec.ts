@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
-import { API_URL, changeRequester, createTicket, seedTickets, selectRequester } from "./helpers.js";
+import { apiSignedIn, createTicket, REQUESTERS, seedTickets, signInAsRequester, switchRequester } from "./helpers.js";
 
 // E2E-01 / E2E-02 from docs/lab-02/tests.md. Runs against a live client, API,
 // and seeded database (see playwright.config.ts).
@@ -9,7 +9,7 @@ test.describe("Requester ticket flow", () => {
   test("creates a Ticket with an attachment, opens its Detail, and removes the attachment", async ({
     page,
   }) => {
-    await selectRequester(page, 0);
+    await signInAsRequester(page, 0);
 
     const summary = `E2E create and remove ${randomUUID().slice(0, 8)}`;
     const { ticketNumber } = await createTicket(page, summary, {
@@ -69,11 +69,8 @@ test.describe("Requester ticket flow", () => {
   });
 
   // E2E-02 (AC-03, AC-11, AC-18)
-  test("hides another Requester's Ticket from both the list and direct URL access", async ({
-    page,
-    request,
-  }) => {
-    await selectRequester(page, 0);
+  test("hides another Requester's Ticket from both the list and direct URL access", async ({ page }) => {
+    await signInAsRequester(page, 0);
 
     const summary = `E2E ownership ${randomUUID().slice(0, 8)}`;
     const { ticketNumber } = await createTicket(page, summary);
@@ -88,8 +85,8 @@ test.describe("Requester ticket flow", () => {
     // (BR-24a's empty state). Against a freshly seeded, otherwise-empty
     // database this test would time out waiting for a search box that never
     // renders, since nothing else has given Requester B a Ticket yet.
-    const requesters = await (await request.get(`${API_URL}/api/requesters`)).json();
-    await seedTickets(request, requesters[1].id, [
+    const requesterB = await apiSignedIn(REQUESTERS[1].email);
+    await seedTickets(requesterB, [
       {
         summary: `E2E baseline for Requester B ${randomUUID().slice(0, 8)}`,
         categoryId: 1,
@@ -97,9 +94,10 @@ test.describe("Requester ticket flow", () => {
         requestedPriority: "LOW",
       },
     ]);
+    await requesterB.dispose();
 
-    // AC-18: switching Requester clears the previous Requester's data.
-    await changeRequester(page, 1);
+    // AC-18: signing out and in as someone else clears the previous Requester's data.
+    await switchRequester(page, 1);
 
     // AC-11: Requester B's list must not contain Requester A's ticket.
     await page.getByPlaceholder(/search by ticket number/i).fill(ticketNumber);

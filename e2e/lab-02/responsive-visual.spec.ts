@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
-import { createTicket, hasNoHorizontalScroll, selectRequester, VIEWPORTS } from "./helpers.js";
+import { createTicket, hasNoHorizontalScroll, signInAsRequester, VIEWPORTS } from "./helpers.js";
 
 // RESP-01 (AC-19) from docs/lab-02/tests.md: capture every screen at the three
 // documented viewports, save them to the exact ui-spec.md §13 paths, and assert
@@ -13,7 +13,7 @@ function shot(screen: string, name: string): string {
 
 test.describe("Responsive and visual evidence", () => {
   test("Create Ticket states and viewports", async ({ page }) => {
-    await selectRequester(page, 0);
+    await signInAsRequester(page, 0);
 
     // Requester Selection failure state is captured before entering the app,
     // since the shell is only reachable with a Requester selected.
@@ -123,7 +123,7 @@ test.describe("Responsive and visual evidence", () => {
   });
 
   test("My Tickets states and viewports", async ({ page }) => {
-    await selectRequester(page, 0);
+    await signInAsRequester(page, 0);
     await createTicket(page, `Responsive list evidence ${randomUUID().slice(0, 8)}`);
 
     await page.setViewportSize(VIEWPORTS.desktop);
@@ -179,7 +179,7 @@ test.describe("Responsive and visual evidence", () => {
   });
 
   test("Ticket Detail states and viewports", async ({ page }) => {
-    await selectRequester(page, 0);
+    await signInAsRequester(page, 0);
     await createTicket(page, `Responsive detail evidence ${randomUUID().slice(0, 8)}`, {
       attachment: {
         name: "detail-evidence.png",
