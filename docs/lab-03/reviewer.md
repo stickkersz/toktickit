@@ -5,9 +5,9 @@
 
 ## How review worked in Lab 3
 
-Lab 3 used the same Issue, feature branch and Pull Request flow as Lab 2, with every feature branch merged into `lab3-staging` and one release Pull Request from `lab3-staging` into `main`. One thing changed: in Labs 1 and 2 reviews were plain comments, and from Lab 3 on every review is a formal GitHub verdict, **Request changes** when something has to be fixed and **Approve** when nothing does. A Pull Request was merged only after an Approve on its latest commit.
+Lab 3 used the same Issue, feature branch and Pull Request flow as Lab 2, with every feature branch merged into `lab3-staging` and one release Pull Request from `lab3-staging` into `main`. One thing changed: in Labs 1 and 2 reviews were plain comments, and from Lab 3 on every review is a formal GitHub verdict, **Request changes** when something has to be fixed and **Approve** when nothing does. Every Pull Request was merged after an Approve. In all but one the Approve was on the commit that was merged. The exception is my partner's #57: I approved its fix at `5f32385`, they then pushed `0ec55fb`, which only updated their own `reviewer.md`, and I checked that commit and said so in a Pull Request comment before merging rather than submitting a second review.
 
-Each round below is a real GitHub review on the actual diff. The author answered with a fix commit and a short comment saying what changed, and the reviewer rechecked that exact commit before approving. Every quote is taken from the review as posted.
+Each round below is a real GitHub review on the actual diff. When changes were requested, the author answered with a fix commit and a short comment saying what changed, and the reviewer rechecked that exact commit before approving. Pull Requests approved on the first review, such as my #49, #50, #53 and #56 and my partner's #55 and #56, needed no fix commit. Every quote is taken from the review as posted.
 
 ## Pull Requests I authored (reviewed by @songt888 on `stickkersz/toktickit`)
 
