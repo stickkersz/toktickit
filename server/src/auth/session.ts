@@ -99,10 +99,3 @@ export async function resolveSession(
 export async function revokeSessionByToken(token: string): Promise<void> {
   await getPrisma().session.deleteMany({ where: { tokenHash: hashToken(token) } });
 }
-
-// BR-10, BR-41, BR-45: revoke a user's sessions, optionally sparing the acting one.
-export async function revokeUserSessions(userId: number, exceptSessionId?: number): Promise<void> {
-  await getPrisma().session.deleteMany({
-    where: { userId, ...(exceptSessionId ? { id: { not: exceptSessionId } } : {}) },
-  });
-}

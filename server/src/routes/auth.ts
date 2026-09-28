@@ -13,7 +13,6 @@ import {
   createSession,
   readCookie,
   revokeSessionByToken,
-  revokeUserSessions,
   setSessionCookie,
 } from "../auth/session.js";
 import { requireAuthAllowingPasswordChange } from "../middleware/requireAuth.js";
@@ -98,12 +97,15 @@ authRouter.post(
         return sendError(res, 401, "INVALID_CREDENTIALS", "Current password is incorrect.");
       }
 
-      const updated = await prisma.user.update({
-        where: { id: stored.id },
-        data: { passwordHash: await hashPassword(input.newPassword), mustChangePassword: false },
+      // Hashing is slow on purpose, so it happens before the transaction and never holds it open.
+      const passwordHash = await hashPassword(input.newPassword);
+      // BR-10: the new password and the revocation of every other session land together or not at
+      // all, so a failure can never leave the new password in force beside the old sessions.
+      const updated = await prisma.$transaction(async (tx) => {
+        const user = await tx.user.update({ where: { id: stored.id }, data: { passwordHash, mustChangePassword: false } });
+        await tx.session.deleteMany({ where: { userId: user.id, id: { not: req.sessionId! } } });
+        return user;
       });
-      // BR-10: every other session for this user is revoked; the acting one survives.
-      await revokeUserSessions(updated.id, req.sessionId);
       res.status(200).json(publicUser(updated));
     } catch {
       INTERNAL(res, "Unable to change the password.");

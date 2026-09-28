@@ -199,6 +199,54 @@ describe("POST /api/auth/change-password", () => {
     expect((await request(app).post("/api/auth/login").send({ email, password })).status).toBe(401);
     expect((await request(app).post("/api/auth/login").send({ email, password: "Fresh!Pass456" })).status).toBe(200);
   });
+
+  // API-06 / AC-08, BR-10: the password and the revocation are one unit of work.
+  it("rolls the new password back when revoking the other sessions fails, so nothing is half applied", async () => {
+    const { vi } = await import("vitest");
+    const { user, email, password } = await createUser({ mustChangePassword: true });
+    const acting = await loginAs(email, password);
+    const other = await loginAs(email, password);
+    const before = await getPrisma().user.findUniqueOrThrow({ where: { id: user.id } });
+
+    // The update runs for real inside the transaction; only the session delete that follows it
+    // fails, which is exactly the gap a non-atomic write would leave open.
+    const client = getPrisma();
+    const realTransaction = client.$transaction.bind(client) as (work: (tx: object) => Promise<unknown>) => Promise<unknown>;
+    vi.spyOn(client, "$transaction").mockImplementationOnce(((work: (tx: object) => Promise<unknown>) =>
+      realTransaction((tx) =>
+        work(
+          new Proxy(tx, {
+            get: (target, key) =>
+              key === "session"
+                ? { deleteMany: () => Promise.reject(new Error("session revocation failed: secret detail")) }
+                : Reflect.get(target, key),
+          }),
+        ),
+      )) as never);
+
+    const res = await request(app)
+      .post("/api/auth/change-password")
+      .set("Cookie", acting)
+      .send({ currentPassword: password, newPassword: "Fresh!Pass456", confirmPassword: "Fresh!Pass456" });
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: "INTERNAL_ERROR", message: "Unable to change the password." });
+
+    // Nothing was applied: same hash, still flagged, and both sessions still alive.
+    const after = await getPrisma().user.findUniqueOrThrow({ where: { id: user.id } });
+    expect(after.passwordHash).toBe(before.passwordHash);
+    expect(after.mustChangePassword).toBe(true);
+    expect(await getPrisma().session.count({ where: { userId: user.id } })).toBe(2);
+    expect((await request(app).get("/api/auth/me").set("Cookie", other)).status).toBe(200);
+
+    // A retry then applies both halves together.
+    const retry = await request(app)
+      .post("/api/auth/change-password")
+      .set("Cookie", acting)
+      .send({ currentPassword: password, newPassword: "Fresh!Pass456", confirmPassword: "Fresh!Pass456" });
+    expect(retry.status).toBe(200);
+    expect((await request(app).get("/api/auth/me").set("Cookie", other)).status).toBe(401);
+    expect((await request(app).post("/api/auth/login").send({ email, password: "Fresh!Pass456" })).status).toBe(200);
+  });
 });
 
 describe("session lifecycle", () => {
