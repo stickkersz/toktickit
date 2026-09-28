@@ -1,6 +1,6 @@
 # TokTickIT
 
-IT service desk application. Lab 1 proved React/Vite/Bootstrap → Express → Prisma → PostgreSQL work together; Lab 2 builds the Requester-facing ticketing MVP on top of that (see `docs/lab-02/specification.md`).
+IT service desk application. Lab 1 proved React/Vite/Bootstrap → Express → Prisma → PostgreSQL work together; Lab 2 built the Requester-facing ticketing MVP on top of that (see `docs/lab-02/specification.md`); Lab 3 adds real sign-in with server-side sessions, role-based authorization for Requesters, IT Staff and Administrators, the IT Staff Ticket Queue and Ticket Detail with Public Comments and Internal Notes, and Administrator User Management (see `docs/lab-03/specification.md`).
 
 ## Stack
 
@@ -68,7 +68,7 @@ npm run dev                # http://localhost:5173
 
 The client calls a relative `/api`, and the Vite dev server proxies it to the API (`http://127.0.0.1:3000` by default; set `VITE_API_PROXY_TARGET` in `client/.env` if your server uses another port). That keeps the browser on a single origin, so the session cookie is first-party. **Leave `VITE_API_URL` unset**: an older `client/.env` that still sets it sends the browser straight to that URL cross-origin instead of through the proxy.
 
-Open the client URL. Without a session every route sends you to the Login screen. The four active seeded Requesters are listed under Development accounts below.
+Open the client URL. Without a session every route sends you to the Login screen. Every seeded account is listed under Development accounts above.
 
 After signing in as a Requester the Lab 2 workflow is complete: create a Ticket with attachments, find it in My Tickets (search, filter, sort, paginate), open its Ticket Detail, and add, download, or soft-remove attachments. A Requester only ever sees their own Tickets; another Requester's Ticket returns "Ticket not found" even by direct URL.
 
@@ -76,7 +76,7 @@ After signing in as a Requester the Lab 2 workflow is complete: create a Ticket 
 
 ```bash
 cd server && npm test      # Vitest/Supertest: unit validators + every Lab 2 and Lab 3 API endpoint, plus migration and seed tests
-cd client && npm test      # Vitest + Testing Library: every Lab 2 screen and its states
+cd client && npm test      # Vitest + Testing Library: every Lab 2 and Lab 3 screen and its states
 ```
 
 ### End-to-end, responsive, and visual
@@ -87,19 +87,25 @@ servers itself, so only the database has to be up, migrated, and seeded first.
 ```bash
 npm install                       # once, at the repo root
 npx playwright install chromium   # once, downloads the browser
-npx playwright test               # E2E flows + responsive checks at 375/768/1280
+npx playwright test               # Lab 2 and Lab 3 E2E flows + responsive checks at 375/768/1280
 ```
 
-This also regenerates the screenshots under `artifacts/lab-02/screenshots/`.
+This also regenerates the screenshots under `artifacts/lab-02/screenshots/` and `artifacts/lab-03/screenshots/`.
 
-See `docs/lab-02/tests.md` for the full Lab 2 test plan, the acceptance-criterion
-traceability matrix, and the final results (`docs/lab-01/tests.md` for Lab 1).
+See `docs/lab-03/tests.md` for the full Lab 3 test plan, the acceptance-criterion
+traceability matrix, and the final results from `main` (`docs/lab-02/tests.md` for Lab 2,
+`docs/lab-01/tests.md` for Lab 1).
 
 ## Project docs
 
-- `docs/lab-02/specification.md`, `api-spec.md`, `ui-spec.md`, `tests.md` — Lab 2 engineering contract
-- `docs/lab-02/reviewer.md` — Lab 2 peer review record, both directions
-- `docs/lab-02/ai-use.md` — Lab 2 AI tool usage and reflection
-- `docs/lab-01/tests.md` — Lab 1 test plan and passing evidence
-- `docs/lab-01/ai_use.md` — AI tool usage and reflection
-- `docs/lab-01/reviewer.md` — peer review record
+- `docs/lab-03/specification.md`, `api-spec.md`, `ui-spec.md`, `tests.md`: Lab 3 engineering contract, test plan and final results
+- `docs/lab-03/reviewer.md`: Lab 3 peer review record, both directions
+- `docs/lab-03/ai-use.md`: Lab 3 AI tool usage and reflection
+- `docs/adr/`: architecture decisions (session cookie authentication, renaming `RequesterUser` to `User` in place)
+- `CONTEXT.md`: glossary of the domain terms used across the docs and code
+- `docs/lab-02/specification.md`, `api-spec.md`, `ui-spec.md`, `tests.md`: Lab 2 engineering contract
+- `docs/lab-02/reviewer.md`: Lab 2 peer review record, both directions
+- `docs/lab-02/ai-use.md`: Lab 2 AI tool usage and reflection
+- `docs/lab-01/tests.md`: Lab 1 test plan and passing evidence
+- `docs/lab-01/ai_use.md`: Lab 1 AI tool usage and reflection
+- `docs/lab-01/reviewer.md`: Lab 1 peer review record
