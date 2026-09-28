@@ -30,7 +30,7 @@ The database must be running, migrated, and seeded first. Playwright's `testDir`
 | API-03 | API | AC-05 | Login to an inactive account with correct credentials | 401 `ACCOUNT_INACTIVE`, no session created | `server/tests/lab-03/auth.api.test.ts` | Pass |
 | API-04 | API | AC-02, BR-02 | A `mustChangePassword` user calling a protected endpoint | 403 `PASSWORD_CHANGE_REQUIRED`; `/auth/me`, change-password, and logout still work | `server/tests/lab-03/auth.api.test.ts` | Pass |
 | API-05 | API | AC-07 | Change password with each BR-10 rule unmet, and with a mismatched confirmation | 400 with the specific field message, old password still valid | `server/tests/lab-03/auth.api.test.ts` | Pass |
-| API-06 | API | AC-08 | Successful password change | 200, `mustChangePassword` false, other sessions revoked, acting session survives | `server/tests/lab-03/auth.api.test.ts` | Pass |
+| API-06 | API | AC-08 | Successful password change, and a failure while revoking the other sessions | 200, `mustChangePassword` false, other sessions revoked, acting session survives; on a failure, 500 and nothing applied (old password, flag and sessions all unchanged) | `server/tests/lab-03/auth.api.test.ts` | Pass |
 | API-07 | API | AC-09 | Logout, then reuse the same cookie | 200 on logout, 401 on the next request | `server/tests/lab-03/auth.api.test.ts` | Pass |
 | API-08 | API | AC-10, BR-08 | Deactivate a user holding a live session, then use it; and use a session past its 8 hour expiry | 401 without an explicit logout in both cases, and the expired row is removed | `server/tests/lab-03/auth.api.test.ts` | Pass |
 | API-09 | API | AC-13 | Every protected endpoint with no cookie | 401 on each, no data in any body | `server/tests/lab-03/authorization.api.test.ts` | Pass |
@@ -411,6 +411,20 @@ The last eleven rows are Pass: API-09, API-10, API-12, E2E-01 to E2E-06, RESP-01
 **Also in this Issue.** README no longer says User Management and Public Comments and Internal Notes arrive in later Issues (from the Issue 08 review), the same stale note is gone from the comment in `client/src/roles.ts`, and the api-spec "Cross-origin access" section no longer says the Vite proxy does not exist yet.
 
 **Review round 1** (Request changes on PR #54). `createTicketAsRequester` sent `categoryId: 1` and `relatedSystemId: 1`, ids that a reused database does not guarantee. It now looks up "Account and Access" and "Staff VPN" by name in `GET /api/categories` and `GET /api/related-systems`, and a name that is missing or inactive stops the spec with the list of active names. No other Lab 3 spec used a literal id. Checked three ways: the full Playwright suite passed 19 of 19; the four Tickets the specs created were read back from the database and all sit under Account and Access and Staff VPN; and pointing the lookup at the inactive "Legacy Alumni Portal" failed E2E-03 with that message. Reading the regenerated screenshots found one more thing: `resolved-desktop.png` had been taken while the save was still in flight ("Saving…", select greyed), because the status select shows Resolved during the save. The capture now waits for the saved Resolution Summary field and for "Saving…" to be gone.
+
+### Release Pull Request review round 1
+
+Request changes on the release Pull Request #57: `POST /api/auth/change-password` saved the new password and then revoked the other sessions as two separate writes. If the revocation failed, the endpoint answered 500 while the new password stayed in force and the old sessions stayed valid, which breaks BR-10 and AC-08.
+
+The password is now hashed first, outside any transaction, and the password update and the revocation run in one Prisma transaction, the same shape as the Administrator's initial-password endpoint. The helper `revokeUserSessions` in `server/src/auth/session.ts` had no other caller and is removed.
+
+A new test under API-06 lets the update run for real and makes the session delete fail inside the same transaction. It expects a safe 500, then the old password hash, the change flag still set, and both sessions still alive; a retry then applies both halves together. Putting the two writes back as separate steps turned it red on the changed password hash.
+
+| Suite | Result |
+|---|---|
+| `cd server && npm test` | 29 files, 330 tests passed: 3 Lab 1, 78 Lab 2, 249 Lab 3 |
+| `cd client && npm test` | 16 files, 253 tests passed, unchanged |
+| `npx playwright test` | 19 of 19 passed, unchanged |
 
 ## 7. Pre-release code review
 
