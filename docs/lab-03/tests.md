@@ -461,7 +461,7 @@ All 117 planned tests in section 2 are Pass and none is Planned. The Lab 1 and L
 
 ### Labsheet compliance pass
 
-After the release, every requirement in the Lab 3 labsheet (and the Lab 2 sections it carries over) was checked again, literally, against the documents and the running code. The behaviour already met every functional requirement; the gaps were in how the evidence was labelled and in four small UI details. Fixed in one pass:
+After the release, every requirement in the Lab 3 labsheet (and the Lab 2 sections it carries over) was checked again, literally, against the documents and the running code. Because the submission deadline was close, this pass was committed directly to `main` without an Issue, a Pull Request or a peer review; it is the only change in Lab 3 that did not go through review. The behaviour already met every functional requirement; the gaps were in how the evidence was labelled and in four small UI details. Fixed in one pass:
 
 - **Test types the labsheet names.** Section 10 asks for UI style, accessibility and security/authorization tests. The authorization rows API-09 to API-14 are now typed Security; new rows STYLE-01 to STYLE-03 and A11Y-01 to A11Y-03 trace tests that already existed (badges, read-only fields, focus, keyboard tabs and sorting) or were added here (required-field markers).
 - **Acceptance criteria for the whole scope.** AC-47 to AC-57 add the Administrator's list, search, role filter, create and edit, IT Staff Internal Notes, the queue's empty and failure states, the not-found state, and the four UI details below, each traced in section 3.
