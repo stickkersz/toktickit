@@ -1,4 +1,5 @@
 import { Ref, useState } from "react";
+import { withRequiredMark } from "./RequiredMark.js";
 
 interface PasswordFieldProps {
   id: string;
@@ -38,7 +39,7 @@ export default function PasswordField({
   return (
     <div className="mb-1">
       <label htmlFor={id} className="form-label fw-semibold">
-        {label}
+        {withRequiredMark(label)}
       </label>
       <div className="input-group">
         <input

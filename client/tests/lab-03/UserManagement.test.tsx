@@ -127,6 +127,7 @@ describe("User Management: creating a user", () => {
     await user_.type(screen.getByLabelText("Initial Password *"), o.password ?? "Zen$Green7");
   }
 
+  // A11Y-01 / AC-35: focus moves into the panel
   it("opens a panel with the fields the spec lists, moves focus to the first, and requires an initial password", async () => {
     await open();
     await userEvent.click(screen.getByRole("button", { name: "Create User" }));
@@ -250,6 +251,7 @@ describe("User Management: creating a user", () => {
     await waitFor(() => expect(screen.queryByRole("region", { name: /Create User/ })).not.toBeInTheDocument());
   });
 
+  // A11Y-01 / AC-35: focus returns to what opened the panel
   it("closes without sending anything and returns focus to what opened it", async () => {
     await open();
     const user_ = userEvent.setup();

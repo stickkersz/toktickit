@@ -5,7 +5,7 @@ Companion to `docs/lab-03/specification.md`. Lab 3 adds screens to an existing d
 ## 1. Reused foundation
 
 - Color tokens: unchanged, `docs/lab-02/ui-spec.md` section 1. No new color is introduced. New surfaces reuse `--color-primary`, `--color-secondary`, `--color-pale`, `--color-surface`, `--color-error`, `--color-warning`, and `--color-success`.
-- Typography, spacing, field states, button hierarchy, and validation placement: unchanged, sections 2 and 3.
+- Typography, spacing, field states, button hierarchy, and validation placement: unchanged, sections 2 and 3. Required fields show a red asterisk after the label (`.zg-required`, `--color-error`), kept in the label text so the accessible name still ends in "*"; it never replaces the validation message (BR-67).
 - No ad-hoc hex value appears in any Lab 3 component. Anything that needs a color uses a token.
 
 ## 2. New badges
@@ -62,14 +62,14 @@ There is no "Forgot password" link: password reset by email is excluded from Lab
 
 ## 5. Change Password screen
 
-Route `/change-password`. Reached automatically after signing in with an initial password, and reachable voluntarily from the Profile menu.
+Route `/change-password`. Reached automatically after signing in with an initial password, and reachable voluntarily from the header's "Change password" action.
 
 1. Heading "Change Your Password". When mandatory, a subheading reads "You must change your password to continue."
 2. `Current (temporary) password *`, `New password *`, `Confirm new password *`, each with a show/hide toggle.
 3. A rule checklist below the new-password field, each rule showing an unmet or met state live as the user types: at least 8 characters, upper and lower case letters, a number, a special character.
 4. Primary "Continue" button.
 
-States: initial, per-field validation error, busy, API failure with values preserved, and success which navigates straight to the role's landing screen.
+States: initial, per-field validation error, busy ("Saving…"), API failure with values preserved, and success. A mandatory change continues straight to the role's landing screen. A voluntary change stays here and shows "Your password has been changed. Your other sessions have been signed out." with a "Back to your home screen" link, and before saving offers "Cancel and go back" so the user can leave without changing anything.
 
 While the change is mandatory, the shell renders the user identity and Logout but **no navigation items**, and any other route redirects back here. The checklist is text plus an icon, never color alone.
 
@@ -96,7 +96,7 @@ Desktop table at 992px and above, columns: Ticket No., Created Date, Summary, Ca
 The column set is deliberately capped at eight. Requester, Related System, and Last Updated are available on the detail screen; adding them here would produce the unreadable mega-grid the handout warns against, and Summary is the column that most needs the width.
 
 Tablet 768 to 991px: Category and Req. Priority drop out, leaving six columns.
-Mobile below 768px: a card list. Each card leads with Ticket No. and Status, then Summary on its own line, then Category, IT Priority, and Owner as label-value pairs.
+Mobile below 768px: a card list. Each card leads with Ticket No. and Status, then Summary on its own line, then Category, IT Priority, and Owner as label-value pairs. Because the cards have no column headers, a "Sort by" select above them offers the same eight sorts as the headers (newest or oldest first, Ticket No., IT Priority and Status in either direction) and shares the same URL value, so switching width keeps the order.
 
 Pagination sits below the list, 10 per page, with Previous and Next plus numbered pages.
 
@@ -114,7 +114,7 @@ Operational field group, visibly editable with `--color-field-editable-border`:
 
 - **Ticket Owner**: a select of active IT Staff and Administrators, plus an Unassigned option, and a "Claim" shortcut button shown while the Ticket is unassigned or its owner is ineligible. An ineligible current owner stays visible as the selected value with its "(inactive)" or "(not IT Staff)" marker and a "Needs new owner" badge, but is not offered as a choice for any other Ticket (BR-18, BR-58).
 - **IT Priority**: a select of the three priority values.
-- **Current Status**: a select offering only the statuses BR-25 permits from the current one. A disallowed status is never rendered as a choice, and the server rejects it too. Changing to Resolved reveals a required Resolution Summary textarea and a confirmation step before saving.
+- **Current Status**: a select offering only the statuses BR-25 permits from the current one. A disallowed status is never rendered as a choice, and the server rejects it too. Changing to Resolved reveals a required Resolution Summary textarea and a confirmation step before saving. Changing to Closed or Cancelled, both terminal, shows a confirmation ("Close this Ticket? It cannot move to any other status afterwards.") with "Keep current status" and "Confirm and close" or "Confirm and cancel"; nothing is sent until the user confirms (BR-64). Every other permitted move saves at once.
 
 A Ticket showing the Requester's "problem appears resolved" indication displays a `--color-pale` banner with the timestamp, so staff see the signal without it being mistaken for a status.
 
@@ -169,22 +169,24 @@ As Lab 2 section 11, with these Lab 3 specifics:
 
 ## 13. Visual inspection checklist
 
-Run against the running app and the captured screenshots before any screen is marked Done:
+Run against the running app and the captured screenshots before any screen is marked Done. Completed for the release; the evidence for each item is in `docs/lab-03/tests.md` section 6 (Issue 09 and the labsheet compliance pass):
 
-- [ ] Colors match the Lab 2 tokens exactly; no ad-hoc hex value in any Lab 3 component.
-- [ ] Every token referenced in this document is actually applied somewhere, verified by grep, not assumed.
-- [ ] Editable and read-only fields are distinguishable at a glance on IT Staff Ticket Detail.
-- [ ] Public Comments and Internal Notes are impossible to confuse, and the internal-only warning is visible without scrolling the panel.
-- [ ] Each role sees only its permitted navigation, and the active item is marked on every route including detail routes.
-- [ ] Status, IT Priority, Requested Priority, and Role badges use their fixed text plus color mapping everywhere they appear.
-- [ ] The status select offers only permitted transitions from the current status.
-- [ ] On the IT Staff Attachments tab there is a Download action and no upload or Remove control.
-- [ ] A Ticket with an inactive or non-staff owner shows the owner's name, the marker, and the "Needs new owner" badge in both the queue and the detail, and appears under the "Needs an owner" filter.
-- [ ] No clipped labels, overlapping validation messages, or horizontal scrolling at 375px, 768px, and 1280px.
-- [ ] The queue renders as a table at 992px and as cards below 768px with no information lost.
-- [ ] Empty, no-results, forbidden, not-found, and failure states are visually distinguishable, not merely differently worded.
-- [ ] Login shows a credential failure and an inactive-account response differently.
-- [ ] Administrator safety rules surface as clear messages rather than silent no-ops.
+- [x] Colors match the Lab 2 tokens exactly; no ad-hoc hex value in any Lab 3 component.
+- [x] Every token referenced in this document is actually applied somewhere, verified by grep, not assumed.
+- [x] Editable and read-only fields are distinguishable at a glance on IT Staff Ticket Detail.
+- [x] Public Comments and Internal Notes are impossible to confuse, and the internal-only warning is visible without scrolling the panel.
+- [x] Each role sees only its permitted navigation, and the active item is marked on every route including detail routes.
+- [x] Status, IT Priority, Requested Priority, and Role badges use their fixed text plus color mapping everywhere they appear.
+- [x] The status select offers only permitted transitions from the current status.
+- [x] On the IT Staff Attachments tab there is a Download action and no upload or Remove control.
+- [x] A Ticket with an inactive or non-staff owner shows the owner's name, the marker, and the "Needs new owner" badge in both the queue and the detail, and appears under the "Needs an owner" filter.
+- [x] No clipped labels, overlapping validation messages, or horizontal scrolling at 375px, 768px, and 1280px.
+- [x] The queue renders as a table at 992px and as cards below 768px with no information lost.
+- [x] Empty, no-results, forbidden, not-found, and failure states are visually distinguishable, not merely differently worded.
+- [x] Login shows a credential failure and an inactive-account response differently.
+- [x] Administrator safety rules surface as clear messages rather than silent no-ops.
+- [x] Keyboard focus is always visible (the Zen Green focus ring), moves into the User Management panel when it opens and back to what opened it, and the tabs and sortable headers work from the keyboard.
+- [x] Required fields show the red asterisk, and validation messages sit directly under their fields without overlapping the next field.
 
 ## 14. Screenshot paths
 
@@ -198,9 +200,15 @@ artifacts/lab-03/screenshots/
 │   ├── login-invalid-credentials-desktop.png
 │   ├── login-inactive-account-desktop.png
 │   ├── change-password-initial-desktop.png
+│   ├── change-password-initial-tablet.png
+│   ├── change-password-initial-mobile.png
 │   ├── change-password-rules-unmet-desktop.png
 │   ├── login-initial-tablet.png
 │   └── login-initial-mobile.png
+├── requester-ticket-detail/
+│   ├── with-public-comment-desktop.png
+│   ├── with-public-comment-tablet.png
+│   └── with-public-comment-mobile.png
 ├── staff-queue/
 │   ├── loaded-desktop.png
 │   ├── filtered-desktop.png

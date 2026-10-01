@@ -1,5 +1,5 @@
 import { FormEvent, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { ApiError, ValidationError, changePassword } from "../api.js";
 import { useAuth } from "../authContext.js";
 import PasswordField from "../PasswordField.js";
@@ -19,6 +19,8 @@ export default function ChangePassword() {
   const [errors, setErrors] = useState<Fields>({});
   const [apiFailure, setApiFailure] = useState(false);
   const [busy, setBusy] = useState(false);
+  // A voluntary change (from the header) stays on this screen and says it worked.
+  const [done, setDone] = useState(false);
 
   if (!user) return null; // RequireAuth redirects before this renders.
   const mandatory = user.mustChangePassword;
@@ -47,7 +49,14 @@ export default function ChangePassword() {
     try {
       const updated = await changePassword({ currentPassword, newPassword, confirmPassword });
       signIn(updated);
-      navigate(landingPathFor(updated.role), { replace: true });
+      if (mandatory) {
+        navigate(landingPathFor(updated.role), { replace: true });
+        return;
+      }
+      setDone(true);
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
     } catch (e) {
       if (e instanceof ValidationError) {
         setErrors(e.fields);
@@ -84,6 +93,12 @@ export default function ChangePassword() {
       <main className="container py-5 px-3" style={{ maxWidth: 452 }}>
         <h1 className="h4 mb-2">Change Your Password</h1>
         {mandatory && <p className="text-muted">You must change your password to continue.</p>}
+
+        {done && (
+          <div className="zg-banner-pale rounded p-3 mb-3" role="status">
+            Your password has been changed. Your other sessions have been signed out.
+          </div>
+        )}
 
         {apiFailure && (
           <div className="zg-alert-error rounded p-3 mb-3" role="alert">
@@ -138,6 +153,14 @@ export default function ChangePassword() {
             {busy ? "Saving…" : "Continue"}
           </button>
         </form>
+
+        {!mandatory && (
+          <div className="text-center mt-3">
+            <Link to={landingPathFor(user.role)} className="zg-touch-target">
+              {done ? "Back to your home screen" : "Cancel and go back"}
+            </Link>
+          </div>
+        )}
       </main>
     </div>
   );

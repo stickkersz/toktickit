@@ -29,6 +29,16 @@ async function fill(email: string, password: string) {
 }
 
 describe("Login screen", () => {
+  // STYLE-02 / AC-56
+  it("marks the email and password as required with the red asterisk", async () => {
+    const { email, password } = await openLogin();
+    for (const field of [email, password]) {
+      const label = document.querySelector(`label[for="${field.id}"]`)!;
+      expect(label.textContent?.trim()).toMatch(/\*$/);
+      expect(label.querySelector(".zg-required")).toHaveTextContent("*");
+    }
+  });
+
   // UI-01 / AC-01
   it("signs in once, stores nothing in localStorage, and lands a Requester on My Tickets", async () => {
     const login = vi.spyOn(api, "login").mockResolvedValue(REQUESTER);

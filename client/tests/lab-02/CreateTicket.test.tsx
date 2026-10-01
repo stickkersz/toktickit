@@ -51,9 +51,13 @@ describe("Create Ticket", () => {
     mockReferenceData();
     renderScreen();
 
-    expect(await screen.findByText("Category *")).toBeInTheDocument();
-    expect(screen.getByText("Summary *")).toBeInTheDocument();
-    expect(screen.getByText("Description *")).toBeInTheDocument();
+    // STYLE-02 / AC-56: each required label ends in a red asterisk (the zg-required marker), not a plain "*".
+    await screen.findByLabelText("Category *");
+    for (const name of ["Category *", "Related System *", "Requested Priority *", "Summary *", "Description *"]) {
+      const label = document.querySelector(`label[for="${screen.getByLabelText(name).id}"]`)!;
+      expect(label.textContent?.trim()).toBe(name);
+      expect(label.querySelector(".zg-required")).toHaveTextContent("*");
+    }
 
     const submit = screen.getByRole("button", { name: /submit ticket/i });
     expect(submit).toBeDisabled();

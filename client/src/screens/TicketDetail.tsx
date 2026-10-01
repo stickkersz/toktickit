@@ -1,3 +1,4 @@
+import { RequiredMark } from "../RequiredMark.js";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
@@ -424,7 +425,7 @@ export default function TicketDetail() {
               {removingId === attachment.id && (
                 <div className="mt-2 p-2 border rounded">
                   <label htmlFor={`remove-reason-${attachment.id}`} className="form-label small fw-semibold">
-                    Reason for removal *
+                    Reason for removal <RequiredMark />
                   </label>
                   <textarea
                     id={`remove-reason-${attachment.id}`}

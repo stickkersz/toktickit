@@ -1,6 +1,7 @@
 import { expect, Page, test } from "@playwright/test";
 import {
   ADMIN,
+  asAdmin,
   createTicketAsRequester,
   createUserAsAdmin,
   fillLogin,
@@ -56,6 +57,9 @@ test.describe("Lab 3 screenshots (RESP-02)", () => {
     await fillLogin(page, user.email, INITIAL_PASSWORD);
     await expect(page.getByRole("heading", { name: "Change Your Password" })).toBeVisible();
     await capture(page, "authentication", "change-password-initial");
+    await capture(page, "authentication", "change-password-initial", "tablet");
+    await capture(page, "authentication", "change-password-initial", "mobile");
+    await page.setViewportSize(VIEWPORTS.desktop);
 
     await page.getByLabel("Current (temporary) password *", { exact: true }).fill(INITIAL_PASSWORD);
     await page.getByLabel("New password *", { exact: true }).fill("short");
@@ -63,6 +67,18 @@ test.describe("Lab 3 screenshots (RESP-02)", () => {
     await page.getByRole("button", { name: "Continue" }).click();
     await expect(page.getByLabel("New password *", { exact: true })).toHaveAttribute("aria-invalid", "true");
     await capture(page, "authentication", "change-password-rules-unmet");
+  });
+
+  test("requester ticket detail", async ({ page }) => {
+    const ticket = await createTicketAsRequester(`E2E requester view ${short()}`);
+    await asAdmin((api) => api.post(`/api/tickets/${ticket.id}/comments`, { data: { body: "Thanks, we are looking at this now." } }));
+    await signIn(page, REQUESTER.email, LANDING.REQUESTER);
+    await page.goto(`/tickets/${ticket.id}`);
+    await expect(page.getByText("Thanks, we are looking at this now.")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Problem appears resolved" })).toBeVisible();
+    await capture(page, "requester-ticket-detail", "with-public-comment");
+    await capture(page, "requester-ticket-detail", "with-public-comment", "tablet");
+    await capture(page, "requester-ticket-detail", "with-public-comment", "mobile");
   });
 
   test("staff queue", async ({ page }) => {

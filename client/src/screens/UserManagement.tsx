@@ -14,6 +14,7 @@ import { RoleBadge, UserStatusBadge } from "../Badge.js";
 import PasswordField from "../PasswordField.js";
 import { PASSWORD_RULES, unmetRules } from "../passwordRules.js";
 import { ROLE_LABEL } from "../roles.js";
+import { RequiredMark } from "../RequiredMark.js";
 
 type ListState = "loading" | "ready" | "error";
 type Panel = { mode: "create" } | { mode: "edit"; user: AdminUser };
@@ -398,7 +399,7 @@ function UserPanel({ panel, onClose, onCreated, onChanged }: { panel: Panel; onC
       <form noValidate onSubmit={submit}>
         <div className="mb-1">
           <label htmlFor="um-name" className="form-label fw-semibold">
-            Full Name *
+            Full Name <RequiredMark />
           </label>
           <input
             id="um-name"
@@ -416,7 +417,7 @@ function UserPanel({ panel, onClose, onCreated, onChanged }: { panel: Panel; onC
 
         <div className="mb-1">
           <label htmlFor="um-email" className="form-label fw-semibold">
-            Email Address *
+            Email Address <RequiredMark />
           </label>
           <input
             id="um-email"
@@ -434,7 +435,7 @@ function UserPanel({ panel, onClose, onCreated, onChanged }: { panel: Panel; onC
 
         <div className="mb-3">
           <label htmlFor="um-role" className="form-label fw-semibold">
-            Role *
+            Role <RequiredMark />
           </label>
           <select id="um-role" className="form-select zg-editable" value={form.role} onChange={(e) => set("role", e.target.value as UserRole)}>
             {ROLES.map((r) => (

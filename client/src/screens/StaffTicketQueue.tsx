@@ -10,6 +10,19 @@ type SortableField = "ticketNumber" | "createdAt" | "itPriority" | "currentStatu
 const PAGE_SIZE = 10;
 const DEFAULT_SORT = "-createdAt";
 
+// Below 768px the table, and with it the sortable headers, is replaced by cards, so the same
+// sort values are offered as a select there (ui-spec section 7).
+const SORT_OPTIONS: [string, string][] = [
+  ["-createdAt", "Newest first"],
+  ["createdAt", "Oldest first"],
+  ["ticketNumber", "Ticket No., ascending"],
+  ["-ticketNumber", "Ticket No., descending"],
+  ["-itPriority", "IT Priority, highest first"],
+  ["itPriority", "IT Priority, lowest first"],
+  ["currentStatus", "Status, workflow order"],
+  ["-currentStatus", "Status, reverse order"],
+];
+
 const STATUS_OPTIONS: [string, string][] = [
   ["NEW", "New"],
   ["OPEN", "Open"],
@@ -259,6 +272,15 @@ export default function StaffTicketQueue() {
                 <option value="unassigned">Unassigned</option>
                 <option value="me">Assigned to me</option>
                 <option value="needs-owner">Needs an owner</option>
+              </select>
+            </div>
+            <div className="col-12 d-md-none">
+              <select className="form-select" aria-label="Sort by" value={sort} onChange={(e) => update({ sort: e.target.value })}>
+                {SORT_OPTIONS.map(([value, label]) => (
+                  <option key={value} value={value}>
+                    Sort: {label}
+                  </option>
+                ))}
               </select>
             </div>
           </div>

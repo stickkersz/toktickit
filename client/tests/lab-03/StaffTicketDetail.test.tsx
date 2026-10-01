@@ -94,6 +94,7 @@ async function openDetail(initial: StaffTicketDetail = detail(), user = STAFF) {
 const optionsOf = (label: string) => within(screen.getByLabelText(label)).getAllByRole("option").map((o) => o.textContent?.replace(/\s+/g, " ").trim());
 
 describe("Staff Ticket Detail: reading", () => {
+  // STYLE-03 / AC-18: read-only fields are readOnly (not disabled) and apart from the editable controls
   it("shows the read-only Ticket information and the handling controls, with the Requested Priority apart from the IT Priority", async () => {
     await openDetail();
     expect(screen.getByLabelText("Ticket No.")).toHaveValue("TKT-2026-000042");
@@ -111,6 +112,7 @@ describe("Staff Ticket Detail: reading", () => {
     expect(screen.getByLabelText("Current Status")).toHaveValue("OPEN");
   });
 
+  // UI-34 / AC-52: the not-found state
   it("says so, and how to leave, for a Ticket that does not exist", async () => {
     renderApp("/staff/tickets/999", STAFF);
     expect(await screen.findByText("Ticket not found.")).toBeInTheDocument();
@@ -324,6 +326,34 @@ describe("Staff Ticket Detail: status", () => {
     await waitFor(() => expect(screen.getByLabelText("Current Status")).toHaveValue("IN_PROGRESS"));
     expect(optionsOf("Current Status")).toEqual(["In Progress", "Waiting for Requester", "Resolved", "Cancelled"]);
     expect(within(screen.getByRole("heading", { name: "TKT-2026-000042" }).parentElement!).getByText("In Progress")).toHaveClass("zg-badge-in-progress");
+  });
+
+  // UI-36 / AC-53, BR-64
+  it("asks for a confirmation before closing, sends nothing until then, and can be backed out of", async () => {
+    const fake = await openDetail(detail({ currentStatus: "RESOLVED", ownerId: 20, ownerName: "Wichai Charoen", ownerIsActive: true, ownerEligible: true }));
+    await userEvent.selectOptions(screen.getByLabelText("Current Status"), "Closed");
+    const group = screen.getByRole("group", { name: "Confirm the status change" });
+    expect(group).toHaveTextContent("Close this Ticket? It cannot move to any other status afterwards.");
+    expect(fake.setStatus).not.toHaveBeenCalled();
+
+    await userEvent.click(within(group).getByRole("button", { name: "Keep current status" }));
+    expect(screen.queryByRole("group", { name: "Confirm the status change" })).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Current Status")).toHaveValue("RESOLVED");
+    expect(fake.setStatus).not.toHaveBeenCalled();
+
+    await userEvent.selectOptions(screen.getByLabelText("Current Status"), "Closed");
+    await userEvent.click(screen.getByRole("button", { name: "Confirm and close" }));
+    await waitFor(() => expect(fake.setStatus).toHaveBeenCalledWith(42, "CLOSED"));
+    await waitFor(() => expect(screen.queryByRole("group", { name: "Confirm the status change" })).not.toBeInTheDocument());
+  });
+
+  it("asks the same before cancelling", async () => {
+    const fake = await openDetail(detail({ currentStatus: "OPEN" }));
+    await userEvent.selectOptions(screen.getByLabelText("Current Status"), "Cancelled");
+    expect(screen.getByRole("group", { name: "Confirm the status change" })).toHaveTextContent("Cancel this Ticket?");
+    expect(fake.setStatus).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole("button", { name: "Confirm and cancel" }));
+    await waitFor(() => expect(fake.setStatus).toHaveBeenCalledWith(42, "CANCELLED"));
   });
 
   // UI-17 / AC-24, BR-27
@@ -1020,6 +1050,7 @@ describe("Staff Ticket Detail: Public Comments and Internal Notes", () => {
     expect(screen.getByLabelText("Add Public Comment")).toBeInTheDocument();
   });
 
+  // A11Y-02 / AC-35: keyboard operation of the tabs
   it("moves between tabs with the arrow keys, Home and End, with only the selected tab in the tab order", async () => {
     await openWith();
     const user = userEvent.setup();

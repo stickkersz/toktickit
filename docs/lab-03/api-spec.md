@@ -62,9 +62,9 @@ All non-2xx responses share the Lab 2 envelope:
 | 201 Created | Ticket, Attachment, Comment, Note, or User created | POST creation endpoints |
 | 400 Bad Request | missing or invalid field, malformed id, unpermitted enum value | all write endpoints |
 | 401 Unauthorized | not authenticated, expired, logged out, or deactivated | every protected endpoint |
-| 403 Forbidden | authenticated but role not permitted, or password change outstanding | role-restricted endpoints, including Attachment upload and removal for IT Staff and Administrators |
-| 404 Not Found | resource absent, or a Requester's non-owned resource | Ticket, Attachment, Comment endpoints |
-| 409 Conflict | duplicate email, unpermitted status transition, last-active-Administrator guard, attachment already removed | admin users, status, DELETE attachment |
+| 403 Forbidden | authenticated but role not permitted, or password change outstanding | role-restricted endpoints: every staff and admin endpoint for a Requester, every admin endpoint for IT Staff, the Requester-only endpoints (`GET` and `POST /api/tickets`, Attachment upload and removal, resolution indication) for IT Staff and Administrators, and Internal Notes for a Requester |
+| 404 Not Found | resource absent, or a Requester's non-owned resource | Ticket, Attachment and Public Comment endpoints, staff Ticket operations (owner, IT Priority, status) on a missing Ticket, resolution indication, admin user update and initial password on a missing user |
+| 409 Conflict | duplicate email, unpermitted status transition, last-active-Administrator guard, attachment already removed | admin users (`EMAIL_TAKEN`, `LAST_ADMINISTRATOR`, `SELF_DEACTIVATION`), owner (`ALREADY_ASSIGNED`, `INVALID_OWNER`), status (`INVALID_TRANSITION`, `OWNER_REQUIRED`), Public Comment on a closed Ticket, resolution indication on a closed Ticket (`TICKET_TERMINAL`), DELETE attachment (`ALREADY_REMOVED`) |
 | 410 Gone | attachment exists but is soft-removed | attachment download |
 | 500 Internal Server Error | unexpected failure, never leaking stack traces or database detail | any endpoint |
 
@@ -162,7 +162,7 @@ These keep their Lab 2 request and response bodies exactly, with two changes: th
 | GET `/api/attachments/:id` and `/download` | `requesterId` query parameter removed |
 | DELETE `/api/attachments/:id` | body narrows from `{ requesterId, reason }` to `{ reason }` |
 
-Every one of them returns 401 when unauthenticated. The Lab 2 404-on-non-owned behaviour is unchanged for a Requester.
+Every one of them returns 401 when unauthenticated. The Lab 2 404-on-non-owned behaviour is unchanged for a Requester. `GET /api/tickets` (My Tickets) and `POST /api/tickets` (Create Ticket) are Requester-only: IT Staff and Administrators receive 403 `FORBIDDEN` and use the Ticket Queue instead.
 
 ### GET /api/tickets/:id: what each role receives
 

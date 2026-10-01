@@ -232,6 +232,12 @@ a:focus-visible {
   --bs-breadcrumb-divider: ">";
 }
 
+/* Required fields show a red asterisk (Lab 2 ui-spec section 3). */
+.zg-required {
+  color: var(--color-error);
+  font-weight: 700;
+}
+
 /* A whole table row or card that opens a screen. */
 .zg-clickable-row {
   cursor: pointer;

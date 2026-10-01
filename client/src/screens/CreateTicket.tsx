@@ -1,3 +1,4 @@
+import { RequiredMark } from "../RequiredMark.js";
 import { FormEvent, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
@@ -303,7 +304,7 @@ export default function CreateTicket() {
       <div className="row mb-3">
         <div className="col-md-4">
           <label htmlFor="category" className="form-label fw-semibold">
-            Category *
+            Category <RequiredMark />
           </label>
           <select
             id="category"
@@ -324,7 +325,7 @@ export default function CreateTicket() {
         </div>
         <div className="col-md-4">
           <label htmlFor="related-system" className="form-label fw-semibold">
-            Related System *
+            Related System <RequiredMark />
           </label>
           <select
             id="related-system"
@@ -347,7 +348,7 @@ export default function CreateTicket() {
         </div>
         <div className="col-md-4">
           <label htmlFor="priority" className="form-label fw-semibold">
-            Requested Priority *
+            Requested Priority <RequiredMark />
           </label>
           <select
             id="priority"
@@ -372,7 +373,7 @@ export default function CreateTicket() {
 
       <div className="mb-3">
         <label htmlFor="summary" className="form-label fw-semibold">
-          Summary *
+          Summary <RequiredMark />
         </label>
         <input
           id="summary"
@@ -394,7 +395,7 @@ export default function CreateTicket() {
 
       <div className="mb-3">
         <label htmlFor="description" className="form-label fw-semibold">
-          Description *
+          Description <RequiredMark />
         </label>
         <textarea
           id="description"

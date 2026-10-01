@@ -33,12 +33,12 @@ The database must be running, migrated, and seeded first. Playwright's `testDir`
 | API-06 | API | AC-08 | Successful password change, and a failure while revoking the other sessions | 200, `mustChangePassword` false, other sessions revoked, acting session survives; on a failure, 500 and nothing applied (old password, flag and sessions all unchanged) | `server/tests/lab-03/auth.api.test.ts` | Pass |
 | API-07 | API | AC-09 | Logout, then reuse the same cookie | 200 on logout, 401 on the next request | `server/tests/lab-03/auth.api.test.ts` | Pass |
 | API-08 | API | AC-10, BR-08 | Deactivate a user holding a live session, then use it; and use a session past its 8 hour expiry | 401 without an explicit logout in both cases, and the expired row is removed | `server/tests/lab-03/auth.api.test.ts` | Pass |
-| API-09 | API | AC-13 | Every protected endpoint with no cookie | 401 on each, no data in any body | `server/tests/lab-03/authorization.api.test.ts` | Pass |
-| API-10 | API | AC-12, AC-22 | A Requester session against every staff and admin endpoint | 403 on each, no protected data | `server/tests/lab-03/authorization.api.test.ts` | Pass |
-| API-11 | API | AC-04, BR-35 | A Requester requesting Internal Notes on a Ticket they own | 403, body contains no note content and no note count | `server/tests/lab-03/authorization.api.test.ts` | Pass |
-| API-12 | API | AC-33 | An IT Staff session against every admin user endpoint | 403 on each | `server/tests/lab-03/authorization.api.test.ts` | Pass |
-| API-13 | API | AC-03, BR-11 | A Requester sending another user's `requesterId` in body and query | The authenticated identity is used; the other Requester's data is never returned | `server/tests/lab-03/authorization.api.test.ts` | Pass |
-| API-14 | API | AC-15, BR-15 | A Requester requesting another Requester's Ticket Detail, Attachment (metadata, download, removal, upload) and Public Comments (read and post), each compared with an id that does not exist | 404 in every case, never 403, with a body identical to the not-found one | `server/tests/lab-03/authorization.api.test.ts` | Pass |
+| API-09 | Security | AC-13 | Every protected endpoint with no cookie | 401 on each, no data in any body | `server/tests/lab-03/authorization.api.test.ts` | Pass |
+| API-10 | Security | AC-12, AC-22 | A Requester session against every staff and admin endpoint | 403 on each, no protected data | `server/tests/lab-03/authorization.api.test.ts` | Pass |
+| API-11 | Security | AC-04, BR-35 | A Requester requesting Internal Notes on a Ticket they own | 403, body contains no note content and no note count | `server/tests/lab-03/authorization.api.test.ts` | Pass |
+| API-12 | Security | AC-33 | An IT Staff session against every admin user endpoint | 403 on each | `server/tests/lab-03/authorization.api.test.ts` | Pass |
+| API-13 | Security | AC-03, BR-11 | A Requester sending another user's `requesterId` in body and query | The authenticated identity is used; the other Requester's data is never returned | `server/tests/lab-03/authorization.api.test.ts` | Pass |
+| API-14 | Security | AC-15, BR-15 | A Requester requesting another Requester's Ticket Detail, Attachment (metadata, download, removal, upload) and Public Comments (read and post), each compared with an id that does not exist | 404 in every case, never 403, with a body identical to the not-found one | `server/tests/lab-03/authorization.api.test.ts` | Pass |
 | API-15 | API | AC-14 | Every Lab 2 Requester endpoint under a session, with `requesterId` removed | Same behaviour as Lab 2: create, list, detail, upload, download, soft remove | `server/tests/lab-03/requester-regression.api.test.ts` | Pass |
 | API-16 | API | AC-16, AC-17 | Queue listing with search (matched as literal text, including `%`, `_` and `\`), each filter, each sort, and pagination | Returned set matches all criteria; pagination metadata consistent; no duplicates or gaps across pages | `server/tests/lab-03/staff-queue.api.test.ts` | Pass |
 | API-17 | API | AC-16 | Queue `owner` filter with `unassigned`, `me`, and a specific id | Each returns exactly the matching Tickets | `server/tests/lab-03/staff-queue.api.test.ts` | Pass |
@@ -115,6 +115,10 @@ The database must be running, migrated, and seeded first. Playwright's `testDir`
 | UI-31 | UI | AC-46, BR-63, BR-16 | Each role opening, by direct URL, screens its role may not use (Requester on the staff and admin routes, IT Staff on the admin and Requester routes, Administrator on the Requester routes), plus signed-out visitors and unknown URLs | The forbidden state with the exact message and a link home; the screen never renders and none of its API requests are made; the allowed roles still get in; signed-out goes to Login; an unknown URL goes to the user's own landing route | `client/tests/lab-03/RoleRoutes.test.tsx` | Pass |
 | UI-32 | UI | AC-46, BR-63, BR-49 | A stale `toktickit.currentRequesterId` left in browser storage by Lab 2 while IT Staff, an Administrator, a Requester, or nobody is signed in, and a visit to the deleted `/select-requester` | Inert: IT Staff and Administrators cannot reach a Requester screen through it and no protected request is made; it does not stand in for signing in; `/select-requester` is an unknown URL for every role; a signed-in Requester acts as themselves | `client/tests/lab-03/RoleRoutes.test.tsx` | Pass |
 | UI-33 | UI | AC-18, AC-19, AC-23 | Staff Ticket Detail saves for owner, IT Priority and status whose responses arrive out of order, a reload that was read before a later save, and a save still in flight when another Ticket is opened | A response changes only the fields of the control it was for, so an older snapshot never overwrites a newer save of another control; the status reload supplies the permitted next statuses and Resolution Summary; the status control stays busy until its reload lands; nothing in flight for one Ticket touches the next; a reload that fails locks the control, offers only its current value, does not say Saved, and unlocks on a successful Reload | `client/tests/lab-03/StaffTicketDetail.test.tsx` | Pass |
+| UI-34 | UI | AC-52 | Staff Ticket Detail for a Ticket that does not exist | Not-found state with a link back to the queue, no controls | `client/tests/lab-03/StaffTicketDetail.test.tsx` | Pass |
+| UI-35 | UI | AC-54, AC-35 | Ticket Queue: the Sort by select used by the card layout below 768px | The same eight sorts as the headers; choosing one sends that sort and the headers follow it | `client/tests/lab-03/StaffTicketQueue.test.tsx` | Pass |
+| UI-36 | UI | AC-53, BR-64 | Staff Ticket Detail: choosing `CLOSED` or `CANCELLED` | A confirmation appears and nothing is sent; Keep current status backs out; confirming sends exactly that move | `client/tests/lab-03/StaffTicketDetail.test.tsx` | Pass |
+| UI-37 | UI | AC-55 | Change Password used voluntarily from the header | Cancel and go back link before saving; after saving, a success message, a link home, and cleared fields | `client/tests/lab-03/ChangePassword.test.tsx` | Pass |
 | MIG-01 | Migration | AC-34 | Row count and ids in `User` after the rename, against `RequesterUser` before | Identical count, identical ids, no row lost or added | `server/tests/lab-03/migration.test.ts` | Pass |
 | MIG-02 | Migration | AC-34, BR-47 | Every pre-existing Ticket's requester after migration | Each Ticket still resolves to its original person by ticket number | `server/tests/lab-03/migration.test.ts` | Pass |
 | MIG-03 | Migration | BR-48, BR-52 | Migrated Requesters after seeding, including migrated rows the seed does not list | Role `REQUESTER`, `mustChangePassword` true, a well-formed `scrypt$` hash that is neither the `!` marker nor plaintext, and no row left holding the marker | `server/tests/lab-03/migration.test.ts` | Pass |
@@ -133,6 +137,12 @@ The database must be running, migrated, and seeded first. Playwright's `testDir`
 | E2E-06 | E2E | AC-40, AC-41 | An Administrator deactivates an IT Staff user who owns an open Ticket; another IT Staff user finds it under "Needs an owner", claims it, and moves it to In Progress; the deactivated user then tries to sign in | The Ticket shows the marker and badge until claimed; the claim and the move succeed; the deactivated user sees the inactive-account response | `e2e/lab-03/user-administration.spec.ts` | Pass |
 | RESP-01 | Responsive | AC-35 | Every Lab 3 screen at 375, 768, and 1280 | No horizontal page scroll; queue is a table at 1280 and cards at 375; all controls reachable | `e2e/lab-03/responsive-visual.spec.ts` | Pass |
 | RESP-02 | Visual | ui-spec section 13 | Screenshot capture for every state in the ui-spec section 14 tree | All files written under `artifacts/lab-03/screenshots/` | `e2e/lab-03/responsive-visual.spec.ts` | Pass |
+| STYLE-01 | UI style | AC-57 | Status, priority and role badges | Each of the eight statuses has its own fixed text and style class, no two alike; the role badge uses its own neutral style | `client/tests/lab-03/Badges.test.tsx` | Pass |
+| STYLE-02 | UI style | AC-56, BR-67 | Required-field markers on Login, Change Password and Create Ticket | Every required label ends with the red `zg-required` asterisk, still part of the field's accessible name | `client/tests/lab-03/Login.test.tsx`, `client/tests/lab-03/ChangePassword.test.tsx`, `client/tests/lab-02/CreateTicket.test.tsx` | Pass |
+| STYLE-03 | UI style | AC-18 | Staff Ticket Detail: read-only Ticket fields against the editable Handling controls | Read-only fields are `readOnly` and keyboard reachable, never `disabled`; the Requested Priority badge is apart from the editable IT Priority | `client/tests/lab-03/StaffTicketDetail.test.tsx` | Pass |
+| A11Y-01 | Accessibility | AC-35 | User Management create and edit panel | Focus moves to the first field when the panel opens and returns to the control that opened it when it closes | `client/tests/lab-03/UserManagement.test.tsx` | Pass |
+| A11Y-02 | Accessibility | AC-35 | Staff Ticket Detail tabs | Arrow keys, Home and End move between tabs; only the selected tab is in the tab order (ARIA tabs pattern) | `client/tests/lab-03/StaffTicketDetail.test.tsx` | Pass |
+| A11Y-03 | Accessibility | AC-35, AC-17 | Ticket Queue by keyboard | Rows open with Enter and Space; sortable headers sort with Enter and Space and expose `aria-sort`, without a button role | `client/tests/lab-03/StaffTicketQueue.test.tsx` | Pass |
 
 ## 3. Acceptance-Criterion traceability
 
@@ -155,7 +165,7 @@ The database must be running, migrated, and seeded first. Playwright's `testDir`
 | AC-15 | API-14, API-28 |
 | AC-16 | API-16, API-17, UI-11, E2E-03 |
 | AC-17 | API-16, UI-12 |
-| AC-18 | API-19, UI-15, UI-33, E2E-03 |
+| AC-18 | API-19, UI-15, UI-33, E2E-03, STYLE-03 |
 | AC-19 | API-20, UI-15, UI-33 |
 | AC-20 | API-21 |
 | AC-21 | API-22, E2E-03 |
@@ -172,7 +182,7 @@ The database must be running, migrated, and seeded first. Playwright's `testDir`
 | AC-32 | API-38, UI-26, E2E-05 |
 | AC-33 | API-12 |
 | AC-34 | MIG-01, MIG-02, MIG-09 |
-| AC-35 | RESP-01 |
+| AC-35 | RESP-01, A11Y-01, A11Y-02, A11Y-03, UI-35 |
 | AC-36 | UNIT-09, MIG-06, MIG-07 |
 | AC-37 | MIG-08 |
 | AC-38 | API-41, UI-28 |
@@ -184,6 +194,17 @@ The database must be running, migrated, and seeded first. Playwright's `testDir`
 | AC-44 | API-52 |
 | AC-45 | API-53 |
 | AC-46 | UI-31, UI-32 |
+| AC-47 | API-34, UI-23, E2E-05 |
+| AC-48 | API-35, E2E-05 |
+| AC-49 | API-35, E2E-05 |
+| AC-50 | API-56, UI-19, E2E-03 |
+| AC-51 | API-18, UI-14 |
+| AC-52 | UI-34 |
+| AC-53 | UI-36 |
+| AC-54 | UI-35 |
+| AC-55 | UI-37 |
+| AC-56 | STYLE-02 |
+| AC-57 | STYLE-01 |
 
 Every AC-01 through AC-46 appears above, and every test row names a real file path that must exist before its row may be marked Pass.
 
@@ -203,7 +224,7 @@ Automated tests did not catch the two worst Lab 2 defects: a stale-response race
 
 ## 6. Results
 
-To be completed as each Issue lands. Final counts from `main`, with the `Final` column above flipped from `Planned` to `Pass` per row, go here before submission.
+Results recorded as each Issue landed, then the final counts from `main`. The `Final` column above was flipped from `Planned` to `Pass` per row only when that row's test ran green.
 
 ### Issue 02: auth foundation
 
@@ -438,6 +459,26 @@ After the release Pull Request #57 was approved and merged, all three suites wer
 
 All 117 planned tests in section 2 are Pass and none is Planned. The Lab 1 and Lab 2 suites run unchanged beside the Lab 3 ones, which is the regression evidence that Lab 3 evolved the product rather than replacing it.
 
+### Labsheet compliance pass
+
+After the release, every requirement in the Lab 3 labsheet (and the Lab 2 sections it carries over) was checked again, literally, against the documents and the running code. The behaviour already met every functional requirement; the gaps were in how the evidence was labelled and in four small UI details. Fixed in one pass:
+
+- **Test types the labsheet names.** Section 10 asks for UI style, accessibility and security/authorization tests. The authorization rows API-09 to API-14 are now typed Security; new rows STYLE-01 to STYLE-03 and A11Y-01 to A11Y-03 trace tests that already existed (badges, read-only fields, focus, keyboard tabs and sorting) or were added here (required-field markers).
+- **Acceptance criteria for the whole scope.** AC-47 to AC-57 add the Administrator's list, search, role filter, create and edit, IT Staff Internal Notes, the queue's empty and failure states, the not-found state, and the four UI details below, each traced in section 3.
+- **Specification structure.** The authorization matrix moved under section 5 so the sections are numbered as the labsheet lists them (1 to 11). New business rules: BR-64 confirmations, BR-65 safe unexpected failures, BR-66 regression, BR-67 required-field markers. The Definition of Done now names api-spec conformance and success, failure and boundary handling.
+- **UI details.** Required fields show the red asterisk the Lab 2 ui-spec requires (every form, Lab 2's included; STYLE-02). The queue's card layout below 768px gets a Sort by select with the same eight sorts as the headers (UI-35). Closing and cancelling, both terminal, ask for a confirmation like resolving does (UI-36). Changing a password voluntarily now offers a way back and says it worked (UI-37). The not-found test is tagged UI-34.
+- **Evidence.** The ui-spec section 13 checklist is ticked, with focus and required-marker items added, and five more screenshots fill the gaps the labsheet's Part 9 names: Change Password at tablet and mobile, and the Requester Ticket Detail with a Public Comment at all three widths (33 files in all).
+
+Mutation checks: removing the `zg-required` class failed 3 tests, and letting Close apply without a confirmation failed 2.
+
+| Suite | Result |
+|---|---|
+| `cd server && npm test` | 29 files, 330 tests passed: 3 Lab 1, 78 Lab 2, 249 Lab 3, unchanged |
+| `cd client && npm test` | 16 files, 259 tests passed: 35 Lab 2, 224 Lab 3 |
+| `npx playwright test` | 20 of 20 passed: 8 Lab 2, 12 Lab 3 |
+
+All 127 planned tests in section 2 are Pass and none is Planned; all 57 acceptance criteria are traced.
+
 ## 7. Pre-release code review
 
 Before the release Pull Request, the whole Lab 3 change (`main...lab3-staging`, 18 commits) was reviewed as one piece on three axes: the documented standards, the specification, and security. Each Issue had already been reviewed on its own; this pass looked for what only shows across Issues. Every acceptance criterion, planned test and api-spec error code still holds, all 45 messages the ui-spec quotes appear in the client, and no finding changes documented behaviour.
@@ -461,4 +502,4 @@ None of these is a defect today. They are kept here with file and line so they c
 
 ### Security
 
-No critical or high finding. Checked: session token generation and storage, cookie attributes, scrypt hashing and the constant-time compare, session revocation on password change, role change, deactivation and new initial password, Requester isolation (404, never 403, for another Requester's Ticket, Attachment or Public Comment), LIKE escaping in every search, attachment paths built only from server-generated names, the CORS allow-list, mass assignment, error bodies, React escaping of comment and note bodies (no `dangerouslySetInnerHTML`), and CSRF under `SameSite=Lax` with no state-changing GET. Login throttling is absent by the decision recorded in `specification.md` section 12 (a lockout without an unlock path would strand users); security headers (helmet) are optional for a JSON API and were not added.
+No critical or high finding. Checked: session token generation and storage, cookie attributes, scrypt hashing and the constant-time compare, session revocation on password change, role change, deactivation and new initial password, Requester isolation (404, never 403, for another Requester's Ticket, Attachment or Public Comment), LIKE escaping in every search, attachment paths built only from server-generated names, the CORS allow-list, mass assignment, error bodies, React escaping of comment and note bodies (no `dangerouslySetInnerHTML`), and CSRF under `SameSite=Lax` with no state-changing GET. Login throttling is absent by the decision recorded in `specification.md` section 11 (a lockout without an unlock path would strand users); security headers (helmet) are optional for a JSON API and were not added.

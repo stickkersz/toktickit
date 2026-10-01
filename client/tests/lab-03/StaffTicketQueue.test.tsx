@@ -100,6 +100,7 @@ describe("Staff Ticket Queue: rows", () => {
     expect(within(card).getByText("Owner")).toBeInTheDocument();
   });
 
+  // A11Y-03 / AC-35: rows open by keyboard
   it("opens the Ticket Detail by click, by Enter, and by Space", async () => {
     openQueue();
     // The Ticket Detail itself is tested in StaffTicketDetail.test.tsx: here only that the row gets there.
@@ -236,6 +237,20 @@ describe("Staff Ticket Queue: search, filters, sort and paging", () => {
     for (const name of ["Summary", "Category", "Req. Priority", "Owner"]) expect(header(name)).not.toHaveAttribute("aria-sort");
   });
 
+  // UI-35 / AC-54: the card layout below 768px has no headers, so the same sorts are a select
+  it("offers the same sorts as a select for the card layout, in step with the headers", async () => {
+    openQueue();
+    const user = userEvent.setup();
+    await screen.findByRole("table");
+    const select = screen.getByLabelText("Sort by");
+    expect(select).toHaveValue("-createdAt");
+    expect(within(select).getAllByRole("option")).toHaveLength(8);
+    await user.selectOptions(select, "-itPriority");
+    await waitFor(() => expect(lastCall().sort).toBe("-itPriority"));
+    expect(within(table()).getByRole("columnheader", { name: /^IT Priority/ })).toHaveAttribute("aria-sort", "descending");
+  });
+
+  // A11Y-03 / AC-35: sorting by keyboard
   it("sorts from the keyboard with Enter and Space, without giving a header a button role", async () => {
     openQueue();
     const user = userEvent.setup();
