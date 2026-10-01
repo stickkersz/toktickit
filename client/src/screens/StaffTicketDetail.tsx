@@ -17,6 +17,7 @@ import { useAuth } from "../authContext.js";
 import { PriorityBadge, StatusBadge } from "../Badge.js";
 import { formatDate } from "../attachmentDisplay.js";
 import StaffTicketPanels from "./StaffTicketPanels.js";
+import { RequiredMark } from "../RequiredMark.js";
 
 type LoadState = "loading" | "ready" | "notfound" | "error";
 type Control = "owner" | "priority" | "status";
@@ -93,6 +94,8 @@ function StaffTicketDetail() {
   const [problem, setProblem] = useState<Problem | null>(null);
   const [resolving, setResolving] = useState(false);
   const [summary, setSummary] = useState("");
+  // Closing and cancelling are terminal (no move out of either), so both wait for a confirmation.
+  const [confirming, setConfirming] = useState<"CLOSED" | "CANCELLED" | null>(null);
   const [summaryError, setSummaryError] = useState<string | null>(null);
 
   const loadIdRef = useRef(0);
@@ -198,6 +201,15 @@ function StaffTicketDetail() {
       if (current) setSaved(control);
     } catch (e) {
       fail(control, e, generic);
+      // A conflict other than a missing owner means the status moved under us, so a pending Close,
+      // Cancel or Resolve is no longer the decision on screen: drop it and let the person choose
+      // again from the reloaded status. The typed Resolution Summary is kept. A missing owner keeps
+      // it open so the Ticket can be claimed and the move confirmed, and any other failure keeps it
+      // open to retry.
+      if (control === "status" && e instanceof ApiError && e.status === 409 && e.code !== "OWNER_REQUIRED") {
+        setConfirming(null);
+        setResolving(false);
+      }
       // A refusal means this control was out of date: show what is stored now, for this control only.
       if (e instanceof ApiError && e.code && e.code !== "VALIDATION_ERROR" && e.status === 409 && !(await refresh(control))) {
         setProblem({
@@ -224,6 +236,7 @@ function StaffTicketDetail() {
   function chooseStatus(next: string) {
     if (!ticket || next === ticket.currentStatus) {
       setResolving(false);
+      setConfirming(null);
       return;
     }
     setProblem(null);
@@ -231,10 +244,25 @@ function StaffTicketDetail() {
     if (next === "RESOLVED") {
       // Resolving needs a summary and a confirmation, so nothing is sent yet.
       setResolving(true);
+      setConfirming(null);
       return;
     }
     setResolving(false);
+    if (next === "CLOSED" || next === "CANCELLED") {
+      setConfirming(next);
+      return;
+    }
+    setConfirming(null);
     return run("status", () => changeTicketStatus(ticketId, next), "Unable to change the status. Nothing was changed.", () => refresh("status"));
+  }
+
+  function confirmTerminal() {
+    if (!confirming) return;
+    const target = confirming;
+    return run("status", () => changeTicketStatus(ticketId, target), "Unable to change the status. Nothing was changed.", async () => {
+      setConfirming(null);
+      return refresh("status");
+    });
   }
 
   function confirmResolve() {
@@ -472,7 +500,7 @@ function StaffTicketDetail() {
           <select
             id="staff-status"
             className="form-select zg-editable"
-            value={resolving ? "RESOLVED" : ticket.currentStatus}
+            value={resolving ? "RESOLVED" : (confirming ?? ticket.currentStatus)}
             disabled={locked.status || terminal}
             aria-busy={busy.status}
             onChange={(e) => void chooseStatus(e.target.value)}
@@ -493,7 +521,7 @@ function StaffTicketDetail() {
           <div className="col-12">
             <div className="border rounded p-3">
               <label htmlFor="staff-resolution-summary" className="form-label fw-semibold">
-                Resolution Summary *
+                Resolution Summary <RequiredMark />
               </label>
               <textarea
                 id="staff-resolution-summary"
@@ -528,6 +556,23 @@ function StaffTicketDetail() {
                 </button>
                 <button type="button" className="btn zg-btn-primary btn-sm zg-touch-target" disabled={locked.status} onClick={() => void confirmResolve()}>
                   {busy.status ? "Resolving…" : "Confirm and resolve"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+        {confirming && (
+          <div className="col-12">
+            <div className="border rounded p-3" role="group" aria-label="Confirm the status change">
+              <p className="mb-2">
+                {confirming === "CLOSED" ? "Close this Ticket?" : "Cancel this Ticket?"} It cannot move to any other status afterwards.
+              </p>
+              <div className="d-flex gap-2 justify-content-end">
+                <button type="button" className="btn btn-outline-secondary btn-sm zg-touch-target" disabled={locked.status} onClick={() => setConfirming(null)}>
+                  Keep current status
+                </button>
+                <button type="button" className="btn zg-btn-primary btn-sm zg-touch-target" disabled={locked.status} onClick={() => void confirmTerminal()}>
+                  {busy.status ? "Saving…" : confirming === "CLOSED" ? "Confirm and close" : "Confirm and cancel"}
                 </button>
               </div>
             </div>

@@ -14,11 +14,23 @@ interface AuthContextValue {
 // the Lab 2 screens and tests still mount it on its own.
 export const AuthContext = createContext<AuthContextValue | null>(null);
 
+// The Lab 2 Development Requester selector kept its choice under this key. It is never read: it is
+// deleted on load so no trace of the removed selector stays in the browser (BR-63).
+export const LEGACY_REQUESTER_KEY = "toktickit.currentRequesterId";
+
 // Identity comes from the server session, never from browser storage: nothing
-// here reads or writes localStorage.
+// here reads localStorage, and the only write is removing the Lab 2 key above.
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [status, setStatus] = useState<"checking" | "resolved">("checking");
+
+  useEffect(() => {
+    try {
+      localStorage.removeItem(LEGACY_REQUESTER_KEY);
+    } catch {
+      // Storage can be unavailable (private mode, blocked site data); there is nothing to clean then.
+    }
+  }, []);
 
   useEffect(() => {
     let active = true;

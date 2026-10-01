@@ -4,6 +4,7 @@ import { ApiError, login } from "../api.js";
 import { useAuth } from "../authContext.js";
 import PasswordField from "../PasswordField.js";
 import { landingPathFor } from "../roles.js";
+import { RequiredMark } from "../RequiredMark.js";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -115,7 +116,7 @@ export default function Login() {
       <form onSubmit={handleSubmit} noValidate aria-label="Sign in">
         <div className="mb-1">
           <label htmlFor="login-email" className="form-label fw-semibold">
-            Email address *
+            Email address <RequiredMark />
           </label>
           <input
             id="login-email"

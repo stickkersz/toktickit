@@ -94,6 +94,7 @@ async function openDetail(initial: StaffTicketDetail = detail(), user = STAFF) {
 const optionsOf = (label: string) => within(screen.getByLabelText(label)).getAllByRole("option").map((o) => o.textContent?.replace(/\s+/g, " ").trim());
 
 describe("Staff Ticket Detail: reading", () => {
+  // STYLE-03 / AC-18: read-only fields are readOnly (not disabled) and apart from the editable controls
   it("shows the read-only Ticket information and the handling controls, with the Requested Priority apart from the IT Priority", async () => {
     await openDetail();
     expect(screen.getByLabelText("Ticket No.")).toHaveValue("TKT-2026-000042");
@@ -111,6 +112,7 @@ describe("Staff Ticket Detail: reading", () => {
     expect(screen.getByLabelText("Current Status")).toHaveValue("OPEN");
   });
 
+  // UI-34 / AC-52: the not-found state
   it("says so, and how to leave, for a Ticket that does not exist", async () => {
     renderApp("/staff/tickets/999", STAFF);
     expect(await screen.findByText("Ticket not found.")).toBeInTheDocument();
@@ -324,6 +326,82 @@ describe("Staff Ticket Detail: status", () => {
     await waitFor(() => expect(screen.getByLabelText("Current Status")).toHaveValue("IN_PROGRESS"));
     expect(optionsOf("Current Status")).toEqual(["In Progress", "Waiting for Requester", "Resolved", "Cancelled"]);
     expect(within(screen.getByRole("heading", { name: "TKT-2026-000042" }).parentElement!).getByText("In Progress")).toHaveClass("zg-badge-in-progress");
+  });
+
+  // UI-36 / AC-53, BR-64
+  it("asks for a confirmation before closing, sends nothing until then, and can be backed out of", async () => {
+    const fake = await openDetail(detail({ currentStatus: "RESOLVED", ownerId: 20, ownerName: "Wichai Charoen", ownerIsActive: true, ownerEligible: true }));
+    await userEvent.selectOptions(screen.getByLabelText("Current Status"), "Closed");
+    const group = screen.getByRole("group", { name: "Confirm the status change" });
+    expect(group).toHaveTextContent("Close this Ticket? It cannot move to any other status afterwards.");
+    expect(fake.setStatus).not.toHaveBeenCalled();
+
+    await userEvent.click(within(group).getByRole("button", { name: "Keep current status" }));
+    expect(screen.queryByRole("group", { name: "Confirm the status change" })).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Current Status")).toHaveValue("RESOLVED");
+    expect(fake.setStatus).not.toHaveBeenCalled();
+
+    await userEvent.selectOptions(screen.getByLabelText("Current Status"), "Closed");
+    await userEvent.click(screen.getByRole("button", { name: "Confirm and close" }));
+    await waitFor(() => expect(fake.setStatus).toHaveBeenCalledWith(42, "CLOSED"));
+    await waitFor(() => expect(screen.queryByRole("group", { name: "Confirm the status change" })).not.toBeInTheDocument());
+  });
+
+  // UI-40 / AC-53, BR-64
+  it("drops a pending Close confirmation when the server refuses it because someone else already closed the Ticket", async () => {
+    const fake = await openDetail(detail({ currentStatus: "RESOLVED", ownerId: 20, ownerName: "Wichai Charoen", ownerIsActive: true, ownerEligible: true }));
+    await userEvent.selectOptions(screen.getByLabelText("Current Status"), "Closed");
+    // Another staff member closes it in the meantime: the server refuses, and the reload shows Closed.
+    fake.setStatus.mockImplementationOnce(async () => {
+      fake.set({ currentStatus: "CLOSED" });
+      const e = new ApiError("refused", 409, "INVALID_TRANSITION");
+      e.permitted = [];
+      throw e;
+    });
+    await userEvent.click(screen.getByRole("button", { name: "Confirm and close" }));
+
+    expect(await screen.findByText("This Ticket cannot move to any other status.")).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole("group", { name: "Confirm the status change" })).not.toBeInTheDocument());
+    expect(screen.queryByRole("button", { name: "Confirm and close" })).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Current Status")).toHaveValue("CLOSED");
+    expect(fake.setStatus).toHaveBeenCalledTimes(1);
+  });
+
+  it("closes the Resolve panel the same way when the status moved meanwhile, and keeps the typed summary for a second try", async () => {
+    const fake = await openDetail(detail({ currentStatus: "IN_PROGRESS", ownerId: 20, ownerName: "Wichai Charoen", ownerIsActive: true, ownerEligible: true }));
+    const user = userEvent.setup();
+    await user.selectOptions(screen.getByLabelText("Current Status"), "Resolved");
+    await user.type(await screen.findByLabelText("Resolution Summary *"), "Replaced the faulty network cable.");
+    fake.setStatus.mockImplementationOnce(async () => {
+      fake.set({ currentStatus: "WAITING_FOR_REQUESTER" });
+      const e = new ApiError("refused", 409, "INVALID_TRANSITION");
+      e.permitted = ["IN_PROGRESS", "RESOLVED", "CANCELLED"];
+      throw e;
+    });
+    await user.click(screen.getByRole("button", { name: "Confirm and resolve" }));
+
+    await waitFor(() => expect(screen.queryByLabelText("Resolution Summary *")).not.toBeInTheDocument());
+    expect(screen.getByLabelText("Current Status")).toHaveValue("WAITING_FOR_REQUESTER");
+    await user.selectOptions(screen.getByLabelText("Current Status"), "Resolved");
+    expect(await screen.findByLabelText("Resolution Summary *")).toHaveValue("Replaced the faulty network cable.");
+  });
+
+  it("keeps the confirmation open to retry when the failure is not a conflict, so nothing is lost", async () => {
+    const fake = await openDetail(detail({ currentStatus: "OPEN" }));
+    await userEvent.selectOptions(screen.getByLabelText("Current Status"), "Cancelled");
+    fake.setStatus.mockRejectedValueOnce(new ApiError("down", 500));
+    await userEvent.click(screen.getByRole("button", { name: "Confirm and cancel" }));
+    expect(await screen.findByText("Unable to change the status. Nothing was changed.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Confirm and cancel" })).toBeEnabled();
+  });
+
+  it("asks the same before cancelling", async () => {
+    const fake = await openDetail(detail({ currentStatus: "OPEN" }));
+    await userEvent.selectOptions(screen.getByLabelText("Current Status"), "Cancelled");
+    expect(screen.getByRole("group", { name: "Confirm the status change" })).toHaveTextContent("Cancel this Ticket?");
+    expect(fake.setStatus).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole("button", { name: "Confirm and cancel" }));
+    await waitFor(() => expect(fake.setStatus).toHaveBeenCalledWith(42, "CANCELLED"));
   });
 
   // UI-17 / AC-24, BR-27
@@ -1020,6 +1098,7 @@ describe("Staff Ticket Detail: Public Comments and Internal Notes", () => {
     expect(screen.getByLabelText("Add Public Comment")).toBeInTheDocument();
   });
 
+  // A11Y-02 / AC-35: keyboard operation of the tabs
   it("moves between tabs with the arrow keys, Home and End, with only the selected tab in the tab order", async () => {
     await openWith();
     const user = userEvent.setup();
@@ -1122,6 +1201,18 @@ describe("Staff Ticket Detail: Attachments", () => {
     expect(within(removed).getByText(/Uploaded the wrong log/)).toBeInTheDocument();
     expect(within(removed).getByText("Unavailable")).toBeInTheDocument();
     expect(within(removed).queryByRole("link", { name: "Download" })).not.toBeInTheDocument();
+  });
+
+  // UI-38 / AC-58, BR-70
+  it("offers a Preview that opens the file inline in a new tab beside Download, and none for a removed file", async () => {
+    await openDetail(detail({ attachments }));
+    await userEvent.click(await attachmentsTab(1));
+    const [active, removed] = within(screen.getByRole("tabpanel", { name: /^Attachments/ })).getAllByRole("listitem");
+    const preview = within(active).getByRole("link", { name: "Preview screenshot.png in a new tab" });
+    expect(preview).toHaveAttribute("href", "/api/attachments/7/download?disposition=inline");
+    expect(preview).toHaveAttribute("target", "_blank");
+    expect(preview).toHaveAttribute("rel", "noopener noreferrer");
+    expect(within(removed).queryByRole("link", { name: /^Preview/ })).not.toBeInTheDocument();
   });
 
   it("has no upload control and no Remove control anywhere in the page, for IT Staff or an Administrator", async () => {

@@ -258,3 +258,33 @@ describe("Requester Ticket Detail: Public Comments", () => {
     expect(vi.spyOn(api, "postTicketNote")).not.toHaveBeenCalled();
   });
 });
+
+describe("Requester Ticket Detail: previewing an Attachment", () => {
+  // UI-39 / AC-58, BR-70
+  it("offers Preview and Download for an active file and neither for a removed one", async () => {
+    await open(
+      ticket({
+        attachments: [
+          { id: 7, originalFilename: "error.png", mimeType: "image/png", sizeBytes: 2048, uploadedAt: "2026-09-10T10:00:00.000Z", isRemoved: false },
+          {
+            id: 8,
+            originalFilename: "old.pdf",
+            mimeType: "application/pdf",
+            sizeBytes: 1024,
+            uploadedAt: "2026-09-10T11:00:00.000Z",
+            isRemoved: true,
+            removedAt: "2026-09-10T12:00:00.000Z",
+            removalReason: "Uploaded the wrong file",
+          },
+        ],
+      }),
+    );
+    const preview = screen.getByRole("link", { name: "Preview error.png in a new tab" });
+    expect(preview).toHaveAttribute("href", "/api/attachments/7/download?disposition=inline");
+    expect(preview).toHaveAttribute("target", "_blank");
+    expect(preview).toHaveAttribute("rel", "noopener noreferrer");
+    expect(screen.getByRole("link", { name: "Download" })).toHaveAttribute("href", "/api/attachments/7/download");
+    expect(screen.queryByRole("link", { name: "Preview old.pdf in a new tab" })).not.toBeInTheDocument();
+    expect(screen.getAllByRole("link", { name: "Download" })).toHaveLength(1);
+  });
+});

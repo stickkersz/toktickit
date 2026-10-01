@@ -92,6 +92,8 @@ Editing and deleting a Public Comment or Internal Note are also excluded: both a
 - BR-08 Every authenticated request re-resolves the session to its `User` and re-checks `isActive` on that row. A user deactivated mid-session loses access on their next request without needing to be signed out explicitly.
 - BR-09 Login failure messages do not reveal whether an email address exists. An unknown email and a wrong password both return the same generic failure. An account that is inactive is reported distinctly, but only after its password has been verified correctly, so account existence is never disclosed to someone who does not already hold the credentials.
 - BR-10 A new password must be at least 8 characters and at most 128, contain an upper case letter, a lower case letter, a digit, and a special character, differ from the current password, and match its confirmation field. Saving a new password clears `mustChangePassword` and revokes every other session belonging to that user.
+- BR-68 Login attempts. Every failed attempt is answered with the same generic failure (BR-09) and creates no session, however many come in a row. Attempts are not throttled and the account is never locked, so a correct password still signs in after any number of failures; the reason is recorded in section 11. Brute-force resistance rests on the scrypt cost (BR-03) and the generic message.
+- BR-69 Authentication secrets. No authentication secret exists in source code or in the repository: the session token is random per sign-in (BR-04) rather than signed with a shared key, only its SHA-256 digest is stored, and passwords are stored only as scrypt hashes (BR-03). The token reaches the browser only as an `httpOnly` cookie, never in a response body, so client code cannot read it. Real `.env` files are git-ignored and only `.env.example` files are committed. The seed's initial passwords are documented development credentials (BR-52), not personal ones, and every seeded account must change its password at first sign-in.
 
 ### Authorization
 
@@ -170,6 +172,7 @@ Editing and deleting a Public Comment or Internal Note are also excluded: both a
 
 - BR-54 Reading an Attachment is a separate permission from changing one. Reading covers listing Attachment metadata on a Ticket Detail, `GET /api/attachments/:id`, and the file download. It is permitted to a Requester on their own Tickets and to IT Staff and Administrators on any Ticket. A Removed Attachment's metadata stays readable by the same roles, and its download returns 410 to every role, unchanged from Lab 2.
 - BR-55 Adding and removing Attachments are Requester-only operations on their own Tickets. IT Staff and Administrators calling `POST /api/tickets/:id/attachments` or `DELETE /api/attachments/:id` receive 403 `FORBIDDEN`. The decision uses the role alone and is made before any Ticket or Attachment lookup, so the response is the same whether or not the target exists (BR-14) and no file or row is touched. The rule follows the role, not the history: a user whose role changed from Requester to IT Staff or Administrator also loses these operations on the Tickets they once created.
+- BR-70 An active Attachment can be previewed as well as downloaded (Lab 2 FR-08, "download or preview"). Preview is the same download endpoint with `?disposition=inline`, opened in a new browser tab; it answers with `Content-Disposition: inline` only for the allowed upload types (JPEG, PNG, WebP, PDF) and with `attachment` for anything else. Both forms send `X-Content-Type-Options: nosniff` and keep every BR-54 rule: the same roles may preview, another Requester gets 404, no session gets 401, and a Removed Attachment gets 410.
 
 ### Account changes and Tickets
 
@@ -186,9 +189,13 @@ Editing and deleting a Public Comment or Internal Note are also excluded: both a
 
 ### Screen access in the client
 
-- BR-63 The client renders a screen only for the roles the section 6 matrix permits. A signed-in user whose role is not permitted, opening that screen's URL directly, sees the forbidden state and none of the screen's data is requested; a signed-out visitor is sent to Login; an unknown URL goes to the signed-in user's own landing route, never to a Requester screen. The Development Requester selector no longer exists (BR-49), and a `toktickit.currentRequesterId` value left in browser storage by Lab 2 is inert: nothing reads it, so it cannot make IT Staff or an Administrator act as a Requester. This is presentation only (BR-16): the server enforces the same rules on every endpoint.
+- BR-63 The client renders a screen only for the roles the authorization matrix in section 5 permits. A signed-in user whose role is not permitted, opening that screen's URL directly, sees the forbidden state and none of the screen's data is requested; a signed-out visitor is sent to Login; an unknown URL goes to the signed-in user's own landing route, never to a Requester screen. The Development Requester selector no longer exists (BR-49), and a `toktickit.currentRequesterId` value left in browser storage by Lab 2 is deleted the first time the client loads, so no client-side state of the selector survives. Nothing reads it before then either, so it cannot make IT Staff or an Administrator act as a Requester. This is presentation only (BR-16): the server enforces the same rules on every endpoint.
+- BR-64 Moves that cannot be undone or that the Requester will read are confirmed before they are sent: moving to `RESOLVED` needs a Resolution Summary (BR-27) and a confirm action; moving to `CLOSED` or `CANCELLED`, both terminal (BR-25), needs a confirm action that says the Ticket cannot move again; every other permitted move is applied at once. The Requester's "problem appears resolved" indication (BR-29) also asks for a confirmation. Nothing is sent to the API until the user confirms, and backing out leaves the Ticket unchanged. If the server refuses a confirmed move because the status changed in the meantime, the pending confirmation is dropped and the reloaded status is shown, so the stale choice cannot be confirmed again; a refusal for a missing owner keeps it open so the Ticket can be claimed first.
+- BR-65 An unexpected server failure returns 500 with the standard `{ error, message }` envelope and a generic message, never a stack trace, SQL, file path, password hash, or token. The client shows a plain safe-failure message, keeps what the user typed, and offers Retry or Reload where repeating the action makes sense; it never shows a change as saved unless the server confirmed it.
+- BR-66 Lab 3 is an increment, not a rewrite: every Lab 2 Requester function (create, list with search/filter/sort/pagination, detail, attachments) keeps its Lab 2 behaviour under the authenticated identity, and the Lab 1 and Lab 2 test suites keep passing unchanged except where a Lab 3 rule deliberately supersedes them, which is documented where it happens.
+- BR-67 Required form fields show a red asterisk after their label, as fixed by the Lab 2 ui-spec. The asterisk stays part of the label text, so the field's accessible name still says it is required, and it never replaces the field's validation message.
 
-## 6. Authorization matrix
+### Authorization matrix
 
 Every protected operation, against each role. `own` means the operation is additionally restricted to resources the authenticated user owns, enforced by folding the identity into the database query.
 
@@ -215,7 +222,7 @@ Every protected operation, against each role. `own` means the operation is addit
 
 IT Staff and Administrators read Attachment metadata and download files on any Ticket they can open in the queue (BR-54). They cannot add or remove Attachments in Lab 3: Attachment mutation stays a Requester capability, unchanged from Lab 2, and a direct API call from either role returns 403 (BR-55).
 
-## 7. UI Specification Summary
+## 6. UI Specification Summary
 
 Full detail is in `docs/lab-03/ui-spec.md`. All new screens reuse the Zen Green tokens, field conventions, badges, buttons, validation placement, responsive rules, and accessibility expectations already fixed in `docs/lab-02/ui-spec.md`.
 
@@ -227,7 +234,7 @@ Full detail is in `docs/lab-03/ui-spec.md`. All new screens reuse the Zen Green 
 - **IT Staff Ticket Detail**: grouped read-only Ticket information with only the permitted operational fields editable, Ticket Owner, IT Priority, status control, Public Comments and Internal Notes as visually distinct panels, and the existing Attachments panel.
 - **Administrator User Management**: user list with Name, Email, Role, Status, and Edit, a name or email search, an optional role filter, and a create and edit panel covering role, activation, and initial password, with the BR-42 and BR-43 safety rules surfaced as clear feedback.
 
-## 8. Data Changes
+## 7. Data Changes
 
 `RequesterUser` is renamed to `User` in place and extended. New models cover sessions, comments, and notes. `Ticket` gains ownership, a resolution summary, and the Requester resolution indication.
 
@@ -318,7 +325,7 @@ model InternalNote {
 
 The seed is not part of this file and runs afterwards (BR-52, BR-53). It cannot be a step in the sequence, because it only starts once the migration has finished, so a `SET NOT NULL` that depended on the seed having run first would fail on any database that already holds rows. Row counts, the marker count before seeding, and the Ticket-to-requester mapping are compared before and after as migration evidence.
 
-## 9. API Contract
+## 8. API Contract
 
 Full shapes, statuses, and error bodies are in `docs/lab-03/api-spec.md`. Every Lab 2 endpoint loses its `requesterId` parameter and derives identity from the session cookie instead.
 
@@ -349,7 +356,7 @@ Full shapes, statuses, and error bodies are in `docs/lab-03/api-spec.md`. Every 
 
 `GET /api/requesters` is deleted (BR-49).
 
-## 10. Acceptance Criteria
+## 9. Acceptance Criteria
 
 - AC-01 Given an active user with valid credentials, when the user logs in, then the backend establishes authenticated access and returns the permitted user identity and role.
 - AC-02 Given a user who must change the initial password, when login succeeds, then normal application screens remain unavailable until a valid new password is saved.
@@ -396,15 +403,31 @@ Full shapes, statuses, and error bodies are in `docs/lab-03/api-spec.md`. Every 
 - AC-43 Given a Requester whose role is changed to IT Staff, when they use the application afterwards, then their Tickets keep them as requester, every Requester-only operation returns 403, and they can open those Tickets only as staff do.
 - AC-44 Given a Public Comment written by IT Staff who is later changed to the Requester role, when the Ticket is read, then the comment still shows the `IT_STAFF` badge it was written with.
 - AC-45 Given a browser page served from an allowed origin, when it makes a credentialed request, then the response echoes that exact origin with `Access-Control-Allow-Credentials: true`, and given any other origin, then no CORS headers are sent.
-- AC-46 Given a signed-in user whose role does not permit a screen, when its URL is opened directly, then the forbidden state is shown and none of that screen's data is requested; and given a stale Development Requester value left in browser storage by Lab 2, then IT Staff and an Administrator still cannot reach a Requester screen, and it does not stand in for signing in.
+- AC-46 Given a signed-in user whose role does not permit a screen, when its URL is opened directly, then the forbidden state is shown and none of that screen's data is requested; and given a stale Development Requester value left in browser storage by Lab 2, then it is removed from storage, IT Staff and an Administrator still cannot reach a Requester screen, and it does not stand in for signing in.
+- AC-47 Given an Administrator, when User Management is opened, searched by part of a name or email, and filtered by role, then the list shows Name, Email, Role, Status, and an Edit action for exactly the matching users.
+- AC-48 Given an Administrator, when a user is created with a valid name, a unique email, one permitted role, an activation state, and a valid initial password, then the user is saved with that role, must change the password at first sign in, and appears in the list with a confirmation.
+- AC-49 Given an Administrator, when a user's name, email, role, or activation state is edited and saved, then only the changed fields are stored, the list reflects them, and a confirmation is shown.
+- AC-50 Given an IT Staff or Administrator session, when an Internal Note is added to a Ticket, then it is stored with the author and time set by the server and is listed for staff on that Ticket.
+- AC-51 Given the IT Staff Ticket Queue, when there are no Tickets at all, or the queue cannot be loaded, then a distinct empty state, or a failure message with Retry, is shown instead of a table.
+- AC-52 Given an IT Staff session, when the Ticket Detail of a Ticket that does not exist is opened, then a not-found state with a way back to the queue is shown.
+- AC-53 Given an IT Staff session, when `CLOSED` or `CANCELLED` is chosen, then nothing is sent until the user confirms, and backing out keeps the current status (BR-64).
+- AC-54 Given the Ticket Queue below 768px, where the table becomes cards, when a sort is chosen, then the same sort options as the table headers are available and applied.
+- AC-55 Given a signed-in user changing their password voluntarily from the header, when the change succeeds, then the screen says so and offers a way back, and before saving it offers a way to leave without changing anything.
+- AC-56 Given any Lab 3 form, when it is shown, then every required field's label ends with a red asterisk (BR-67).
+- AC-57 Given any Ticket or user list or detail, when a status, priority, or role is shown, then it uses its fixed badge text and colour, with no two statuses sharing a style.
+- AC-58 Given an active Attachment the user may read, when they choose Preview, then the file opens inline in a new tab, Download still saves it, and a Removed Attachment offers neither (BR-70).
+- AC-59 Given an existing account, when ten wrong passwords are submitted in a row, then each gets the same generic failure and no session, and the correct password still signs in afterwards (BR-68).
+- AC-60 Given the repository and the client code, then no environment file is committed and no client code reads the session cookie or any password or token hash (BR-69).
 
-## 11. Definition of Done
+## 10. Definition of Done
 
 **Product:**
 
 - Every FR, BR, and AC above is implemented and demonstrable from the final `main` branch.
 - `server/tests/lab-03/*`, client `lab-03` component tests, and `e2e/lab-03/*` all pass, along with the full Lab 2 suites as regression evidence. No test is skipped or commented out.
 - Every AC is linked to at least one planned test in `docs/lab-03/tests.md`.
+- The API conforms to `docs/lab-03/api-spec.md` (paths, methods, request and response shapes, status and error codes) and the data model to section 7.
+- Success, failure, and boundary cases are handled and tested: validation limits at their exact boundaries, conflicts (409), forbidden (403), not-found (404), and safe unexpected failures (500) with no internal detail exposed.
 - Every protected operation is enforced server-side and proven by a direct-API authorization test, not only by a hidden control.
 - Login, Change Password, Ticket Queue, IT Staff Ticket Detail, and User Management conform to `docs/lab-03/ui-spec.md` and the Zen Green tokens at desktop, tablet, and mobile.
 - The migration preserves all Lab 2 data, evidenced by before and after row counts and ownership checks.
@@ -417,15 +440,15 @@ Full shapes, statuses, and error bodies are in `docs/lab-03/api-spec.md`. Every 
 - `docs/lab-03/reviewer.md` and `docs/lab-03/ai-use.md` completed.
 - The GitHub Project Kanban shows every Lab 3 Issue in Done.
 
-## 12. Assumptions and Decisions
+## 11. Assumptions and Decisions
 
 - Sessions are server-side rows rather than stateless tokens, because the handout requires logout invalidation and blocked access after logout, which a self-contained token cannot provide without a revocation list that is itself server state.
 - Password hashing uses `node:crypto` scrypt rather than bcrypt or argon2, so the project gains no native build step and `npm install` cannot fail on a reviewer's machine. The cost parameters are documented in BR-03 and are tunable in one module.
 - From Issue 03 the client is served through a Vite dev proxy so the API is same-origin during development. This keeps the session cookie a first-party cookie and avoids `SameSite=None` with `Secure`, which plain-HTTP local development cannot satisfy. CSRF exposure is handled by `SameSite=Lax` together with the rule that no state-changing operation uses GET. Credentialed CORS (BR-62) exists for the case where a page is served from another origin; a `SameSite=Lax` cookie is carried by such a request only when both origins are the same site (`localhost:5173` to `localhost:3000`, but not `127.0.0.1` to `localhost`), which is why the proxy is the primary path once it exists. Until Issue 03 the Lab 2 client still calls the API directly at `VITE_API_URL`, cross-origin, so BR-62 is what makes the cookie usable in the meantime.
 - No new runtime dependency is added for authentication. Cookie parsing is a small first-party helper rather than the `cookie-parser` package, keeping the Lab 2 dependency list unchanged apart from nothing at all.
 - Public Comments and Internal Notes are two tables rather than one table with a visibility flag. A Requester-facing query physically cannot reach the Internal Note table, so the failure that AC-04 guards against is prevented structurally instead of relying on a `where` clause being remembered at every call site.
-- Login attempt throttling and account lockout are not implemented: account unlocking is explicitly excluded by the handout, and a lockout without an unlock path would strand a user. Brute-force resistance rests on the scrypt work factor and the generic failure message in BR-09.
+- Login attempt throttling and account lockout are not implemented: account unlocking is explicitly excluded by the handout, and a lockout without an unlock path would strand a user. Brute-force resistance rests on the scrypt work factor and the generic failure message in BR-09; the rule itself is BR-68.
 - Ticket ownership is left alone when an account changes, and eligibility is derived rather than the Ticket being unassigned automatically. Automatic unassignment would leave `IN_PROGRESS` Tickets with no owner, breaking the BR-28 invariant, and would silently rewrite history. Deactivation is not blocked by owned Tickets (BR-56), because a leaver's account has to be closable at once.
 - Lab 3 adds no conflict-of-interest rule: a user promoted from Requester to IT Staff may work a Ticket they originally requested. The handout does not ask for one, and it is recorded here as a known limitation rather than left implicit.
-- The Administrator role is granted the IT Staff Ticket operations through the section 6 matrix so that a single seeded Administrator can exercise and demonstrate the whole workflow. The two responsibilities remain conceptually separate as the handout requires, and no Ticket operation is available to an Administrator implicitly.
+- The Administrator role is granted the IT Staff Ticket operations through the authorization matrix in section 5 so that a single seeded Administrator can exercise and demonstrate the whole workflow. The two responsibilities remain conceptually separate as the handout requires, and no Ticket operation is available to an Administrator implicitly.
 - Existing Lab 2 route handlers keep their current shape and only change identity source, so the 82 passing server tests move to session-based fixtures without their ownership assertions being rewritten.

@@ -6,6 +6,7 @@ import { RoleBadge, StatusBadge } from "../../src/Badge.js";
 // ui-spec.md section 2: every status carries its full text label and its own style,
 // so colour is never the only signal, and a Requester and an IT Staff member reading
 // the same Ticket see the same wording.
+// STYLE-01 / AC-57: fixed text and colour per status and role
 describe("StatusBadge for all eight statuses", () => {
   it.each([
     ["NEW", "New", "zg-badge-new"],

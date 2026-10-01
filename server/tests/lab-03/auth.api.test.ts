@@ -100,6 +100,22 @@ describe("POST /api/auth/login", () => {
     expect(res.status).toBe(500);
     expect(res.body).toEqual({ error: "INTERNAL_ERROR", message: "Unable to sign in." });
   });
+
+  // API-59 / AC-59, BR-68
+  it("answers every failed attempt in a row identically, creates no session, and does not lock the account", async () => {
+    const { user, email, password } = await createUser();
+    for (let attempt = 0; attempt < 10; attempt++) {
+      const res = await request(app).post("/api/auth/login").send({ email, password: `Wrong!Pass${attempt}` });
+      expect(res.status).toBe(401);
+      expect(res.body).toEqual({ error: "INVALID_CREDENTIALS", message: "Invalid email or password." });
+      expect(res.headers["set-cookie"]).toBeUndefined();
+    }
+    expect(await getPrisma().session.count({ where: { userId: user.id } })).toBe(0);
+
+    const right = await request(app).post("/api/auth/login").send({ email, password });
+    expect(right.status).toBe(200);
+    expect(Object.keys(right.body)).not.toContain("token");
+  });
 });
 
 describe("password change requirement", () => {

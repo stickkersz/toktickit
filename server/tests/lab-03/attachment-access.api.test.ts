@@ -168,3 +168,35 @@ describe("the owning Requester", () => {
     expect(removal.status).toBe(200);
   });
 });
+
+// API-58 / AC-58, BR-70: Preview is the download endpoint asked to show the file in the browser.
+describe("previewing an Attachment", () => {
+  it("serves an allowed type inline only when asked, keeps nosniff on both, and keeps every access rule", async () => {
+    const upload = await requester
+      .post(`/api/tickets/${ticketId}/attachments`)
+      .attach("files", Buffer.from("preview bytes"), { filename: "screen.png", contentType: "image/png" });
+    const id = upload.body.uploaded[0].id;
+
+    const preview = await requester.get(`/api/attachments/${id}/download?disposition=inline`);
+    expect(preview.status).toBe(200);
+    expect(preview.headers["content-disposition"]).toBe('inline; filename="screen.png"');
+    expect(preview.headers["x-content-type-options"]).toBe("nosniff");
+
+    const download = await requester.get(`/api/attachments/${id}/download`);
+    expect(download.headers["content-disposition"]).toBe('attachment; filename="screen.png"');
+    expect(download.headers["x-content-type-options"]).toBe("nosniff");
+
+    // Anything other than "inline" is an ordinary download.
+    expect((await requester.get(`/api/attachments/${id}/download?disposition=evil`)).headers["content-disposition"]).toMatch(/^attachment;/);
+
+    // Staff may preview as they may download; another Requester and no session are refused exactly as before.
+    expect((await staff.get(`/api/attachments/${id}/download?disposition=inline`)).status).toBe(200);
+    const stranger = await signedIn((await createUser()).user);
+    expect((await stranger.get(`/api/attachments/${id}/download?disposition=inline`)).status).toBe(404);
+    expect((await request(app).get(`/api/attachments/${id}/download?disposition=inline`)).status).toBe(401);
+
+    // A removed file cannot be previewed either.
+    await requester.delete(`/api/attachments/${id}`).send({ reason: "Uploaded the wrong one" });
+    expect((await requester.get(`/api/attachments/${id}/download?disposition=inline`)).status).toBe(410);
+  });
+});

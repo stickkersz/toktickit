@@ -1,4 +1,4 @@
-import { Attachment, getAttachmentDownloadUrl, getTicketComments, getTicketNotes, postTicketComment, postTicketNote } from "../api.js";
+import { Attachment, getAttachmentDownloadUrl, getAttachmentPreviewUrl, getTicketComments, getTicketNotes, postTicketComment, postTicketNote } from "../api.js";
 import { ContentPanel, LockIcon } from "../ContentPanel.js";
 import { Tabs } from "../Tabs.js";
 import { useContentThread } from "../content.js";
@@ -68,9 +68,20 @@ function AttachmentList({ attachments }: { attachments: Attachment[] }) {
           {attachment.isRemoved ? (
             <span className="text-muted small align-self-center">Unavailable</span>
           ) : (
-            <a className="btn btn-sm btn-outline-secondary zg-touch-target" href={getAttachmentDownloadUrl(attachment.id)}>
-              Download
-            </a>
+            <div className="d-flex gap-2">
+              <a
+                className="btn btn-sm btn-outline-secondary zg-touch-target"
+                href={getAttachmentPreviewUrl(attachment.id)}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label={`Preview ${attachment.originalFilename} in a new tab`}
+              >
+                Preview
+              </a>
+              <a className="btn btn-sm btn-outline-secondary zg-touch-target" href={getAttachmentDownloadUrl(attachment.id)}>
+                Download
+              </a>
+            </div>
           )}
         </li>
       ))}
