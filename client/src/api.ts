@@ -308,6 +308,11 @@ export function getAttachmentDownloadUrl(attachmentId: number): string {
   return `${API_BASE}/api/attachments/${attachmentId}/download`;
 }
 
+// The same endpoint, asked to show the file in the browser (images and PDF) instead of saving it.
+export function getAttachmentPreviewUrl(attachmentId: number): string {
+  return `${getAttachmentDownloadUrl(attachmentId)}?disposition=inline`;
+}
+
 // ---------------------------------------------------------------------------
 // Lab 3 authentication (api-spec.md endpoints 1 to 4).
 // ---------------------------------------------------------------------------

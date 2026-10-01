@@ -70,7 +70,7 @@ The client calls a relative `/api`, and the Vite dev server proxies it to the AP
 
 Open the client URL. Without a session every route sends you to the Login screen. Every seeded account is listed under Development accounts above.
 
-After signing in as a Requester the Lab 2 workflow is complete: create a Ticket with attachments, find it in My Tickets (search, filter, sort, paginate), open its Ticket Detail, and add, download, or soft-remove attachments. A Requester only ever sees their own Tickets; another Requester's Ticket returns "Ticket not found" even by direct URL.
+After signing in as a Requester the Lab 2 workflow is complete: create a Ticket with attachments, find it in My Tickets (search, filter, sort, paginate), open its Ticket Detail, and add, preview, download, or soft-remove attachments. A Requester only ever sees their own Tickets; another Requester's Ticket returns "Ticket not found" even by direct URL.
 
 ## Tests
 

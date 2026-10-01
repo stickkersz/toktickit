@@ -8,6 +8,7 @@ import {
   TicketDetail as TicketDetailData,
   flagProblemResolved,
   getAttachmentDownloadUrl,
+  getAttachmentPreviewUrl,
   getTicketComments,
   getTicketDetail,
   postTicketComment,
@@ -404,6 +405,15 @@ export default function TicketDetail() {
                     <span className="text-muted small align-self-center">Unavailable</span>
                   ) : (
                     <>
+                      <a
+                        className="btn btn-sm btn-outline-secondary"
+                        href={getAttachmentPreviewUrl(attachment.id)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        aria-label={`Preview ${attachment.originalFilename} in a new tab`}
+                      >
+                        Preview
+                      </a>
                       <a
                         className="btn btn-sm btn-outline-secondary"
                         href={getAttachmentDownloadUrl(attachment.id)}

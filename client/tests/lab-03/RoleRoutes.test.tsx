@@ -117,8 +117,8 @@ describe("a stale Lab 2 Development Requester selection in browser storage", () 
 
     expect(await screen.findByText("You do not have access to Requester tickets.")).toBeInTheDocument();
     expectNoProtectedRequests();
-    // Nothing reads the key any more, so nothing clears it either.
-    expect(localStorage.getItem(LEGACY_KEY)).toBe("1");
+    // Never read, and removed on load so the selector leaves no state behind (labsheet 5.2).
+    expect(localStorage.getItem(LEGACY_KEY)).toBeNull();
   });
 
   it("does not let it stand in for signing in", async () => {

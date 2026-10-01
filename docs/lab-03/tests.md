@@ -25,6 +25,7 @@ The database must be running, migrated, and seeded first. Playwright's `testDir`
 | UNIT-07 | Unit | BR-40, BR-46 | User field validation: name bounds, email format and length, role enum | Out-of-bounds and malformed values rejected with a per-field message | `server/tests/lab-03/userValidation.unit.test.ts` | Pass |
 | UNIT-08 | Unit | BR-23, L2-BR-23 | `parseStaffQueueQuery` with unknown sort, out-of-range page and pageSize, unknown filter values; and `escapeLike` on the three LIKE-special characters | Every unrecognised input falls back to its default, never throws; `%`, `_` and `\` are escaped and nothing else is | `server/tests/lab-03/staffQueueQuery.unit.test.ts` | Pass |
 | UNIT-09 | Unit | BR-51, AC-36 | `verifyPassword` against the `!` marker, an empty string, and a truncated `scrypt$` string | Returns false for each without throwing, so a backfilled account can never authenticate | `server/tests/lab-03/password.unit.test.ts` | Pass |
+| UNIT-10 | Unit | AC-60, BR-69 | Files tracked by git, and every client source file | No `.env` file is tracked (only `.env.example`); no client file mentions `document.cookie`, the session cookie name, `passwordHash` or `tokenHash` | `server/tests/lab-03/secrets.unit.test.ts` | Pass |
 | API-01 | API | AC-01 | Valid login | 200, session cookie set, safe user body with role, no password field | `server/tests/lab-03/auth.api.test.ts` | Pass |
 | API-02 | API | AC-06 | Login with an unknown email, and with a wrong password | Both 401 with the identical generic message | `server/tests/lab-03/auth.api.test.ts` | Pass |
 | API-03 | API | AC-05 | Login to an inactive account with correct credentials | 401 `ACCOUNT_INACTIVE`, no session created | `server/tests/lab-03/auth.api.test.ts` | Pass |
@@ -82,6 +83,8 @@ The database must be running, migrated, and seeded first. Playwright's `testDir`
 | API-55 | API | BR-18, FR-12 | IT Staff request the list of Ticket Owners | Only active IT Staff and Administrators, ordered by name, each with `id`, `name` and `role` and nothing else; a Requester gets 403 and no session gets 401 | `server/tests/lab-03/staff-ticket-detail.api.test.ts` | Pass |
 | API-56 | API | AC-41, BR-58 | Post a Public Comment and add an Internal Note on a Ticket whose owner is ineligible | 201 and 201: neither is blocked by the owner's departure | `server/tests/lab-03/comments-notes.api.test.ts` | Pass |
 | API-57 | API | AC-23, BR-25, BR-26, BR-28 | A Ticket is changed by someone else in the gap between a status move being checked and being written: closed or cancelled after the check, changed to another status, or its owner deactivated | Nothing is applied on the strength of the earlier check: a move out of a terminal state is refused, a move that was valid from the old status is refused as changed, an owner who became ineligible blocks a move that needs one, and the status the other party set is what remains | `server/tests/lab-03/staff-ticket-detail.api.test.ts` | Pass |
+| API-58 | Security | AC-58, BR-70, BR-54 | Download with `?disposition=inline` as the owner, as IT Staff, as another Requester, with no session, with an unknown disposition value, and after removal | Owner and staff 200 with `inline` and `nosniff`; plain download and unknown values stay `attachment`; another Requester 404, no session 401, removed 410 | `server/tests/lab-03/attachment-access.api.test.ts` | Pass |
+| API-59 | Security | AC-59, BR-68, BR-09 | Ten wrong passwords in a row for one account, then the correct one | Each attempt 401 with the same generic body and no cookie, no session row; the correct password then signs in and the body carries no token | `server/tests/lab-03/auth.api.test.ts` | Pass |
 | UI-01 | UI | AC-01 | Login screen: valid submission | Calls the API once, stores nothing in `localStorage`, navigates to the role landing screen | `client/tests/lab-03/Login.test.tsx` | Pass |
 | UI-02 | UI | FR-01 | Login: missing email, malformed email, missing password | Per-field messages shown, no API call made | `client/tests/lab-03/Login.test.tsx` | Pass |
 | UI-03 | UI | AC-06 | Login: credential failure response | Generic callout, email preserved, password cleared | `client/tests/lab-03/Login.test.tsx` | Pass |
@@ -113,12 +116,14 @@ The database must be running, migrated, and seeded first. Playwright's `testDir`
 | UI-29 | UI | AC-40, AC-41 | Ticket Queue with a Ticket whose owner is inactive and another whose owner is no longer IT Staff, and the Owner filter | Owner name kept with "(inactive)" or "(not IT Staff)" and a "Needs new owner" badge; choosing "Needs an owner" issues `owner=needs-owner` | `client/tests/lab-03/StaffTicketQueue.test.tsx` | Pass |
 | UI-30 | UI | AC-41, AC-42 | Staff Ticket Detail for a Ticket with an ineligible owner and an inactive Requester | Claim shown; the ineligible owner is the displayed value but not offered for other Tickets; the Requester carries an "(inactive)" marker | `client/tests/lab-03/StaffTicketDetail.test.tsx` | Pass |
 | UI-31 | UI | AC-46, BR-63, BR-16 | Each role opening, by direct URL, screens its role may not use (Requester on the staff and admin routes, IT Staff on the admin and Requester routes, Administrator on the Requester routes), plus signed-out visitors and unknown URLs | The forbidden state with the exact message and a link home; the screen never renders and none of its API requests are made; the allowed roles still get in; signed-out goes to Login; an unknown URL goes to the user's own landing route | `client/tests/lab-03/RoleRoutes.test.tsx` | Pass |
-| UI-32 | UI | AC-46, BR-63, BR-49 | A stale `toktickit.currentRequesterId` left in browser storage by Lab 2 while IT Staff, an Administrator, a Requester, or nobody is signed in, and a visit to the deleted `/select-requester` | Inert: IT Staff and Administrators cannot reach a Requester screen through it and no protected request is made; it does not stand in for signing in; `/select-requester` is an unknown URL for every role; a signed-in Requester acts as themselves | `client/tests/lab-03/RoleRoutes.test.tsx` | Pass |
+| UI-32 | UI | AC-46, BR-63, BR-49 | A stale `toktickit.currentRequesterId` left in browser storage by Lab 2 while IT Staff, an Administrator, a Requester, or nobody is signed in, and a visit to the deleted `/select-requester` | Deleted from storage when the client loads, and inert before that: IT Staff and Administrators cannot reach a Requester screen through it and no protected request is made; it does not stand in for signing in; `/select-requester` is an unknown URL for every role; a signed-in Requester acts as themselves | `client/tests/lab-03/RoleRoutes.test.tsx` | Pass |
 | UI-33 | UI | AC-18, AC-19, AC-23 | Staff Ticket Detail saves for owner, IT Priority and status whose responses arrive out of order, a reload that was read before a later save, and a save still in flight when another Ticket is opened | A response changes only the fields of the control it was for, so an older snapshot never overwrites a newer save of another control; the status reload supplies the permitted next statuses and Resolution Summary; the status control stays busy until its reload lands; nothing in flight for one Ticket touches the next; a reload that fails locks the control, offers only its current value, does not say Saved, and unlocks on a successful Reload | `client/tests/lab-03/StaffTicketDetail.test.tsx` | Pass |
 | UI-34 | UI | AC-52 | Staff Ticket Detail for a Ticket that does not exist | Not-found state with a link back to the queue, no controls | `client/tests/lab-03/StaffTicketDetail.test.tsx` | Pass |
 | UI-35 | UI | AC-54, AC-35 | Ticket Queue: the Sort by select used by the card layout below 768px | The same eight sorts as the headers; choosing one sends that sort and the headers follow it | `client/tests/lab-03/StaffTicketQueue.test.tsx` | Pass |
 | UI-36 | UI | AC-53, BR-64 | Staff Ticket Detail: choosing `CLOSED` or `CANCELLED` | A confirmation appears and nothing is sent; Keep current status backs out; confirming sends exactly that move | `client/tests/lab-03/StaffTicketDetail.test.tsx` | Pass |
 | UI-37 | UI | AC-55 | Change Password used voluntarily from the header | Cancel and go back link before saving; after saving, a success message, a link home, and cleared fields | `client/tests/lab-03/ChangePassword.test.tsx` | Pass |
+| UI-38 | UI | AC-58, BR-70 | IT Staff Attachments tab with an active and a removed file | The active file has a Preview link to `?disposition=inline` that opens in a new tab with `rel="noopener noreferrer"`; the removed file has none | `client/tests/lab-03/StaffTicketDetail.test.tsx` | Pass |
+| UI-39 | UI | AC-58, BR-70 | Requester Ticket Detail with an active and a removed file | Preview and Download for the active file, neither for the removed one | `client/tests/lab-03/RequesterTicketDetail.lab03.test.tsx` | Pass |
 | MIG-01 | Migration | AC-34 | Row count and ids in `User` after the rename, against `RequesterUser` before | Identical count, identical ids, no row lost or added | `server/tests/lab-03/migration.test.ts` | Pass |
 | MIG-02 | Migration | AC-34, BR-47 | Every pre-existing Ticket's requester after migration | Each Ticket still resolves to its original person by ticket number | `server/tests/lab-03/migration.test.ts` | Pass |
 | MIG-03 | Migration | BR-48, BR-52 | Migrated Requesters after seeding, including migrated rows the seed does not list | Role `REQUESTER`, `mustChangePassword` true, a well-formed `scrypt$` hash that is neither the `!` marker nor plaintext, and no row left holding the marker | `server/tests/lab-03/migration.test.ts` | Pass |
@@ -205,6 +210,9 @@ The database must be running, migrated, and seeded first. Playwright's `testDir`
 | AC-55 | UI-37 |
 | AC-56 | STYLE-02 |
 | AC-57 | STYLE-01 |
+| AC-58 | API-58, UI-38, UI-39 |
+| AC-59 | API-59 |
+| AC-60 | UNIT-10 |
 
 Every AC-01 through AC-46 appears above, and every test row names a real file path that must exist before its row may be marked Pass.
 
@@ -471,13 +479,19 @@ After the release, every requirement in the Lab 3 labsheet (and the Lab 2 sectio
 
 Mutation checks: removing the `zg-required` class failed 3 tests, and letting Close apply without a confirmation failed 2.
 
+A second literal pass, also committed directly to `main` for the same reason, closed three more gaps:
+
+- **Selector state removed, not just ignored.** Labsheet section 5.2 asks how the selector "and its client-side state are removed". The client now deletes the Lab 2 `toktickit.currentRequesterId` key when it loads (BR-63, UI-32 asserts it is gone).
+- **Download or preview.** Lab 2 FR-08, which Lab 3 keeps, says "download or preview". Every active Attachment now has a Preview beside Download, for the Requester and for IT Staff: the same endpoint with `?disposition=inline`, opened in a new tab, inline only for the allowed image and PDF types, with `nosniff` and every access rule unchanged (BR-70, AC-58, API-58, UI-38, UI-39).
+- **Rules the labsheet names.** Section 6 asks for rules on login attempts and section 7 for keeping authentication secrets out of client code and source control. BR-68 (AC-59, API-59) and BR-69 (AC-60, UNIT-10) now state them and are tested; a probe file reading `document.cookie` in the client made UNIT-10 fail.
+
 | Suite | Result |
 |---|---|
-| `cd server && npm test` | 29 files, 330 tests passed: 3 Lab 1, 78 Lab 2, 249 Lab 3, unchanged |
-| `cd client && npm test` | 16 files, 259 tests passed: 35 Lab 2, 224 Lab 3 |
+| `cd server && npm test` | 30 files, 333 tests passed: 3 Lab 1, 78 Lab 2, 252 Lab 3 |
+| `cd client && npm test` | 16 files, 261 tests passed: 35 Lab 2, 226 Lab 3 |
 | `npx playwright test` | 20 of 20 passed: 8 Lab 2, 12 Lab 3 |
 
-All 127 planned tests in section 2 are Pass and none is Planned; all 57 acceptance criteria are traced.
+All 132 planned tests in section 2 are Pass and none is Planned; all 60 acceptance criteria are traced.
 
 ## 7. Pre-release code review
 

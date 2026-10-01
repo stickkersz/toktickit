@@ -1155,6 +1155,18 @@ describe("Staff Ticket Detail: Attachments", () => {
     expect(within(removed).queryByRole("link", { name: "Download" })).not.toBeInTheDocument();
   });
 
+  // UI-38 / AC-58, BR-70
+  it("offers a Preview that opens the file inline in a new tab beside Download, and none for a removed file", async () => {
+    await openDetail(detail({ attachments }));
+    await userEvent.click(await attachmentsTab(1));
+    const [active, removed] = within(screen.getByRole("tabpanel", { name: /^Attachments/ })).getAllByRole("listitem");
+    const preview = within(active).getByRole("link", { name: "Preview screenshot.png in a new tab" });
+    expect(preview).toHaveAttribute("href", "/api/attachments/7/download?disposition=inline");
+    expect(preview).toHaveAttribute("target", "_blank");
+    expect(preview).toHaveAttribute("rel", "noopener noreferrer");
+    expect(within(removed).queryByRole("link", { name: /^Preview/ })).not.toBeInTheDocument();
+  });
+
   it("has no upload control and no Remove control anywhere in the page, for IT Staff or an Administrator", async () => {
     for (const user of [STAFF, ADMIN]) {
       const { unmount } = renderApp("/staff/tickets/42", user);

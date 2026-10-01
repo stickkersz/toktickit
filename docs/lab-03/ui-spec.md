@@ -122,7 +122,7 @@ Panels below, as labelled tabs with counts: **Public Comments**, **Internal Note
 
 Public Comments and Internal Notes must be impossible to confuse. Internal Notes use a distinct `--color-warning-bg` tinted panel, a lock glyph, and a standing label reading "Internal only. Not visible to the Requester." above its composer. Public Comments use the plain surface background. The two composers never appear simultaneously: only the active tab's composer is rendered, so a note cannot be typed into a comment box by accident.
 
-Attachments render as in Lab 2 for reading: each row shows its metadata and a Download action, and a removed Attachment shows its removal reason with no Download action. The upload control and every Remove control are not rendered at all for IT Staff and Administrators, not merely disabled, since Attachment mutation stays a Requester capability (BR-54, BR-55). The API refuses both operations with 403 regardless of what the client renders.
+Attachments render as in Lab 2 for reading: each row shows its metadata, a Preview action that opens the file in a new tab (BR-70) and a Download action, and a removed Attachment shows its removal reason with neither. The upload control and every Remove control are not rendered at all for IT Staff and Administrators, not merely disabled, since Attachment mutation stays a Requester capability (BR-54, BR-55). The API refuses both operations with 403 regardless of what the client renders.
 
 States: loading, loaded, not found ("Ticket not found."), forbidden, saving (the affected control disabled and busy, others still usable), per-operation success (an inline confirmation next to the control that changed, not a page-level banner), validation error, conflict (a distinct callout for a rejected transition, naming what is permitted from the current status), and API failure with the prior value restored. After a status change, or a refused change, the screen reloads what the control depends on (the permitted next statuses, the Resolution Summary, the owner list). If that reload fails, the screen does not present what it has as current: the control is locked, shows only its current value, says the latest values could not be loaded, and offers a Reload button; "Saved" is not shown, and the control unlocks only when a reload succeeds.
 
@@ -178,7 +178,8 @@ Run against the running app and the captured screenshots before any screen is ma
 - [x] Each role sees only its permitted navigation, and the active item is marked on every route including detail routes.
 - [x] Status, IT Priority, Requested Priority, and Role badges use their fixed text plus color mapping everywhere they appear.
 - [x] The status select offers only permitted transitions from the current status.
-- [x] On the IT Staff Attachments tab there is a Download action and no upload or Remove control.
+- [x] On the IT Staff Attachments tab there is a Preview and a Download action and no upload or Remove control.
+- [x] On the Requester Ticket Detail each active Attachment offers Preview (new tab) beside Download and Remove.
 - [x] A Ticket with an inactive or non-staff owner shows the owner's name, the marker, and the "Needs new owner" badge in both the queue and the detail, and appears under the "Needs an owner" filter.
 - [x] No clipped labels, overlapping validation messages, or horizontal scrolling at 375px, 768px, and 1280px.
 - [x] The queue renders as a table at 992px and as cards below 768px with no information lost.

@@ -184,6 +184,7 @@ Reading an Attachment and changing one are separate permissions (BR-54, BR-55, F
 
 - The 403 on the two mutating endpoints is decided from the role alone, before the Ticket or Attachment is looked up. An IT Staff or Administrator caller therefore gets the same 403 for an existing target and for one that does not exist, and no file is written and no row changes (BR-14, AC-39).
 - A soft-removed Attachment's metadata is still readable by every role that may read Attachments. Its download returns 410 to all of them, unchanged from Lab 2 (BR-54).
+- Preview (BR-70): `GET /api/attachments/:id/download?disposition=inline` is the same request with the same access rules, 404, 401 and 410 included. For the allowed upload types (JPEG, PNG, WebP, PDF) it answers `Content-Disposition: inline; filename="..."` so the browser shows the file in a tab; any other value of `disposition`, or none, answers `attachment` as before. Both forms send `Content-Type` from the stored MIME type and `X-Content-Type-Options: nosniff`.
 - The rule follows the current role, not history: a user promoted from Requester to IT Staff or Administrator also receives 403 on both mutating endpoints for Tickets they created (BR-55, AC-43).
 
 `GET /api/requesters` is **deleted** (BR-49). A request to it returns 404 from the router, as for any unknown path.

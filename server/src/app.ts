@@ -555,6 +555,8 @@ app.get("/api/attachments/:id", ...anyRole, async (req: Request, res: Response) 
   }
 });
 
+const PREVIEWABLE_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "application/pdf"]);
+
 app.get("/api/attachments/:id/download", ...anyRole, async (req: Request, res: Response) => {
   try {
     const attachmentId = Number(req.params.id);
@@ -581,10 +583,14 @@ app.get("/api/attachments/:id/download", ...anyRole, async (req: Request, res: R
         .json({ error: "ATTACHMENT_REMOVED", message: "This attachment has been removed." });
     }
 
+    // Preview (FR-08): `?disposition=inline` lets the browser show an image or PDF in a new tab.
+    // Only the four allowed types are ever shown inline, and nosniff stops the browser guessing.
+    const inline = req.query.disposition === "inline" && PREVIEWABLE_TYPES.has(attachment.mimeType);
     res.setHeader("Content-Type", attachment.mimeType);
+    res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader(
       "Content-Disposition",
-      `attachment; filename="${attachment.originalFilename.replace(/"/g, "")}"`,
+      `${inline ? "inline" : "attachment"}; filename="${attachment.originalFilename.replace(/"/g, "")}"`,
     );
     res.sendFile(path.join(UPLOAD_DIR, attachment.storedFilename), (err) => {
       if (err && !res.headersSent) {
