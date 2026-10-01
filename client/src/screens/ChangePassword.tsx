@@ -41,6 +41,9 @@ export default function ChangePassword() {
     const found = validate();
     setErrors(found);
     setApiFailure(false);
+    // A new attempt replaces the outcome of the last one, so an earlier success is never shown
+    // beside a failure.
+    setDone(false);
     // The server would refuse this too; no request is made for a form that is
     // already known to be invalid.
     if (Object.keys(found).length > 0) return;

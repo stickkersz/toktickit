@@ -206,6 +206,30 @@ describe("Change Password screen", () => {
     expect(screen.getByLabelText("New password *")).toHaveValue("");
   });
 
+  // UI-41 / AC-55
+  it("clears the earlier success message when a second change is attempted, so a failed one never looks successful", async () => {
+    vi.spyOn(api, "changePassword")
+      .mockResolvedValueOnce(REQUESTER)
+      .mockRejectedValueOnce(new ApiError("Current password is incorrect.", 401, "INVALID_CREDENTIALS"));
+    const user = userEvent.setup();
+    const { current, next, confirm, submit } = await openChangePassword(REQUESTER);
+    const success = "Your password has been changed. Your other sessions have been signed out.";
+
+    await user.type(current, "Old!Passw0rd1");
+    await user.type(next, "Fresh!Pass456");
+    await user.type(confirm, "Fresh!Pass456");
+    await user.click(submit);
+    expect(await screen.findByText(success)).toBeInTheDocument();
+
+    await user.type(current, "Wrong!Pass000");
+    await user.type(next, "Other!Pass789");
+    await user.type(confirm, "Other!Pass789");
+    await user.click(submit);
+    expect(await screen.findByText("Current password is incorrect.")).toBeInTheDocument();
+    expect(screen.queryByText(success)).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Cancel and go back" })).toBeInTheDocument();
+  });
+
   // STYLE-02 / AC-56
   it("marks every required field with the red required asterisk", async () => {
     await openChangePassword();

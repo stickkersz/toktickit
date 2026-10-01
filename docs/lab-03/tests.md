@@ -124,6 +124,8 @@ The database must be running, migrated, and seeded first. Playwright's `testDir`
 | UI-37 | UI | AC-55 | Change Password used voluntarily from the header | Cancel and go back link before saving; after saving, a success message, a link home, and cleared fields | `client/tests/lab-03/ChangePassword.test.tsx` | Pass |
 | UI-38 | UI | AC-58, BR-70 | IT Staff Attachments tab with an active and a removed file | The active file has a Preview link to `?disposition=inline` that opens in a new tab with `rel="noopener noreferrer"`; the removed file has none | `client/tests/lab-03/StaffTicketDetail.test.tsx` | Pass |
 | UI-39 | UI | AC-58, BR-70 | Requester Ticket Detail with an active and a removed file | Preview and Download for the active file, neither for the removed one | `client/tests/lab-03/RequesterTicketDetail.lab03.test.tsx` | Pass |
+| UI-40 | UI | AC-53, BR-64 | A Close, Cancel or Resolve that the server refuses because the status moved meanwhile, and one that fails for another reason | On a status conflict the pending confirmation or Resolve panel closes and the reloaded status shows, so "Confirm and close" cannot be pressed again; the typed Resolution Summary is kept; a missing owner or a non-conflict failure keeps it open to claim or retry | `client/tests/lab-03/StaffTicketDetail.test.tsx` | Pass |
+| UI-41 | UI | AC-55 | A second voluntary password change, after a successful one, that fails | The earlier success message is cleared when the new attempt starts, so only the failure shows | `client/tests/lab-03/ChangePassword.test.tsx` | Pass |
 | MIG-01 | Migration | AC-34 | Row count and ids in `User` after the rename, against `RequesterUser` before | Identical count, identical ids, no row lost or added | `server/tests/lab-03/migration.test.ts` | Pass |
 | MIG-02 | Migration | AC-34, BR-47 | Every pre-existing Ticket's requester after migration | Each Ticket still resolves to its original person by ticket number | `server/tests/lab-03/migration.test.ts` | Pass |
 | MIG-03 | Migration | BR-48, BR-52 | Migrated Requesters after seeding, including migrated rows the seed does not list | Role `REQUESTER`, `mustChangePassword` true, a well-formed `scrypt$` hash that is neither the `!` marker nor plaintext, and no row left holding the marker | `server/tests/lab-03/migration.test.ts` | Pass |
@@ -206,9 +208,9 @@ The database must be running, migrated, and seeded first. Playwright's `testDir`
 | AC-50 | API-56, UI-19, E2E-03 |
 | AC-51 | API-18, UI-14 |
 | AC-52 | UI-34 |
-| AC-53 | UI-36 |
+| AC-53 | UI-36, UI-40 |
 | AC-54 | UI-35 |
-| AC-55 | UI-37 |
+| AC-55 | UI-37, UI-41 |
 | AC-56 | STYLE-02 |
 | AC-57 | STYLE-01 |
 | AC-58 | API-58, UI-38, UI-39 |
@@ -494,7 +496,15 @@ A last pass for the submission PDF captured every kind of control with keyboard 
 | `cd client && npm test` | 16 files, 261 tests passed: 35 Lab 2, 226 Lab 3 |
 | `npx playwright test` | 22 of 22 passed: 8 Lab 2, 14 Lab 3 |
 
-All 133 planned tests in section 2 are Pass and none is Planned; all 60 acceptance criteria are traced.
+**Review after the fact.** Before submission the four direct commits were put in front of the peer reviewer as one Pull Request, #66, from `main` into a branch at `bc40edd` (`main` just after #65), so its diff is exactly those commits. The reviewer requested changes on two feedback states: a pending Close or Cancel confirmation stayed enabled after a conflict reload showed the Ticket already closed, and a failed second voluntary password change could still show the first one's success message. Both are fixed with regression tests, UI-40 and UI-41; removing the Ticket Detail fix fails 2 tests.
+
+| Suite | Result |
+|---|---|
+| `cd server && npm test` | 30 files, 333 tests passed: 3 Lab 1, 78 Lab 2, 252 Lab 3 |
+| `cd client && npm test` | 16 files, 265 tests passed: 35 Lab 2, 230 Lab 3 |
+| `npx playwright test` | 22 of 22 passed: 8 Lab 2, 14 Lab 3 |
+
+All 135 planned tests in section 2 are Pass and none is Planned; all 60 acceptance criteria are traced.
 
 ## 7. Pre-release code review
 

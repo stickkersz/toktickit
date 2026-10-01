@@ -201,6 +201,15 @@ function StaffTicketDetail() {
       if (current) setSaved(control);
     } catch (e) {
       fail(control, e, generic);
+      // A conflict other than a missing owner means the status moved under us, so a pending Close,
+      // Cancel or Resolve is no longer the decision on screen: drop it and let the person choose
+      // again from the reloaded status. The typed Resolution Summary is kept. A missing owner keeps
+      // it open so the Ticket can be claimed and the move confirmed, and any other failure keeps it
+      // open to retry.
+      if (control === "status" && e instanceof ApiError && e.status === 409 && e.code !== "OWNER_REQUIRED") {
+        setConfirming(null);
+        setResolving(false);
+      }
       // A refusal means this control was out of date: show what is stored now, for this control only.
       if (e instanceof ApiError && e.code && e.code !== "VALIDATION_ERROR" && e.status === 409 && !(await refresh(control))) {
         setProblem({

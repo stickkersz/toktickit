@@ -347,6 +347,54 @@ describe("Staff Ticket Detail: status", () => {
     await waitFor(() => expect(screen.queryByRole("group", { name: "Confirm the status change" })).not.toBeInTheDocument());
   });
 
+  // UI-40 / AC-53, BR-64
+  it("drops a pending Close confirmation when the server refuses it because someone else already closed the Ticket", async () => {
+    const fake = await openDetail(detail({ currentStatus: "RESOLVED", ownerId: 20, ownerName: "Wichai Charoen", ownerIsActive: true, ownerEligible: true }));
+    await userEvent.selectOptions(screen.getByLabelText("Current Status"), "Closed");
+    // Another staff member closes it in the meantime: the server refuses, and the reload shows Closed.
+    fake.setStatus.mockImplementationOnce(async () => {
+      fake.set({ currentStatus: "CLOSED" });
+      const e = new ApiError("refused", 409, "INVALID_TRANSITION");
+      e.permitted = [];
+      throw e;
+    });
+    await userEvent.click(screen.getByRole("button", { name: "Confirm and close" }));
+
+    expect(await screen.findByText("This Ticket cannot move to any other status.")).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole("group", { name: "Confirm the status change" })).not.toBeInTheDocument());
+    expect(screen.queryByRole("button", { name: "Confirm and close" })).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Current Status")).toHaveValue("CLOSED");
+    expect(fake.setStatus).toHaveBeenCalledTimes(1);
+  });
+
+  it("closes the Resolve panel the same way when the status moved meanwhile, and keeps the typed summary for a second try", async () => {
+    const fake = await openDetail(detail({ currentStatus: "IN_PROGRESS", ownerId: 20, ownerName: "Wichai Charoen", ownerIsActive: true, ownerEligible: true }));
+    const user = userEvent.setup();
+    await user.selectOptions(screen.getByLabelText("Current Status"), "Resolved");
+    await user.type(await screen.findByLabelText("Resolution Summary *"), "Replaced the faulty network cable.");
+    fake.setStatus.mockImplementationOnce(async () => {
+      fake.set({ currentStatus: "WAITING_FOR_REQUESTER" });
+      const e = new ApiError("refused", 409, "INVALID_TRANSITION");
+      e.permitted = ["IN_PROGRESS", "RESOLVED", "CANCELLED"];
+      throw e;
+    });
+    await user.click(screen.getByRole("button", { name: "Confirm and resolve" }));
+
+    await waitFor(() => expect(screen.queryByLabelText("Resolution Summary *")).not.toBeInTheDocument());
+    expect(screen.getByLabelText("Current Status")).toHaveValue("WAITING_FOR_REQUESTER");
+    await user.selectOptions(screen.getByLabelText("Current Status"), "Resolved");
+    expect(await screen.findByLabelText("Resolution Summary *")).toHaveValue("Replaced the faulty network cable.");
+  });
+
+  it("keeps the confirmation open to retry when the failure is not a conflict, so nothing is lost", async () => {
+    const fake = await openDetail(detail({ currentStatus: "OPEN" }));
+    await userEvent.selectOptions(screen.getByLabelText("Current Status"), "Cancelled");
+    fake.setStatus.mockRejectedValueOnce(new ApiError("down", 500));
+    await userEvent.click(screen.getByRole("button", { name: "Confirm and cancel" }));
+    expect(await screen.findByText("Unable to change the status. Nothing was changed.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Confirm and cancel" })).toBeEnabled();
+  });
+
   it("asks the same before cancelling", async () => {
     const fake = await openDetail(detail({ currentStatus: "OPEN" }));
     await userEvent.selectOptions(screen.getByLabelText("Current Status"), "Cancelled");
