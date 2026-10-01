@@ -186,7 +186,7 @@ Run against the running app and the captured screenshots before any screen is ma
 - [x] Empty, no-results, forbidden, not-found, and failure states are visually distinguishable, not merely differently worded.
 - [x] Login shows a credential failure and an inactive-account response differently.
 - [x] Administrator safety rules surface as clear messages rather than silent no-ops.
-- [x] Keyboard focus is always visible (the Zen Green focus ring), moves into the User Management panel when it opens and back to what opened it, and the tabs and sortable headers work from the keyboard.
+- [x] Keyboard focus is always visible: the Zen Green focus ring, a white ring on the green header where the green one cannot be seen, and a Zen Green outline (never the browser's blue) on queue rows and sortable headers. Focus moves into the User Management panel when it opens and back to what opened it, and the tabs and sortable headers work from the keyboard.
 - [x] Required fields show the red asterisk, and validation messages sit directly under their fields without overlapping the next field.
 
 ## 14. Screenshot paths

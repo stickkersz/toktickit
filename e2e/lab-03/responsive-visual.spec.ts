@@ -257,3 +257,43 @@ test.describe("Lab 3 responsive layout (RESP-01)", () => {
     await fits("User Management panel");
   });
 });
+
+// A11Y-04 (AC-35): the shared focus ring is the Zen Green accent at 35%, which cannot be seen
+// on the green header, so every header control needs its own ring that contrasts with it.
+test.describe("Keyboard focus in the green header (A11Y-04)", () => {
+  test("every header control shows a white focus ring when reached by keyboard", async ({ page }) => {
+    await signIn(page, STAFF.email, LANDING.IT_STAFF);
+    const header = page.getByRole("navigation", { name: "Main" });
+    for (const control of [
+      header.getByRole("link", { name: "Ticket Queue" }),
+      header.getByRole("link", { name: "Change password" }),
+      header.getByRole("button", { name: "Logout" }),
+    ]) {
+      await page.keyboard.press("Shift");
+      await control.focus();
+      const ring = await control.evaluate((el) => {
+        const s = getComputedStyle(el);
+        return { style: s.outlineStyle, color: s.outlineColor, width: parseFloat(s.outlineWidth) };
+      });
+      expect(ring.style).not.toBe("none");
+      expect(ring.width).toBeGreaterThanOrEqual(2);
+      expect(ring.color).toBe("rgb(255, 255, 255)");
+    }
+  });
+
+  test("queue rows and sortable headers show the Zen Green ring, never the browser's blue", async ({ page }) => {
+    await signIn(page, STAFF.email, LANDING.IT_STAFF);
+    const table = page.getByRole("table");
+    for (const control of [table.getByRole("columnheader", { name: /Ticket No\./ }), table.getByRole("button").first()]) {
+      await page.keyboard.press("Shift");
+      await control.focus();
+      const ring = await control.evaluate((el) => {
+        const s = getComputedStyle(el);
+        return { style: s.outlineStyle, color: s.outlineColor, width: parseFloat(s.outlineWidth) };
+      });
+      expect(ring.style).not.toBe("none");
+      expect(ring.width).toBeGreaterThanOrEqual(2);
+      expect(ring.color).toBe("rgb(11, 122, 70)");
+    }
+  });
+});

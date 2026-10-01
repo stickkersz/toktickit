@@ -88,6 +88,24 @@ a:focus-visible {
   box-shadow: 0 0 0 0.2rem rgba(11, 122, 70, 0.35);
 }
 
+/* Rows and headers made focusable with tabIndex would otherwise get the browser's
+   default blue outline (A11Y-04). */
+[tabindex="0"]:focus-visible {
+  outline: 2px solid var(--color-secondary);
+  outline-offset: -2px;
+}
+
+/* The green ring above cannot be seen on the green header, so header controls get a
+   white ring instead (A11Y-04). */
+.zg-header .btn:focus-visible,
+.zg-header .nav-link:focus-visible,
+.zg-header a:focus-visible,
+.zg-header .navbar-toggler:focus-visible {
+  outline: 2px solid #ffffff;
+  outline-offset: 2px;
+  box-shadow: none;
+}
+
 /* ui-spec.md §3 — Primary button. */
 .zg-btn-primary {
   background-color: var(--color-primary);

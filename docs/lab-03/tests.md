@@ -148,6 +148,7 @@ The database must be running, migrated, and seeded first. Playwright's `testDir`
 | A11Y-01 | Accessibility | AC-35 | User Management create and edit panel | Focus moves to the first field when the panel opens and returns to the control that opened it when it closes | `client/tests/lab-03/UserManagement.test.tsx` | Pass |
 | A11Y-02 | Accessibility | AC-35 | Staff Ticket Detail tabs | Arrow keys, Home and End move between tabs; only the selected tab is in the tab order (ARIA tabs pattern) | `client/tests/lab-03/StaffTicketDetail.test.tsx` | Pass |
 | A11Y-03 | Accessibility | AC-35, AC-17 | Ticket Queue by keyboard | Rows open with Enter and Space; sortable headers sort with Enter and Space and expose `aria-sort`, without a button role | `client/tests/lab-03/StaffTicketQueue.test.tsx` | Pass |
+| A11Y-04 | Accessibility | AC-35 | Keyboard focus in a real browser: the header links and Logout, a queue row and a sortable header | Header controls show a 2px white outline; rows and headers a 2px Zen Green `#0b7a46` outline, never the browser default | `e2e/lab-03/responsive-visual.spec.ts` | Pass |
 
 ## 3. Acceptance-Criterion traceability
 
@@ -187,7 +188,7 @@ The database must be running, migrated, and seeded first. Playwright's `testDir`
 | AC-32 | API-38, UI-26, E2E-05 |
 | AC-33 | API-12 |
 | AC-34 | MIG-01, MIG-02, MIG-09 |
-| AC-35 | RESP-01, A11Y-01, A11Y-02, A11Y-03, UI-35 |
+| AC-35 | RESP-01, A11Y-01, A11Y-02, A11Y-03, A11Y-04, UI-35 |
 | AC-36 | UNIT-09, MIG-06, MIG-07 |
 | AC-37 | MIG-08 |
 | AC-38 | API-41, UI-28 |
@@ -485,13 +486,15 @@ A second literal pass, also committed directly to `main` for the same reason, cl
 - **Download or preview.** Lab 2 FR-08, which Lab 3 keeps, says "download or preview". Every active Attachment now has a Preview beside Download, for the Requester and for IT Staff: the same endpoint with `?disposition=inline`, opened in a new tab, inline only for the allowed image and PDF types, with `nosniff` and every access rule unchanged (BR-70, AC-58, API-58, UI-38, UI-39).
 - **Rules the labsheet names.** Section 6 asks for rules on login attempts and section 7 for keeping authentication secrets out of client code and source control. BR-68 (AC-59, API-59) and BR-69 (AC-60, UNIT-10) now state them and are tested; a probe file reading `document.cookie` in the client made UNIT-10 fail.
 
+A last pass for the submission PDF captured every kind of control with keyboard focus and found two defects the green suites had not: on the green header the shared 35% green ring was invisible, and queue rows and sortable headers, made focusable with `tabIndex`, showed the browser's blue outline that the Zen Green ui-spec rules out. Both are fixed in `zen-green.css` and guarded by A11Y-04, two Playwright tests that failed before the fix and pass after it.
+
 | Suite | Result |
 |---|---|
 | `cd server && npm test` | 30 files, 333 tests passed: 3 Lab 1, 78 Lab 2, 252 Lab 3 |
 | `cd client && npm test` | 16 files, 261 tests passed: 35 Lab 2, 226 Lab 3 |
-| `npx playwright test` | 20 of 20 passed: 8 Lab 2, 12 Lab 3 |
+| `npx playwright test` | 22 of 22 passed: 8 Lab 2, 14 Lab 3 |
 
-All 132 planned tests in section 2 are Pass and none is Planned; all 60 acceptance criteria are traced.
+All 133 planned tests in section 2 are Pass and none is Planned; all 60 acceptance criteria are traced.
 
 ## 7. Pre-release code review
 
