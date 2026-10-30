@@ -1,4 +1,5 @@
 import type { PrismaClient } from "@prisma/client";
+import { SEED_TRANSACTION_TIMEOUT } from "./seedLab4.js";
 
 interface SeedEntry {
   ticket: string; // ticket number
@@ -97,5 +98,5 @@ export async function seedContent(prisma: PrismaClient): Promise<void> {
         await tx.internalNote.create({ data });
       }
     }
-  });
+  }, { timeout: SEED_TRANSACTION_TIMEOUT });
 }

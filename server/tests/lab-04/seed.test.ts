@@ -113,6 +113,25 @@ describe("Lab 4 seed on a fresh database", () => {
     }
   });
 
+  // MIG-04 / BR-38, BR-46
+  it("sets each seeded Ticket's last activity to its latest seeded move, Action, or Public Comment, never an Internal Note", async () => {
+    const tickets = await db.client.ticket.findMany({
+      where: { ticketNumber: { in: SEED_TICKET_NUMBERS } },
+      include: { statusChanges: true, actions: true, publicComments: true, internalNotes: true },
+    });
+    for (const t of tickets) {
+      const times = [
+        ...t.statusChanges.map((c) => c.changedAt),
+        ...t.actions.map((a) => a.updatedAt),
+        ...t.publicComments.map((c) => c.createdAt),
+      ].map((d) => d.getTime());
+      expect(t.updatedAt.getTime(), t.ticketNumber).toBe(Math.max(...times));
+    }
+    // TKT-2026-900009's latest entry is an Internal Note (15 hours in); its last activity stays earlier.
+    const noteLast = tickets.find((t) => t.ticketNumber === "TKT-2026-900009")!;
+    expect(Math.max(...noteLast.internalNotes.map((n) => n.createdAt.getTime()))).toBeGreaterThan(noteLast.updatedAt.getTime());
+  });
+
   // MIG-04 / AC-46, BR-46 (zero and non-zero dashboard figures)
   it("has a Requester and an IT Staff user whose own figures are all zero, and other users whose figures are not", async () => {
     const requester = await db.client.user.findUniqueOrThrow({ where: { email: ZERO_REQUESTER_EMAIL }, include: { tickets: true } });
