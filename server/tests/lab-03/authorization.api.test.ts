@@ -243,6 +243,9 @@ const OTHER_PROTECTED: Endpoint[] = [
   endpoint("post", "/api/tickets/:id/comments", { body: { body: "A comment nobody may write" } }),
   endpoint("get", "/api/tickets/:id/actions"),
   endpoint("get", "/api/tickets/:id/history"),
+  // Lab 4 dashboards: each is closed to the other role, which the Lab 4 tests check (SEC-03).
+  endpoint("get", "/api/dashboard/staff"),
+  endpoint("get", "/api/dashboard/requester"),
 ];
 
 const PROTECTED = [...OTHER_PROTECTED, ...STAFF, ...ADMIN];

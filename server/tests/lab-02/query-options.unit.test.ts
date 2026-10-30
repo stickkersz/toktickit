@@ -56,7 +56,9 @@ describe("parseTicketListQuery", () => {
     expect(parseTicketListQuery({ requestedPriority: "HIGH" }).requestedPriority).toBe("HIGH");
     expect(parseTicketListQuery({ requestedPriority: "URGENT" }).requestedPriority).toBeNull();
     expect(parseTicketListQuery({ currentStatus: "NEW" }).currentStatus).toBe("NEW");
-    expect(parseTicketListQuery({ currentStatus: "CLOSED" }).currentStatus).toBeNull();
+    // Lab 4 api-spec section 11: My Tickets takes any of the eight statuses (superseding change).
+    expect(parseTicketListQuery({ currentStatus: "CLOSED" }).currentStatus).toBe("CLOSED");
+    expect(parseTicketListQuery({ currentStatus: "DONE" }).currentStatus).toBeNull();
   });
 
   it("trims the search term", () => {

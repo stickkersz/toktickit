@@ -14,9 +14,14 @@ export type OwnerFilter =
   | { kind: "me" }
   | { kind: "needs-owner" };
 
+// Lab 4 api-spec section 11: `active` is not Resolved, Closed, or Cancelled; `resolved` is Resolved or Closed.
+export type StatusGroup = "active" | "resolved";
+export const parseStatusGroup = (value: unknown): StatusGroup | null => (value === "active" || value === "resolved" ? value : null);
+
 export interface ParsedStaffQueueQuery {
   search: string;
   status: TicketStatus | null;
+  statusGroup: StatusGroup | null;
   itPriority: Priority | null;
   categoryId: number | null;
   owner: OwnerFilter | null;
@@ -72,5 +77,8 @@ export function parseStaffQueueQuery(query: Record<string, unknown>): ParsedStaf
   let pageSize = typeof query.pageSize === "string" ? Number(query.pageSize) : NaN;
   if (!Number.isInteger(pageSize) || pageSize < 5 || pageSize > 50) pageSize = 10;
 
-  return { search, status, itPriority, categoryId, owner, sortField, sortDirection, page, pageSize };
+  // A single status wins over a group (api-spec section 11).
+  const statusGroup = status === null ? parseStatusGroup(query.statusGroup) : null;
+
+  return { search, status, statusGroup, itPriority, categoryId, owner, sortField, sortDirection, page, pageSize };
 }
