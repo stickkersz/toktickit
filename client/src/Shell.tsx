@@ -12,6 +12,9 @@ interface NavItem {
   isActive: (pathname: string) => boolean;
 }
 
+// Lab 4 ui-spec section 3: Dashboard is first for every role, marked on its own route only.
+const DASHBOARD: NavItem = { label: "Dashboard", to: "/dashboard", isActive: (p) => p === "/dashboard" };
+const STAFF_DASHBOARD: NavItem = { label: "Dashboard", to: "/staff/dashboard", isActive: (p) => p === "/staff/dashboard" };
 const MY_TICKETS: NavItem = {
   label: "My Tickets",
   to: "/tickets",
@@ -28,9 +31,9 @@ const USERS: NavItem = { label: "Users", to: "/admin/users", isActive: (p) => p 
 // ui-spec.md section 3: navigation is role specific, and a destination the role may
 // not use is never rendered (AC-11, FR-05).
 export const NAV_BY_ROLE: Record<UserRole, NavItem[]> = {
-  REQUESTER: [MY_TICKETS, CREATE_TICKET],
-  IT_STAFF: [TICKET_QUEUE],
-  ADMINISTRATOR: [TICKET_QUEUE, USERS],
+  REQUESTER: [DASHBOARD, MY_TICKETS, CREATE_TICKET],
+  IT_STAFF: [STAFF_DASHBOARD, TICKET_QUEUE],
+  ADMINISTRATOR: [STAFF_DASHBOARD, TICKET_QUEUE, USERS],
 };
 
 // Application shell: role navigation, the signed-in user's name and role, a way to

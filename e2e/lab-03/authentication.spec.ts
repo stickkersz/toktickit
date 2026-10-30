@@ -23,7 +23,7 @@ test.describe("Authentication and role navigation", () => {
     await page.getByRole("button", { name: "Continue" }).click();
 
     await expect(page).toHaveURL(LANDING.REQUESTER);
-    expect(await navItems(page)).toEqual(["My Tickets", "Create Ticket"]);
+    expect(await navItems(page)).toEqual(["Dashboard", "My Tickets", "Create Ticket"]);
     expect((await page.request.get("/api/tickets")).status()).toBe(200);
 
     // AC-09: after logout neither a protected URL nor the API answers with data.
@@ -43,9 +43,10 @@ test.describe("Authentication and role navigation", () => {
   // E2E-02 (AC-11, AC-12)
   test("shows each role only its own navigation and the forbidden state on another role's route", async ({ page }) => {
     const roles = [
-      { email: REQUESTER.email, landing: LANDING.REQUESTER, nav: ["My Tickets", "Create Ticket"], forbidden: ["/staff/tickets", "/admin/users"] },
-      { email: STAFF.email, landing: LANDING.IT_STAFF, nav: ["Ticket Queue"], forbidden: ["/tickets", "/tickets/new", "/admin/users"] },
-      { email: ADMIN.email, landing: LANDING.ADMINISTRATOR, nav: ["Ticket Queue", "Users"], forbidden: ["/tickets", "/tickets/new"] },
+      // Lab 4: Dashboard first for every role, and the other role's dashboard is forbidden too.
+      { email: REQUESTER.email, landing: LANDING.REQUESTER, nav: ["Dashboard", "My Tickets", "Create Ticket"], forbidden: ["/staff/tickets", "/admin/users", "/staff/dashboard"] },
+      { email: STAFF.email, landing: LANDING.IT_STAFF, nav: ["Dashboard", "Ticket Queue"], forbidden: ["/tickets", "/tickets/new", "/admin/users", "/dashboard"] },
+      { email: ADMIN.email, landing: LANDING.ADMINISTRATOR, nav: ["Dashboard", "Ticket Queue", "Users"], forbidden: ["/tickets", "/tickets/new", "/dashboard"] },
     ];
 
     for (const role of roles) {
@@ -57,7 +58,7 @@ test.describe("Authentication and role navigation", () => {
         // BR-63: the forbidden screen requests none of the screen's data.
         const dataRequests: string[] = [];
         const listen = (req: { url(): string }) => {
-          if (/\/api\/(tickets|staff|admin)/.test(req.url())) dataRequests.push(req.url());
+          if (/\/api\/(tickets|staff|admin|dashboard)/.test(req.url())) dataRequests.push(req.url());
         };
         page.on("request", listen);
         await page.goto(url);

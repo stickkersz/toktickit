@@ -13,7 +13,7 @@ test.describe("Staff Ticket flow and Requester regression", () => {
     const resolution = `Reissued the VPN profile and confirmed the connection ${short()}`;
 
     // Find it in the queue.
-    await signIn(page, STAFF.email, LANDING.IT_STAFF);
+    await signIn(page, STAFF.email, LANDING.IT_STAFF, "/staff/tickets");
     await page.getByLabel("Search tickets").fill(ticket.ticketNumber);
     const row = page.getByRole("table").getByRole("button", { name: new RegExp(ticket.ticketNumber) });
     await expect(row).toHaveCount(1);

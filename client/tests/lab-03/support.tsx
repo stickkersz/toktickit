@@ -44,9 +44,42 @@ export function renderApp(
     data: [],
     pagination: { page: 1, pageSize: 10, total: 0, totalPages: 0 },
   });
+  // Lab 4: every role now lands on its Dashboard (ui-spec section 3).
+  stubDashboards();
   return render(
     <MemoryRouter initialEntries={[path]}>
       <App />
     </MemoryRouter>,
   );
+}
+
+const figure = (count: number, link: string) => ({ count, link });
+export const EMPTY_STAFF_DASHBOARD: api.StaffDashboard = {
+  generatedAt: "2026-10-30T03:00:00.000Z",
+  timeZone: "Asia/Bangkok",
+  metrics: {
+    unassigned: figure(0, "/staff/tickets?owner=needs-owner"),
+    myTickets: figure(0, "/staff/tickets?owner=me&statusGroup=active"),
+    urgent: figure(0, "/staff/tickets?itPriority=HIGH&statusGroup=active"),
+    byStatus: ["NEW", "OPEN", "IN_PROGRESS", "WAITING_FOR_REQUESTER", "RESOLVED", "CLOSED", "REOPENED", "CANCELLED"].map((status) => ({ status, ...figure(0, `/staff/tickets?status=${status}`) })),
+  },
+  myPlannedActions: { count: 0, items: [] },
+  recentlyUpdated: [],
+};
+export const EMPTY_REQUESTER_DASHBOARD: api.RequesterDashboard = {
+  generatedAt: "2026-10-30T03:00:00.000Z",
+  timeZone: "Asia/Bangkok",
+  metrics: {
+    open: figure(0, "/tickets?statusGroup=active"),
+    waitingForYou: figure(0, "/tickets?status=WAITING_FOR_REQUESTER"),
+    recentlyUpdated: { ...figure(0, "/tickets?updatedWithinDays=7&sort=-updatedAt"), windowDays: 7 },
+    recentlyResolved: { ...figure(0, "/tickets?resolvedWithinDays=30&sort=-updatedAt"), windowDays: 30 },
+  },
+  recentlyUpdated: [],
+  recentlyResolved: [],
+};
+// A test that set its own dashboard answer before rendering keeps it.
+export function stubDashboards() {
+  if (!vi.isMockFunction(api.getStaffDashboard)) vi.spyOn(api, "getStaffDashboard").mockResolvedValue(EMPTY_STAFF_DASHBOARD);
+  if (!vi.isMockFunction(api.getRequesterDashboard)) vi.spyOn(api, "getRequesterDashboard").mockResolvedValue(EMPTY_REQUESTER_DASHBOARD);
 }

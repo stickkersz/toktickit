@@ -13,6 +13,8 @@ import UserManagement from "./screens/UserManagement.js";
 import StaffTicketDetail from "./screens/StaffTicketDetail.js";
 import StaffTicketQueue from "./screens/StaffTicketQueue.js";
 import Forbidden from "./screens/Forbidden.js";
+import StaffDashboard from "./screens/StaffDashboard.js";
+import RequesterDashboard from "./screens/RequesterDashboard.js";
 
 // Lab 3 (FR-02, BR-02): a user who still holds an initial password can reach no
 // route except Change Password. Nothing renders until the identity request has
@@ -53,6 +55,8 @@ function FallbackRedirect() {
 }
 
 const REQUESTER_ONLY = "You do not have access to Requester tickets.";
+// Lab 4 ui-spec section 3: the other role's dashboard is forbidden, and no dashboard data is requested.
+const DASHBOARD_ONLY = "You do not have access to this dashboard.";
 
 export default function App() {
   return (
@@ -83,6 +87,22 @@ function AppRoutes() {
           </RequireAuth>
         }
       >
+        <Route
+          path="/dashboard"
+          element={
+            <RequireRole roles={["REQUESTER"]} message={DASHBOARD_ONLY}>
+              <RequesterDashboard />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="/staff/dashboard"
+          element={
+            <RequireRole roles={["IT_STAFF", "ADMINISTRATOR"]} message={DASHBOARD_ONLY}>
+              <StaffDashboard />
+            </RequireRole>
+          }
+        />
         <Route
           path="/tickets"
           element={

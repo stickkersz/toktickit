@@ -1,13 +1,31 @@
 import { useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Category, getCategories, getTickets, TicketListItem, TicketPriority } from "../api.js";
 import { useAuth } from "../authContext.js";
-import { PriorityBadge, StatusBadge } from "../Badge.js";
+import { PriorityBadge, STATUS_OPTIONS, StatusBadge } from "../Badge.js";
+import { FilterChip, STATUS_GROUP_LABEL, parseStatusGroup } from "../dashboard.js";
 
 type ListState = "loading" | "ready" | "error";
-type SortableField = "createdAt" | "ticketNumber" | "summary";
+type SortableField = "createdAt" | "ticketNumber" | "summary" | "updatedAt";
 
 const PAGE_SIZE = 10;
+const DEFAULT_SORT = "-createdAt";
+// Below 768px the table and its sortable headers give way to cards, so the same sorts are a select there.
+const SORT_OPTIONS: [string, string][] = [
+  ["-createdAt", "Newest first"],
+  ["createdAt", "Oldest first"],
+  ["-updatedAt", "Last updated, newest first"],
+  ["updatedAt", "Last updated, oldest first"],
+  ["ticketNumber", "Ticket No., ascending"],
+  ["-ticketNumber", "Ticket No., descending"],
+  ["summary", "Summary, A to Z"],
+  ["-summary", "Summary, Z to A"],
+];
+// The server's window range (api-spec section 11); anything else is no window.
+const windowDays = (raw: string | null) => {
+  const n = Number(raw);
+  return Number.isInteger(n) && n >= 1 && n <= 90 ? n : undefined;
+};
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString();
@@ -17,13 +35,20 @@ export default function MyTickets() {
   const { user } = useAuth();
   const navigate = useNavigate();
 
+  // Lab 4 ui-spec section 6: every filter, sort and page lives in the URL, so a dashboard card opens My
+  // Tickets already filtered. The route uses `status`; the API keeps its Lab 2 name `currentStatus`.
+  const [params, setParams] = useSearchParams();
+  const search = params.get("search") ?? "";
+  const categoryId = params.get("category") ?? "";
+  const requestedPriority = (params.get("requestedPriority") ?? "") as TicketPriority | "";
+  const currentStatus = params.get("status") ?? "";
+  const statusGroup = parseStatusGroup(params.get("statusGroup"));
+  const updatedWithinDays = windowDays(params.get("updatedWithinDays"));
+  const resolvedWithinDays = windowDays(params.get("resolvedWithinDays"));
+  const sort = params.get("sort") ?? DEFAULT_SORT;
+  const page = Math.max(1, Number(params.get("page")) || 1);
+
   const [categories, setCategories] = useState<Category[]>([]);
-  const [search, setSearch] = useState("");
-  const [categoryId, setCategoryId] = useState("");
-  const [requestedPriority, setRequestedPriority] = useState<TicketPriority | "">("");
-  const [currentStatus, setCurrentStatus] = useState("");
-  const [sort, setSort] = useState("-createdAt");
-  const [page, setPage] = useState(1);
 
   const [listState, setListState] = useState<ListState>("loading");
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
@@ -51,6 +76,9 @@ export default function MyTickets() {
       category: categoryId ? Number(categoryId) : undefined,
       requestedPriority: requestedPriority || undefined,
       currentStatus: currentStatus || undefined,
+      statusGroup,
+      updatedWithinDays,
+      resolvedWithinDays,
       sort,
       page,
       pageSize: PAGE_SIZE,
@@ -85,25 +113,29 @@ export default function MyTickets() {
   }
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(load, [user?.id, search, categoryId, requestedPriority, currentStatus, sort, page]);
+  useEffect(load, [user?.id, search, categoryId, requestedPriority, currentStatus, statusGroup, updatedWithinDays, resolvedWithinDays, sort, page]);
 
-  const anyFilterActive = Boolean(search || categoryId || requestedPriority || currentStatus);
+  const anyFilterActive = Boolean(search || categoryId || requestedPriority || currentStatus || statusGroup || updatedWithinDays || resolvedWithinDays);
 
-  function resetToFirstPage() {
-    setPage(1);
+  // Every change replaces the history entry and returns to page 1, as on the queue.
+  function update(changes: Record<string, string>, resetPage = true) {
+    const next = new URLSearchParams(params);
+    for (const [key, value] of Object.entries(changes)) {
+      if (value) next.set(key, value);
+      else next.delete(key);
+    }
+    if (resetPage) next.delete("page");
+    setParams(next, { replace: true });
   }
 
   function clearFilters() {
-    setSearch("");
-    setCategoryId("");
-    setRequestedPriority("");
-    setCurrentStatus("");
-    setPage(1);
+    const next = new URLSearchParams();
+    if (sort !== DEFAULT_SORT) next.set("sort", sort);
+    setParams(next, { replace: true });
   }
 
   function toggleSort(field: SortableField) {
-    setSort((prev) => (prev === field ? `-${field}` : field));
-    setPage(1);
+    update({ sort: sort === field ? `-${field}` : field });
   }
 
   function sortIndicator(field: SortableField) {
@@ -155,20 +187,14 @@ export default function MyTickets() {
                   className="form-control"
                   placeholder="Search by ticket number or summary…"
                   value={search}
-                  onChange={(e) => {
-                    setSearch(e.target.value);
-                    resetToFirstPage();
-                  }}
+                  onChange={(e) => update({ search: e.target.value })}
                 />
               </div>
               <div className="col-md-3">
                 <select
                   className="form-select"
                   value={categoryId}
-                  onChange={(e) => {
-                    setCategoryId(e.target.value);
-                    resetToFirstPage();
-                  }}
+                  onChange={(e) => update({ category: e.target.value })}
                 >
                   <option value="">All Categories</option>
                   {categories.map((c) => (
@@ -182,10 +208,7 @@ export default function MyTickets() {
                 <select
                   className="form-select"
                   value={requestedPriority}
-                  onChange={(e) => {
-                    setRequestedPriority(e.target.value as TicketPriority | "");
-                    resetToFirstPage();
-                  }}
+                  onChange={(e) => update({ requestedPriority: e.target.value })}
                 >
                   <option value="">All Priorities</option>
                   <option value="LOW">Low</option>
@@ -196,16 +219,42 @@ export default function MyTickets() {
               <div className="col-md-3">
                 <select
                   className="form-select"
-                  value={currentStatus}
+                  aria-label="Status"
+                  value={currentStatus || (statusGroup ? `group:${statusGroup}` : "")}
                   onChange={(e) => {
-                    setCurrentStatus(e.target.value);
-                    resetToFirstPage();
+                    const v = e.target.value;
+                    // A group and a single status are alternatives; choosing one clears the other.
+                    if (v.startsWith("group:")) update({ statusGroup: v.slice(6), status: "" });
+                    else update({ status: v, statusGroup: "" });
                   }}
                 >
                   <option value="">All Statuses</option>
-                  <option value="NEW">New</option>
+                  <option value="group:active">Active</option>
+                  <option value="group:resolved">Resolved or closed</option>
+                  {STATUS_OPTIONS.map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
                 </select>
               </div>
+              <div className="col-12 d-md-none">
+                <select className="form-select" aria-label="Sort by" value={sort} onChange={(e) => update({ sort: e.target.value })}>
+                  {SORT_OPTIONS.map(([value, label]) => (
+                    <option key={value} value={value}>
+                      Sort: {label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          )}
+
+          {(updatedWithinDays || resolvedWithinDays || (statusGroup && !currentStatus)) && (
+            <div className="d-flex flex-wrap gap-2 mb-3">
+              {statusGroup && !currentStatus && <FilterChip label={STATUS_GROUP_LABEL[statusGroup]} onRemove={() => update({ statusGroup: "" })} />}
+              {updatedWithinDays && <FilterChip label={`Updated in the last ${updatedWithinDays} days`} onRemove={() => update({ updatedWithinDays: "" })} />}
+              {resolvedWithinDays && <FilterChip label={`Resolved in the last ${resolvedWithinDays} days`} onRemove={() => update({ resolvedWithinDays: "" })} />}
             </div>
           )}
 
@@ -298,7 +347,14 @@ export default function MyTickets() {
                       <th className="d-none d-lg-table-cell">Category</th>
                       <th>Requested Priority</th>
                       <th>Current Status</th>
-                      <th>Last Updated</th>
+                      <th
+                        tabIndex={0}
+                        aria-sort={sort === "updatedAt" ? "ascending" : sort === "-updatedAt" ? "descending" : "none"}
+                        onClick={() => toggleSort("updatedAt")}
+                        onKeyDown={handleActivateKey(() => toggleSort("updatedAt"))}
+                      >
+                        Last Updated{sortIndicator("updatedAt")}
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
@@ -366,7 +422,7 @@ export default function MyTickets() {
                     type="button"
                     className="btn btn-outline-secondary btn-sm"
                     disabled={page <= 1}
-                    onClick={() => setPage((p) => p - 1)}
+                    onClick={() => update({ page: String(page - 1) }, false)}
                   >
                     Previous
                   </button>
@@ -377,7 +433,7 @@ export default function MyTickets() {
                     type="button"
                     className="btn btn-outline-secondary btn-sm"
                     disabled={page >= totalPages}
-                    onClick={() => setPage((p) => p + 1)}
+                    onClick={() => update({ page: String(page + 1) }, false)}
                   >
                     Next
                   </button>
