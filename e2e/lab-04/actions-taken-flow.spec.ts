@@ -42,7 +42,9 @@ async function addAction(page: Page, description: string, responsible?: string) 
 const actionRow = (page: Page, description: string) => page.getByRole("button").filter({ hasText: description }).first();
 
 test.describe("Actions Taken", () => {
-  // E2E-01 (AC-01, AC-14) and the Requester's read-only view (AC-15)
+  // E2E-01 (AC-01, AC-14) and the Requester's read-only view (AC-15); RESP-02 and A11Y-01 for the Actions
+  // Taken screens: no horizontal scroll and captures at 375, 768 and 1280, focus moved into the form and the
+  // dialog, the dialog's primary button reached and shown with keyboard focus.
   test("IT Staff record two Actions for different people, edit and reassign one, complete one, cancel the other; the Requester sees all, read-only", async ({ page }) => {
     const ticket = await createTicketAsRequester(`E2E Actions flow ${short()}`);
     await page.setViewportSize(VIEWPORTS.desktop);

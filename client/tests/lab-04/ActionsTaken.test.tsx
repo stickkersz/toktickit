@@ -140,7 +140,7 @@ describe("Actions Taken list (IT Staff)", () => {
 });
 
 describe("Add Action", () => {
-  // UI-11 / AC-05, AC-50, BR-04
+  // UI-11, STYLE-02 (Actions Taken form) / AC-05, AC-50, BR-04
   it("validates under each field, and shows the Follow-Up Note with its red asterisk only while follow-up is required", async () => {
     await openStaff();
     await userEvent.click(within(panel()).getByRole("button", { name: "Add Action" }));
