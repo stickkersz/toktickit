@@ -36,7 +36,7 @@ export function readKey(req: Request, path: string, accepted: readonly string[])
   return { key: raw.toLowerCase(), hash: requestHash(path, req.body, accepted) };
 }
 
-export type Keyed<T, R> = { kind: "replay"; row: T } | { kind: "reused" } | { kind: "created"; value: R };
+type Keyed<T, R> = { kind: "replay"; row: T } | { kind: "reused" } | { kind: "created"; value: R };
 
 const isUniqueViolation = (e: unknown) => e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002";
 

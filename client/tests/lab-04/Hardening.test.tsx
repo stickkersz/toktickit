@@ -19,7 +19,6 @@ const SOURCES = Object.fromEntries(
 const FS = "node:fs";
 const { readFileSync: readText } = (await import(/* @vite-ignore */ FS)) as { readFileSync: (path: string, encoding: "utf8") => string };
 const css = readText("src/zen-green.css", "utf8");
-const readFileSync = (path: string) => SOURCES[path] ?? (() => { throw new Error(`No source ${path}`); })();
 
 // Lab 4 FR-17, FR-19, BR-39, BR-43: the forms keep what was typed and their Idempotency-Key across a
 // failure, and the Lab 4 sources keep to the stylesheet.
@@ -121,8 +120,9 @@ describe("Lab 4 sources keep to the stylesheet", () => {
 
   // STYLE-03 / FR-19
   it("has no hex colour literal outside zen-green.css", () => {
+    for (const file of LAB4) expect(Object.keys(SOURCES)).toContain(file);
     // A colour, not an HTML entity such as &#9432;.
-    for (const file of LAB4) expect(readFileSync(file), file).not.toMatch(/(?<![&\w])#[0-9a-fA-F]{3,8}\b/);
+    for (const file of LAB4) expect(SOURCES[file], file).not.toMatch(/(?<![&\w])#[0-9a-fA-F]{3,8}\b/);
     // And nowhere else in the client source either.
     expect(Object.keys(SOURCES).length).toBeGreaterThan(20);
     for (const [file, text] of Object.entries(SOURCES)) expect(text, file).not.toMatch(/["'`]#[0-9a-fA-F]{3,8}["'`]/);
@@ -132,7 +132,7 @@ describe("Lab 4 sources keep to the stylesheet", () => {
   it("uses only zg- classes that the stylesheet defines", () => {
     for (const file of LAB4) {
       // Element ids and ARIA references may use the zg- prefix too; only class names must exist in the stylesheet.
-      const source = readFileSync(file).replace(/\b(id|htmlFor|aria-[a-z]+)=("[^"]*"|\{[^}]*\})/g, "");
+      const source = SOURCES[file].replace(/\b(id|htmlFor|aria-[a-z]+)=("[^"]*"|\{[^}]*\})/g, "");
       const used = new Set(source.match(/\bzg-[a-z0-9-]+/g) ?? []);
       for (const cls of used) expect(css, `${file}: .${cls}`).toMatch(new RegExp(`\\.${cls}(?![a-z0-9-])`));
     }

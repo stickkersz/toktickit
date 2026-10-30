@@ -211,7 +211,7 @@ app.post("/api/tickets", ...requesterOnly, async (req: Request, res: Response) =
       key,
       hash,
       () => getPrisma().ticket.findUnique({ where: { requesterId_idempotencyKey: { requesterId, idempotencyKey: key! } } }),
-      () => createTicket(),
+      createTicket,
     );
     if (outcome.kind === "replay") return res.status(200).set("Idempotent-Replayed", "true").json(createdTicket(outcome.row));
     if (outcome.kind === "reused") return res.status(409).json({ error: "IDEMPOTENCY_KEY_REUSED", message: IDEMPOTENCY_KEY_REUSED_MESSAGE });
