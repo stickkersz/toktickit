@@ -66,6 +66,10 @@ _Avoid_: real priority, internal priority, staff priority
 Where a Ticket sits in its workflow. Only IT Staff and Administrators change it.
 _Avoid_: state, stage, phase
 
+**Status Change**:
+A permanent record that a Ticket moved from one Ticket Status to another, by whom and when. Never edited or removed; together they form the Ticket's Status History.
+_Avoid_: audit entry, transition log, event
+
 **Resolution Summary**:
 The explanation of how a Ticket was resolved, written by IT and visible to the Requester.
 _Avoid_: resolution note, closing comment, fix description
@@ -81,6 +85,48 @@ _Avoid_: type, classification, topic
 **Related System**:
 The service or equipment a Ticket concerns, chosen from a maintained list.
 _Avoid_: affected system, asset, component
+
+## Work on a Ticket
+
+**Action Taken**:
+One unit of work planned or carried out under a single Ticket. A Ticket may have many; plural Actions Taken.
+_Avoid_: action, task, work log, activity, job
+
+**Action Status**:
+Where an Action Taken sits: Planned, Completed, or Cancelled. Completed and Cancelled are final. Distinct from Ticket Status, so "Cancelled" is always qualified as Cancelled Action or Cancelled Ticket.
+_Avoid_: action state, step status
+
+**Recorded By**:
+The User who created an Action Taken, captured automatically.
+_Avoid_: creator, author, logged by
+
+**Responsible Staff**:
+The IT Staff or Administrator User expected to carry out an Action Taken; must be active when chosen, and stays named if they later leave. The handout calls this the Action's assignee. May differ from the Ticket Owner.
+_Avoid_: assignee (easily confused with Ticket Owner), action owner, handler
+
+**Performed By**:
+The User who marked an Action Taken Completed, captured automatically at completion.
+_Avoid_: done by, completed by, technician
+
+**Last Edited By**:
+The User who most recently changed a Planned Action Taken.
+_Avoid_: modifier, updated by
+
+**Action Date/Time**:
+When the work of an Action Taken happened or is planned to happen, as stated by the person recording it. Not the moment the record was saved.
+_Avoid_: created date, timestamp, log time
+
+**Result**:
+What an Action Taken achieved, stated when it is Completed.
+_Avoid_: outcome, resolution, fix
+
+**Follow-Up Required**:
+Whether more work is needed after an Action Taken, explained by its Follow-Up Note. Not the same as a Ticket waiting for its Requester.
+_Avoid_: pending, open item, to do
+
+**Attachment Notes**:
+Free text on an Action Taken pointing to evidence, such as which Attachment to look at. Not an Attachment itself.
+_Avoid_: file note, attachment link, evidence link
 
 ## Communication and evidence
 
