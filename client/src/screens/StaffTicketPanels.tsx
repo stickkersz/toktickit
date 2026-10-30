@@ -20,6 +20,7 @@ export default function StaffTicketPanels({
   currentUserId,
   onTicketChanged,
   onOwnersStale,
+  onActionsChanged,
   historyKey,
   tabRequest,
 }: {
@@ -31,6 +32,7 @@ export default function StaffTicketPanels({
   currentUserId: number;
   onTicketChanged: () => void;
   onOwnersStale: () => void;
+  onActionsChanged: () => void;
   historyKey: number;
   tabRequest: { id: string; seq: number } | null;
 }) {
@@ -62,6 +64,7 @@ export default function StaffTicketPanels({
               actions={actions}
               onTicketChanged={onTicketChanged}
               onOwnersStale={onOwnersStale}
+              onActionsChanged={onActionsChanged}
             />
           ),
         },

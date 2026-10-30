@@ -75,8 +75,8 @@ test.describe("Ticket resolution", () => {
     await page.getByLabel("Current Status").selectOption("RESOLVED");
     await expect(page.getByText("Record and complete at least one action before resolving.")).toBeVisible();
 
+    // No reload anywhere below: the gate follows the Action writes on the same screen (review on #85).
     await addAction(page, "Replace the LAN cable at desk 4B.");
-    await page.reload();
     await page.getByLabel("Current Status").selectOption("RESOLVED");
     const blocked = page.getByText("This ticket cannot be resolved yet: 1 planned action is still open.");
     await expect(blocked).toBeVisible();
@@ -94,7 +94,8 @@ test.describe("Ticket resolution", () => {
     await page.getByRole("button", { name: "Go to Actions Taken" }).click();
     await expect(page.getByRole("tab", { name: /^Actions Taken/ })).toBeFocused();
     await completeOpenAction(page, "Replace the LAN cable at desk 4B.");
-    await page.reload();
+    // The gate opened on this screen: the blocked sentence is gone without a reload (review on #85).
+    await expect(page.getByText(/cannot be resolved yet/)).toHaveCount(0);
     await resolve(page);
   });
 
@@ -107,7 +108,6 @@ test.describe("Ticket resolution", () => {
     await claimAndStart(page);
     await addAction(page, "Replace the LAN cable at desk 4B.");
     await completeOpenAction(page, "Replace the LAN cable at desk 4B.");
-    await page.reload();
     await resolve(page);
 
     // The staff History lists every move, the last with its Resolution Summary.

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import * as api from "../../src/api.js";
-import { ApiError, type StaffTicketDetail, type StaffTicketItem, type StatusHistory, type TicketDetail } from "../../src/api.js";
+import { ApiError, type ActionItem, type StaffTicketDetail, type StaffTicketItem, type StatusHistory, type TicketDetail } from "../../src/api.js";
 import { REQUESTER, STAFF, renderApp } from "../lab-03/support.js";
 
 // Lab 4 ui-spec.md sections 9 and 10: the status control with the resolution gate, conflicts, and the
@@ -68,8 +68,9 @@ const history = (entries: Partial<StatusHistory["entries"][number]>[], earlierCh
   earlierChangesUnrecorded,
 });
 
-async function open(ticket: StaffTicketDetail) {
+async function open(ticket: StaffTicketDetail, actions: ActionItem[] = []) {
   renderApp("/staff/tickets/42", STAFF);
+  vi.mocked(api.getTicketActions).mockResolvedValue(actions);
   vi.mocked(api.getStaffTicketDetail).mockResolvedValue(ticket);
   vi.mocked(api.getStaffOwners).mockResolvedValue([{ id: STAFF.id, name: STAFF.name, role: "IT_STAFF" }]);
   await screen.findByRole("heading", { name: "TKT-2026-000042" });
@@ -108,11 +109,124 @@ describe("the resolution gate on the status control", () => {
     await open(detail());
     vi.spyOn(api, "changeTicketStatus").mockRejectedValueOnce(Object.assign(new ApiError("x", 409, "ACTIONS_INCOMPLETE"), { plannedActions: 1 }));
     const reloads = vi.mocked(api.getStaffTicketDetail).mock.calls.length;
+    // What the server reports once someone added a Planned Action after this page loaded.
+    vi.mocked(api.getStaffTicketDetail).mockResolvedValue(detail({ resolutionGate: { plannedActions: 1, completedActions: 1, canResolve: false } }));
     await userEvent.selectOptions(statusSelect(), "Resolved");
     await userEvent.type(screen.getByLabelText(/Resolution Summary/), "Replaced the LAN cable; stable.");
     await userEvent.click(screen.getByRole("button", { name: "Confirm and resolve" }));
     expect(await screen.findByText("This ticket cannot be resolved yet: 1 planned action is still open.")).toBeInTheDocument();
     await waitFor(() => expect(vi.mocked(api.getStaffTicketDetail).mock.calls.length).toBeGreaterThan(reloads));
+  });
+});
+
+describe("the gate follows Action writes on the same screen (review on #85)", () => {
+  const planned: ActionItem = {
+    id: 7,
+    ticketId: 42,
+    status: "PLANNED",
+    actionAt: "2026-09-12T02:00:00.000Z",
+    description: "Replace the LAN cable at desk 4B.",
+    result: null,
+    followUpRequired: false,
+    followUpNote: null,
+    attachmentNotes: null,
+    recordedBy: { id: STAFF.id, name: STAFF.name },
+    recordedAt: "2026-09-12T01:00:00.000Z",
+    responsibleStaff: { id: STAFF.id, name: STAFF.name, eligible: true },
+    performedBy: null,
+    completedAt: null,
+    cancelledBy: null,
+    cancelledAt: null,
+    cancelReason: null,
+    lastEditedBy: null,
+    version: 1,
+    updatedAt: "2026-09-12T01:00:00.000Z",
+  };
+
+  // UI-20 / AC-19, AC-21: no reload between completing the last Planned Action and resolving
+  it("opens Resolve once the last Planned Action is completed, without reloading the page", async () => {
+    await open(detail({ resolutionGate: { plannedActions: 1, completedActions: 0, canResolve: false } }), [planned]);
+    vi.mocked(api.getStaffTicketDetail).mockResolvedValue(detail({ resolutionGate: { plannedActions: 0, completedActions: 1, canResolve: true } }));
+    vi.spyOn(api, "completeAction").mockResolvedValue({ ...planned, status: "COMPLETED", version: 2, result: "Done.", performedBy: { id: STAFF.id, name: STAFF.name }, completedAt: new Date().toISOString() });
+    const panel = screen.getByRole("tabpanel");
+    await userEvent.click(await within(panel).findByRole("button", { name: /Replace the LAN cable/ }));
+    await userEvent.click(within(panel).getByRole("button", { name: "Complete" }));
+    await userEvent.type(within(screen.getByRole("dialog")).getByLabelText(/Result/), "Cable replaced.");
+    await userEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Mark as Completed" }));
+    await screen.findByText("Action completed.");
+
+    await waitFor(async () => {
+      await userEvent.selectOptions(statusSelect(), "Resolved");
+      expect(screen.getByLabelText(/Resolution Summary/)).toBeInTheDocument();
+    });
+    expect(screen.queryByText(/cannot be resolved yet/)).not.toBeInTheDocument();
+  });
+
+  // UI-20 (sweep on #85): the gate sentence goes once the gate opens, however the Action was completed
+  it("drops the 'cannot be resolved yet' sentence when the last Planned Action is completed from the tab itself", async () => {
+    await open(detail({ resolutionGate: { plannedActions: 1, completedActions: 0, canResolve: false } }), [planned]);
+    await userEvent.selectOptions(statusSelect(), "Resolved");
+    expect(await screen.findByText(/cannot be resolved yet/)).toBeInTheDocument();
+    vi.mocked(api.getStaffTicketDetail).mockResolvedValue(detail({ resolutionGate: { plannedActions: 0, completedActions: 1, canResolve: true } }));
+    vi.spyOn(api, "completeAction").mockResolvedValue({ ...planned, status: "COMPLETED", version: 2, result: "Done.", performedBy: { id: STAFF.id, name: STAFF.name }, completedAt: new Date().toISOString() });
+    const panel = screen.getByRole("tabpanel");
+    await userEvent.click(await within(panel).findByRole("button", { name: /Replace the LAN cable/ }));
+    await userEvent.click(within(panel).getByRole("button", { name: "Complete" }));
+    await userEvent.type(within(screen.getByRole("dialog")).getByLabelText(/Result/), "Cable replaced.");
+    await userEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Mark as Completed" }));
+    await screen.findByText("Action completed.");
+    await waitFor(() => expect(screen.queryByText(/cannot be resolved yet/)).not.toBeInTheDocument());
+  });
+
+  // UI-20 (sweep on #85): ACTION_FINAL whose list re-read fails still re-reads the gate
+  it("re-reads the gate on ACTION_FINAL even when the list cannot be re-read", async () => {
+    await open(detail({ resolutionGate: { plannedActions: 1, completedActions: 0, canResolve: false } }), [planned]);
+    const detailCalls = vi.mocked(api.getStaffTicketDetail).mock.calls.length;
+    vi.spyOn(api, "completeAction").mockRejectedValueOnce(new ApiError("x", 409, "ACTION_FINAL"));
+    vi.mocked(api.getTicketActions).mockRejectedValue(new ApiError("down", 500));
+    const panel = screen.getByRole("tabpanel");
+    await userEvent.click(await within(panel).findByRole("button", { name: /Replace the LAN cable/ }));
+    await userEvent.click(within(panel).getByRole("button", { name: "Complete" }));
+    await userEvent.type(within(screen.getByRole("dialog")).getByLabelText(/Result/), "Cable replaced.");
+    await userEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Mark as Completed" }));
+    await waitFor(() => expect(vi.mocked(api.getStaffTicketDetail).mock.calls.length).toBeGreaterThan(detailCalls));
+  });
+
+  // UI-22 (sweep on #85, section 5 async UI): an older status re-read never overwrites a newer move
+  it("keeps the newer status when the re-read after an Action write answers after a move's own re-read", async () => {
+    await open(detail({ resolutionGate: { plannedActions: 0, completedActions: 0, canResolve: false } }));
+    let releaseOld!: (d: StaffTicketDetail) => void;
+    const old = new Promise<StaffTicketDetail>((r) => (releaseOld = r));
+    vi.mocked(api.getStaffTicketDetail).mockReturnValueOnce(old).mockResolvedValue(detail({ currentStatus: "WAITING_FOR_REQUESTER" }));
+    vi.spyOn(api, "createAction").mockResolvedValue(planned);
+    vi.spyOn(api, "changeTicketStatus").mockResolvedValue({ ...detail({ currentStatus: "WAITING_FOR_REQUESTER" }) } as unknown as StaffTicketItem);
+    const panel = screen.getByRole("tabpanel");
+    await userEvent.click(within(panel).getByRole("button", { name: "Add Action" }));
+    await userEvent.type(screen.getByLabelText(/Action Description/), "Replace the LAN cable at desk 4B.");
+    await userEvent.click(screen.getByRole("button", { name: "Save Action" }));
+    await screen.findByText("Action added.");
+    // The re-read the Action started is still out; the move goes ahead and its own re-read answers first.
+    await userEvent.selectOptions(statusSelect(), "Waiting for Requester");
+    await screen.findByText("Status updated.");
+    releaseOld(detail({ currentStatus: "IN_PROGRESS" }));
+    await new Promise((r) => setTimeout(r, 30));
+    expect((statusSelect() as HTMLSelectElement).value).toBe("WAITING_FOR_REQUESTER");
+  });
+
+  // UI-24 / BR-15: the count in the Cancel confirmation follows a new Planned Action
+  it("counts a Planned Action added on the same screen in the Cancel confirmation", async () => {
+    await open(detail({ currentStatus: "OPEN", resolutionGate: { plannedActions: 0, completedActions: 0, canResolve: false } }));
+    vi.mocked(api.getStaffTicketDetail).mockResolvedValue(detail({ currentStatus: "OPEN", resolutionGate: { plannedActions: 1, completedActions: 0, canResolve: false } }));
+    vi.spyOn(api, "createAction").mockResolvedValue(planned);
+    const panel = screen.getByRole("tabpanel");
+    await userEvent.click(within(panel).getByRole("button", { name: "Add Action" }));
+    await userEvent.type(screen.getByLabelText(/Action Description/), "Replace the LAN cable at desk 4B.");
+    await userEvent.click(screen.getByRole("button", { name: "Save Action" }));
+    await screen.findByText("Action added.");
+    await waitFor(async () => {
+      await userEvent.selectOptions(statusSelect(), "Cancelled");
+      expect(screen.getByRole("group", { name: "Confirm the status change" })).toHaveTextContent("Its 1 planned action will be cancelled too.");
+    });
   });
 });
 
@@ -132,12 +246,14 @@ describe("conflicts and success", () => {
   });
 
   // UI-21 / ui-spec section 10: a retry after a lost response
-  it("reports a move as done when the Ticket is already in the status that was asked for", async () => {
+  it("reports neutrally when the Ticket is already in the status that was asked for", async () => {
     await open(detail({ currentStatus: "OPEN" }));
     vi.spyOn(api, "changeTicketStatus").mockRejectedValueOnce(Object.assign(new ApiError("x", 409, "STATUS_CHANGED"), { currentStatus: "IN_PROGRESS" }));
     vi.mocked(api.getStaffTicketDetail).mockResolvedValue(detail({ currentStatus: "IN_PROGRESS" }));
     await userEvent.selectOptions(statusSelect(), "In Progress");
-    expect(await screen.findByText("Status updated.")).toBeInTheDocument();
+    // It does not claim the move was this user's, nor blame someone else (spec section 11); History says who.
+    expect(await screen.findByText("This ticket is already In Progress.")).toBeInTheDocument();
+    expect(screen.queryByText("Status updated.")).not.toBeInTheDocument();
     expect(screen.queryByText(/while you were viewing it/)).not.toBeInTheDocument();
   });
 

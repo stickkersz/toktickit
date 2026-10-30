@@ -104,14 +104,18 @@ function StaffTicketDetail() {
   const [confirming, setConfirming] = useState<"CLOSED" | "CANCELLED" | null>(null);
   const [summaryError, setSummaryError] = useState<string | null>(null);
   // Lab 4: a Resolve the gate blocks is explained next to the control and nothing is sent (ui-spec section 10).
-  const [gateMessage, setGateMessage] = useState<string | null>(null);
+  // The sentence is built from the gate as it is now, so it follows Action writes on this screen and goes
+  // once the gate opens (review on #85).
+  const [gateShown, setGateShown] = useState(false);
   // Bumped after every successful move so the History and the Actions follow it; also opens a tab on request.
   const [moves, setMoves] = useState(0);
   const [tabRequest, setTabRequest] = useState<{ id: string; seq: number } | null>(null);
   // The status the last move asked for, so a STATUS_CHANGED that names it can be told apart (see fail).
   const requestedStatus = useRef<string | null>(null);
+  const [statusNote, setStatusNote] = useState<string | null>(null);
 
   const loadIdRef = useRef(0);
+  const refreshSeq = useRef<Record<Control, number>>({ owner: 0, priority: 0, status: 0 });
 
   // Reads the whole Ticket, for opening the screen and for Retry.
   async function load() {
@@ -142,16 +146,21 @@ function StaffTicketDetail() {
   // what is on screen may be out of date (the permitted next statuses, the Resolution Summary, the
   // owner list), and must not be presented as current.
   async function refresh(control: Control): Promise<boolean> {
+    // Section 5 async UI: a re-read can now start from outside its control (an Action write, review on
+    // #85), so two can overlap; only the latest one per control may apply.
+    const seq = ++refreshSeq.current[control];
     try {
       const [detail, list] = await Promise.all([
         getStaffTicketDetail(ticketId),
         control === "owner" ? getStaffOwners() : Promise.resolve(null),
       ]);
+      if (refreshSeq.current[control] !== seq) return true;
       setTicket((t) => t && { ...t, ...pick(detail, RELOAD_FIELDS[control]) });
       if (list) setOwners(list);
       setStale((st) => (st[control] ? { ...st, [control]: false } : st));
       return true;
     } catch {
+      if (refreshSeq.current[control] !== seq) return true;
       setStale((st) => ({ ...st, [control]: true }));
       return false;
     }
@@ -175,9 +184,9 @@ function StaffTicketDetail() {
 
   function fail(control: Control, e: unknown, generic: string) {
     if (e instanceof ApiError && e.code === "STATUS_CHANGED" && e.currentStatus === requestedStatus.current) {
-      // A retry after a lost response finds the Ticket already where it was asked to go: that is a
-      // success, not someone else's change (ui-spec section 10).
-      setSaved(control);
+      // The Ticket is already where it was asked to go: a retry after a lost response, or someone else's
+      // identical move. Said neutrally, claiming the move for nobody (spec section 11); History says who.
+      setStatusNote(`This ticket is already ${statusLabel(e.currentStatus)}.`);
       setMoves((m) => m + 1);
     } else if (e instanceof ApiError && e.code === "STATUS_CHANGED") {
       setProblem({
@@ -186,7 +195,8 @@ function StaffTicketDetail() {
         message: `This ticket moved to ${statusLabel(e.currentStatus ?? "")} while you were viewing it.`,
       });
     } else if (e instanceof ApiError && (e.code === "ACTIONS_INCOMPLETE" || e.code === "NO_COMPLETED_ACTION")) {
-      setGateMessage(gateSentence(e.code === "ACTIONS_INCOMPLETE" ? (e.plannedActions ?? 1) : 0));
+      // The re-read that follows a refusal brings the counts the server used.
+      setGateShown(true);
     } else if (e instanceof ApiError && e.code === "ALREADY_ASSIGNED") {
       setProblem({ control, conflict: true, message: "Someone else has claimed this Ticket. It now shows its current owner." });
     } else if (e instanceof ApiError && e.code === "INVALID_OWNER") {
@@ -267,13 +277,14 @@ function StaffTicketDetail() {
     }
     setProblem(null);
     setSaved(null);
-    setGateMessage(null);
+    setGateShown(false);
+    setStatusNote(null);
     if (next === "RESOLVED") {
       // BR-21: explained before anything is sent; the server enforces it again on the move.
       if (!ticket.resolutionGate.canResolve) {
         setResolving(false);
         setConfirming(null);
-        setGateMessage(gateSentence(ticket.resolutionGate.plannedActions));
+        setGateShown(true);
         return;
       }
       // Resolving needs a summary and a confirmation, so nothing is sent yet.
@@ -384,6 +395,7 @@ function StaffTicketDetail() {
       {busy[control] && !stale[control] && <span className="text-muted">Saving…</span>}
       {/* Lab 4 ui-spec section 10 names the status confirmation "Status updated."; the others keep "Saved". */}
       {!busy[control] && saved === control && <span className="text-success">{control === "status" ? "Status updated." : "Saved"}</span>}
+      {!busy[control] && control === "status" && saved !== "status" && statusNote && <span className="text-muted">{statusNote}</span>}
     </div>
   );
 
@@ -563,14 +575,14 @@ function StaffTicketDetail() {
             ))}
           </select>
           {terminal && <div className="text-muted small mt-1">This Ticket is {statusLabel(ticket.currentStatus)}, so its status cannot change.</div>}
-          {gateMessage && (
+          {gateShown && !ticket.resolutionGate.canResolve && (
             <div className="zg-alert-warning rounded p-2 mt-2 small" role="alert">
-              <p className="mb-1">{gateMessage}</p>
+              <p className="mb-1">{gateSentence(ticket.resolutionGate.plannedActions)}</p>
               <button
                 type="button"
                 className="btn btn-sm btn-outline-secondary zg-touch-target"
                 onClick={() => {
-                  setGateMessage(null);
+                  setGateShown(false);
                   setTabRequest((r) => ({ id: "actions", seq: (r?.seq ?? 0) + 1 }));
                 }}
               >
@@ -664,6 +676,7 @@ function StaffTicketDetail() {
         currentUserId={user?.id ?? 0}
         onTicketChanged={() => void moved(ticket.currentStatus)}
         onOwnersStale={() => void refresh("owner")}
+        onActionsChanged={() => void refresh("status")}
         historyKey={moves}
         tabRequest={tabRequest}
       />
