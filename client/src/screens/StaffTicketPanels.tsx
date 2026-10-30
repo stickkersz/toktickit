@@ -13,6 +13,7 @@ import { TruncatedFilename, fileTypeLabel, formatDate, formatFileSize } from "..
 export default function StaffTicketPanels({
   ticketId,
   attachments,
+  ticketCreatedAt,
   ticketStatus,
   owners,
   currentUserId,
@@ -21,6 +22,7 @@ export default function StaffTicketPanels({
 }: {
   ticketId: number;
   attachments: Attachment[];
+  ticketCreatedAt: string;
   ticketStatus: string;
   owners: StaffOwner[];
   currentUserId: number;
@@ -47,6 +49,7 @@ export default function StaffTicketPanels({
           content: (
             <StaffActionsTaken
               ticketId={ticketId}
+              ticketCreatedAt={ticketCreatedAt}
               ticketStatus={ticketStatus}
               owners={owners}
               currentUserId={currentUserId}

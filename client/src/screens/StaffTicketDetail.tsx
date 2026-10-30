@@ -585,6 +585,7 @@ function StaffTicketDetail() {
       <StaffTicketPanels
         ticketId={ticketId}
         attachments={ticket.attachments}
+        ticketCreatedAt={ticket.createdAt}
         ticketStatus={ticket.currentStatus}
         owners={owners}
         currentUserId={user?.id ?? 0}

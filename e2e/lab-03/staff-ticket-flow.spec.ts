@@ -49,7 +49,9 @@ test.describe("Staff Ticket flow and Requester regression", () => {
     await status.selectOption("IN_PROGRESS");
     await expect(status).toHaveValue("IN_PROGRESS");
 
-    // A Public Comment (AC-26) and an Internal Note (AC-27).
+    // A Public Comment (AC-26) and an Internal Note (AC-27). Lab 4 puts Actions Taken first, so the
+    // comments tab is opened (superseding change, Lab 4 tests.md section 6).
+    await page.getByRole("tab", { name: /^Public Comments/ }).click();
     await page.getByLabel("Add Public Comment").fill(comment);
     await page.getByRole("button", { name: "Post Comment" }).click();
     await expect(page.getByRole("tab", { name: "Public Comments (1)" })).toBeVisible();

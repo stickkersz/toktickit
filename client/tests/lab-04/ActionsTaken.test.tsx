@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import * as api from "../../src/api.js";
 import { ApiError, ValidationError, type ActionItem, type StaffOwner, type StaffTicketDetail, type TicketDetail } from "../../src/api.js";
@@ -245,6 +245,27 @@ describe("Add Action", () => {
     expect(keys[2]).not.toBe(keys[1]);
   });
 
+  // UI-11 / BR-05 (found by E2E-01): a Ticket filed earlier in the current minute
+  it("never sends a default time earlier than the Ticket's creation, and refuses an earlier minute under the field", async () => {
+    const createdAt = new Date(Date.now() - 1000);
+    await openStaff([], { createdAt: createdAt.toISOString() });
+    const create = vi.spyOn(api, "createAction").mockResolvedValue(action());
+    await userEvent.click(within(panel()).getByRole("button", { name: "Add Action" }));
+    await fill(/Action Description/, "Replace the cable at desk 4B.");
+    await userEvent.click(screen.getByRole("button", { name: "Save Action" }));
+    await waitFor(() => expect(create).toHaveBeenCalledTimes(1));
+    expect(Date.parse(create.mock.calls[0][1].actionAt)).toBeGreaterThanOrEqual(createdAt.getTime());
+
+    await userEvent.click(within(panel()).getByRole("button", { name: "Add Action" }));
+    const at = screen.getByLabelText(/Action Date\/Time/);
+    const earlier = new Date(createdAt.getTime() - 2 * 60_000 + 7 * 60 * 60 * 1000).toISOString().slice(0, 16);
+    fireEvent.change(at, { target: { value: earlier } });
+    await fill(/Action Description/, "Replace the cable at desk 4C.");
+    await userEvent.click(screen.getByRole("button", { name: "Save Action" }));
+    expect(screen.getByText("Action date/time cannot be earlier than when the Ticket was created.")).toHaveAttribute("id", "action-create-actionAt-error");
+    expect(create).toHaveBeenCalledTimes(1);
+  });
+
   // UI-13 / ui-spec section 7: Cancel asks first when something was typed
   it("asks before discarding a started Action and returns focus to Add Action", async () => {
     await openStaff();
@@ -330,6 +351,34 @@ describe("Edit, conflicts, and finished Actions", () => {
     expect(error).toHaveAttribute("id", select.getAttribute("aria-describedby"));
     // The staff list reloads.
     await waitFor(() => expect(owners.mock.calls.length).toBeGreaterThan(before));
+  });
+
+  // UI-13 / BR-41 (found by E2E-01): a tablet rotated mid-edit swaps the table for cards
+  it("keeps what was typed in an open edit when the layout switches between table and cards", async () => {
+    let wide = true;
+    const listeners: (() => void)[] = [];
+    vi.stubGlobal("matchMedia", (query: string) => ({
+      get matches() {
+        return wide;
+      },
+      media: query,
+      addEventListener: (_: string, fn: () => void) => listeners.push(fn),
+      removeEventListener: () => undefined,
+    }));
+    try {
+      await openEdit(action({ description: "Original description text." }));
+      await fill(/Action Description/, "Typed before the rotation.");
+      wide = false;
+      await act(async () => listeners.forEach((fn) => fn()));
+      expect(within(panel()).queryByRole("table")).not.toBeInTheDocument();
+      expect(screen.getByLabelText(/Action Description/)).toHaveValue("Typed before the rotation.");
+      wide = true;
+      await act(async () => listeners.forEach((fn) => fn()));
+      expect(screen.getByLabelText(/Action Description/)).toHaveValue("Typed before the rotation.");
+      expect(screen.getByRole("button", { name: "Save Changes" })).toBeEnabled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   // UI-17 / AC-09, BR-12

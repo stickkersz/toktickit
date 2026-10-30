@@ -35,6 +35,18 @@ function fromLocalInput(value: string): string | null {
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
 
+// A datetime-local value names a whole minute. The minute the Ticket was created in therefore stands for
+// any moment of it, so a time in that minute is sent as no earlier than the creation itself (BR-05); an
+// earlier minute is refused under the field before anything is sent.
+const MINUTE = 60_000;
+function atOrAfterCreation(iso: string, ticketCreatedAt: string): string {
+  return Date.parse(iso) < Date.parse(ticketCreatedAt) ? ticketCreatedAt : iso;
+}
+function beforeCreation(iso: string, ticketCreatedAt: string): boolean {
+  return Date.parse(iso) < Math.floor(Date.parse(ticketCreatedAt) / MINUTE) * MINUTE;
+}
+const BEFORE_CREATION = "Action date/time cannot be earlier than when the Ticket was created.";
+
 const newKey = () => crypto.randomUUID();
 
 const sortActions = (list: ActionItem[]) =>
@@ -330,10 +342,12 @@ const valuesOf = (a: ActionItem): FormValues => ({
   attachmentNotes: a.attachmentNotes ?? "",
 });
 
-function validate(v: FormValues): Record<string, string> {
+function validate(v: FormValues, ticketCreatedAt: string): Record<string, string> {
   const errors: Record<string, string> = {};
   const len = (s: string) => s.trim().length;
-  if (fromLocalInput(v.actionAt) === null) errors.actionAt = "Enter the date and time of the action.";
+  const at = fromLocalInput(v.actionAt);
+  if (at === null) errors.actionAt = "Enter the date and time of the action.";
+  else if (beforeCreation(at, ticketCreatedAt)) errors.actionAt = BEFORE_CREATION;
   if (len(v.description) < LIMITS.description[0] || len(v.description) > LIMITS.description[1])
     errors.description = `Description must be between ${LIMITS.description[0]} and ${LIMITS.description[1]} characters.`;
   if (!v.responsibleStaffId) errors.responsibleStaffId = "Choose the responsible staff member.";
@@ -343,9 +357,9 @@ function validate(v: FormValues): Record<string, string> {
   return errors;
 }
 
-function toInput(v: FormValues): ActionInput {
+function toInput(v: FormValues, ticketCreatedAt: string): ActionInput {
   return {
-    actionAt: fromLocalInput(v.actionAt)!,
+    actionAt: atOrAfterCreation(fromLocalInput(v.actionAt)!, ticketCreatedAt),
     description: v.description.trim(),
     responsibleStaffId: Number(v.responsibleStaffId),
     followUpRequired: v.followUpRequired,
@@ -413,6 +427,7 @@ function TextField(props: {
 function ActionForm({
   idPrefix,
   mode,
+  ticketCreatedAt,
   initial,
   owners,
   current,
@@ -423,9 +438,11 @@ function ActionForm({
   onUseMine,
   onDiscardMine,
   onEdited,
+  draft,
 }: {
   idPrefix: string;
   mode: "create" | "edit";
+  ticketCreatedAt: string;
   initial: FormValues;
   owners: StaffOwner[];
   current?: ActionItem;
@@ -436,15 +453,28 @@ function ActionForm({
   onUseMine?: (values: FormValues) => void;
   onDiscardMine?: () => void;
   onEdited: () => void;
+  // What was typed, held by the panel: the table and the cards are swapped when the window crosses
+  // 768px (a tablet rotated), which remounts the open form, and nothing typed may be lost to that.
+  draft: React.MutableRefObject<FormValues | null>;
 }) {
-  const [values, setValues] = useState(initial);
+  const [values, setValuesState] = useState(() => draft.current ?? initial);
+  const setValues = (update: (v: FormValues) => FormValues) =>
+    setValuesState((v) => {
+      const next = update(v);
+      draft.current = next;
+      return next;
+    });
   const [touched, setTouched] = useState<Record<string, boolean>>({});
   const [submitted, setSubmitted] = useState(false);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const firstRef = useRef<HTMLInputElement>(null);
-  useEffect(() => firstRef.current?.focus(), []);
+  // Focus moves in when the form opens, not when a layout change remounts it mid-edit.
+  const reopened = useRef(draft.current !== null);
+  useEffect(() => {
+    if (!reopened.current) firstRef.current?.focus();
+  }, []);
 
-  const local = validate(values);
+  const local = validate(values, ticketCreatedAt);
   const shown = (field: keyof FormValues) => (touched[field] || submitted ? local[field] : undefined) ?? problem?.fields?.[field];
   const dirty = JSON.stringify(values) !== JSON.stringify(initial);
   const set = <K extends keyof FormValues>(field: K, value: FormValues[K]) => {
@@ -676,7 +706,7 @@ function Dialog({ title, onClose, children }: { title: string; onClose: () => vo
 
 const shortTitle = (a: ActionItem) => (a.description.length > 60 ? `${a.description.slice(0, 57)}...` : a.description);
 
-function CompleteDialog({ action, busy, problem, onSubmit, onClose }: { action: ActionItem; busy: boolean; problem: FormProblem | null; onSubmit: (result: string, actionAt: string) => void; onClose: () => void }) {
+function CompleteDialog({ action, ticketCreatedAt, busy, problem, onSubmit, onClose }: { action: ActionItem; ticketCreatedAt: string; busy: boolean; problem: FormProblem | null; onSubmit: (result: string, actionAt: string) => void; onClose: () => void }) {
   // Pre-filled with the stored time, or now when that is still in the future, and always sent (BR-05).
   const [actionAt, setActionAt] = useState(() => toLocalInput(new Date(Math.min(Date.parse(action.actionAt), Date.now()))));
   const [result, setResult] = useState("");
@@ -686,12 +716,14 @@ function CompleteDialog({ action, busy, problem, onSubmit, onClose }: { action: 
   const resultError =
     (submitted || touched) && (len < LIMITS.result[0] || len > LIMITS.result[1]) ? `Result must be between ${LIMITS.result[0]} and ${LIMITS.result[1]} characters.` : problem?.fields?.result;
   const iso = fromLocalInput(actionAt);
-  const atError = (submitted && iso === null ? "Enter the date and time the work was done." : undefined) ?? problem?.fields?.actionAt;
+  const atError =
+    (submitted && iso === null ? "Enter the date and time the work was done." : submitted && iso && beforeCreation(iso, ticketCreatedAt) ? BEFORE_CREATION : undefined) ??
+    problem?.fields?.actionAt;
   function submit(e: React.FormEvent) {
     e.preventDefault();
     setSubmitted(true);
-    if (len < LIMITS.result[0] || len > LIMITS.result[1] || iso === null) return;
-    onSubmit(result.trim(), iso);
+    if (len < LIMITS.result[0] || len > LIMITS.result[1] || iso === null || beforeCreation(iso, ticketCreatedAt)) return;
+    onSubmit(result.trim(), atOrAfterCreation(iso, ticketCreatedAt));
   }
   return (
     <Dialog title={`Complete Action: ${shortTitle(action)}`} onClose={onClose}>
@@ -772,6 +804,7 @@ const NOT_WORKABLE = "This ticket's status changed, so its actions can no longer
 
 export function StaffActionsTaken({
   ticketId,
+  ticketCreatedAt,
   ticketStatus,
   owners,
   currentUserId,
@@ -780,6 +813,7 @@ export function StaffActionsTaken({
   onOwnersStale,
 }: {
   ticketId: number;
+  ticketCreatedAt: string;
   ticketStatus: string;
   owners: StaffOwner[];
   currentUserId: number;
@@ -801,6 +835,8 @@ export function StaffActionsTaken({
   const rowRefs = useRef<Record<string, HTMLElement | null>>({});
   const addRef = useRef<HTMLButtonElement>(null);
   const focusAfter = useRef<number | "add" | null>(null);
+  // The open form's typed values, kept across a remount (see ActionForm). Cleared whenever a form opens or closes.
+  const draft = useRef<FormValues | null>(null);
 
   // A status change elsewhere on the screen (or a cancel that cascaded, BR-15) changes the Actions too.
   const firstStatus = useRef(ticketStatus);
@@ -878,10 +914,11 @@ export function StaffActionsTaken({
     guarded(async () => {
       setProblem(null);
       try {
-        const created = await createAction(ticketId, toInput(values), keyRef.current);
+        const created = await createAction(ticketId, toInput(values, ticketCreatedAt), keyRef.current);
         keyRef.current = newKey();
         actions.replace(created);
         setCreating(false);
+        draft.current = null;
         setOpenId(null);
         focusAfter.current = created.id;
         setNotice({ kind: "success", text: "Action added." });
@@ -894,7 +931,7 @@ export function StaffActionsTaken({
     guarded(async () => {
       setProblem(null);
       const before = valuesOf(action);
-      const next = toInput(values);
+      const next = toInput(values, ticketCreatedAt);
       const changes: Partial<ActionInput> = {};
       if (values.actionAt !== before.actionAt) changes.actionAt = next.actionAt;
       if (values.description.trim() !== before.description) changes.description = next.description;
@@ -906,6 +943,7 @@ export function StaffActionsTaken({
         const updated = await updateAction(action.id, version, changes);
         actions.replace(updated);
         setEditingId(null);
+        draft.current = null;
         focusAfter.current = updated.id;
         setNotice({ kind: "success", text: "Changes saved." });
       } catch (e) {
@@ -944,12 +982,14 @@ export function StaffActionsTaken({
     setOpenId(null);
     setEditingId(null);
     keyRef.current = newKey();
+    draft.current = null;
     setFormKey((k) => k + 1);
     setCreating(true);
   }
 
   function closeCreate() {
     setCreating(false);
+    draft.current = null;
     setProblem(null);
     focusAfter.current = "add";
   }
@@ -971,6 +1011,7 @@ export function StaffActionsTaken({
           key={`edit-${a.id}-${formKey}`}
           idPrefix={`action-edit-${a.id}`}
           mode="edit"
+          ticketCreatedAt={ticketCreatedAt}
           initial={valuesOf(a)}
           owners={owners}
           current={a}
@@ -979,6 +1020,7 @@ export function StaffActionsTaken({
           onSubmit={(values) => void save(a, a.version, values)}
           onCancel={() => {
             setEditingId(null);
+            draft.current = null;
             setProblem(null);
             focusAfter.current = a.id;
           }}
@@ -989,10 +1031,12 @@ export function StaffActionsTaken({
             setProblem(null);
             void save(latest, latest.version, values);
           }}
+          draft={draft}
           onDiscardMine={() => {
             actions.replace(shownVersion);
             setProblem(null);
             setEditingId(null);
+            draft.current = null;
             focusAfter.current = a.id;
           }}
           onEdited={() => problem?.message && setProblem((p) => (p?.stale ? p : null))}
@@ -1005,7 +1049,7 @@ export function StaffActionsTaken({
         {a.status === "PLANNED" ? (
           workable && (
             <div className="d-flex gap-2 flex-wrap">
-              <button type="button" className="btn btn-sm btn-outline-secondary zg-touch-target" onClick={() => (setProblem(null), setFormKey((k) => k + 1), setEditingId(a.id))}>
+              <button type="button" className="btn btn-sm btn-outline-secondary zg-touch-target" onClick={() => ((draft.current = null), setProblem(null), setFormKey((k) => k + 1), setEditingId(a.id))}>
                 Edit
               </button>
               <button type="button" className="btn btn-sm zg-btn-primary zg-touch-target" onClick={() => (setProblem(null), setDialog({ kind: "complete", id: a.id }))}>
@@ -1059,6 +1103,8 @@ export function StaffActionsTaken({
           key={`create-${formKey}`}
           idPrefix="action-create"
           mode="create"
+          ticketCreatedAt={ticketCreatedAt}
+          draft={draft}
           initial={createInitial}
           owners={owners}
           busy={busy}
@@ -1077,7 +1123,7 @@ export function StaffActionsTaken({
       {actions.state === "ready" && actions.items.length > 0 && <ActionList actions={actions.items} openId={openId} onToggle={toggle} renderDetail={detail} rowRefs={rowRefs} />}
 
       {dialog?.kind === "complete" && dialogAction && (
-        <CompleteDialog action={dialogAction} busy={busy} problem={problem} onSubmit={(result, at) => void finish(dialogAction, "complete", result, at)} onClose={() => (setDialog(null), setProblem(null))} />
+        <CompleteDialog action={dialogAction} ticketCreatedAt={ticketCreatedAt} busy={busy} problem={problem} onSubmit={(result, at) => void finish(dialogAction, "complete", result, at)} onClose={() => (setDialog(null), setProblem(null))} />
       )}
       {dialog?.kind === "cancel" && dialogAction && (
         <CancelDialog action={dialogAction} busy={busy} problem={problem} onSubmit={(reason) => void finish(dialogAction, "cancel", reason)} onClose={() => (setDialog(null), setProblem(null))} />
