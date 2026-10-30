@@ -1,3 +1,5 @@
+import { isValidId } from "./ids.js";
+
 export type TicketSortKey =
   | "createdAt"
   | "-createdAt"
@@ -35,7 +37,7 @@ export function parseTicketListQuery(query: Record<string, unknown>): ParsedTick
   const search = typeof query.search === "string" ? query.search.trim() : "";
 
   const categoryIdRaw = Number(query.category);
-  const categoryId = Number.isInteger(categoryIdRaw) && categoryIdRaw > 0 ? categoryIdRaw : null;
+  const categoryId = isValidId(categoryIdRaw) ? categoryIdRaw : null;
 
   const requestedPriority = (["LOW", "MEDIUM", "HIGH"] as const).includes(
     query.requestedPriority as "LOW" | "MEDIUM" | "HIGH",
@@ -52,7 +54,7 @@ export function parseTicketListQuery(query: Record<string, unknown>): ParsedTick
   const { field: sortField, direction: sortDirection } = SORT_FIELDS[sortKey];
 
   let page = Number(query.page);
-  if (!Number.isInteger(page) || page < 1) page = 1;
+  if (!isValidId(page)) page = 1;
 
   let pageSize = Number(query.pageSize);
   if (!Number.isInteger(pageSize) || pageSize < 5 || pageSize > 50) pageSize = 10;

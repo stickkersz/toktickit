@@ -120,7 +120,9 @@ Errors, checked in this order:
 - 409 `IDEMPOTENCY_KEY_REUSED`.
 - 500.
 
-The insert and the Ticket's status check run in one transaction holding a share lock on the Ticket row, so an Action cannot be added to a Ticket at the moment it is being resolved or cancelled (BR-21). The Ticket's `updatedAt` is touched (BR-19).
+A repeat whose key and `requestHash` match an Action the caller already created is answered as a replay (200) right after the 400 checks, before `INVALID_RESPONSIBLE` and `TICKET_NOT_WORKABLE`, so a retry still returns its record after the Responsible Staff was deactivated or the Ticket was resolved.
+
+The insert and the Ticket's status check run in one transaction holding a `FOR NO KEY UPDATE` lock on the Ticket row, so an Action cannot be added to a Ticket at the moment it is being resolved or cancelled (BR-21). The Ticket's `updatedAt` is touched (BR-19) in the same transaction, which is why the lock is not a share lock: two share holders updating the row would deadlock. Endpoints 3 to 5 take the same lock, so every Action write on one Ticket is serialised.
 
 ## 3. PATCH /api/actions/:id
 

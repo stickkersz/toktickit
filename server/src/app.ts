@@ -22,6 +22,7 @@ import { isEligibleOwner } from "./routes/staffTickets.js";
 import { permittedNext, TERMINAL_STATUSES } from "./ticketStatus.js";
 import { authRouter } from "./routes/auth.js";
 import { adminUsersRouter } from "./routes/adminUsers.js";
+import { actionsRouter } from "./routes/actions.js";
 import { ticketContentRouter } from "./routes/ticketContent.js";
 import { staffTicketsRouter } from "./routes/staffTickets.js";
 import { requireAuth } from "./middleware/requireAuth.js";
@@ -47,6 +48,7 @@ app.use(authRouter); // Lab 3: /api/auth/*
 app.use(staffTicketsRouter); // Lab 3: /api/staff/tickets
 app.use(ticketContentRouter); // Lab 3: /api/tickets/:id/comments and /notes
 app.use(adminUsersRouter); // Lab 3: /api/admin/users
+app.use(actionsRouter); // Lab 4: /api/tickets/:id/actions and /api/actions/:id
 
 // ---------------------------------------------------------------------------
 // Issue 2 — API health check

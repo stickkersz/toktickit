@@ -1,4 +1,4 @@
-import type { ActionStatus, PrismaClient, TicketStatus } from "@prisma/client";
+import type { ActionStatus, Prisma, PrismaClient, TicketStatus } from "@prisma/client";
 import { SEED_TICKETS } from "./seedTickets.js";
 
 // Lab 4 BR-46: Status History and Actions Taken for the seeded Tickets. Nothing here is sensitive.
@@ -19,6 +19,20 @@ const MINUTE = 60_000;
 // Held for each whole run, so two seeds started together cannot both find a row missing and both add it.
 const SEED_HISTORY_LOCK = 4_270_702;
 const SEED_ACTIONS_LOCK = 4_270_703;
+
+// Long enough for a first run on a slow machine; Prisma's default is 5 seconds.
+export const SEED_TRANSACTION_TIMEOUT = 30_000;
+
+// BR-38: a Ticket's last activity is its latest move, Action write, or Public Comment, never an
+// Internal Note. Called only for a Ticket this run has just added rows to.
+async function touchLastActivity(tx: Prisma.TransactionClient, ticketId: number): Promise<void> {
+  await tx.$executeRaw`
+    UPDATE "Ticket" SET "updatedAt" = GREATEST(
+      (SELECT max("changedAt") FROM "StatusChange" WHERE "ticketId" = ${ticketId}),
+      (SELECT max("updatedAt") FROM "ActionTaken" WHERE "ticketId" = ${ticketId}),
+      (SELECT max("createdAt") FROM "PublicComment" WHERE "ticketId" = ${ticketId}))
+    WHERE id = ${ticketId}`;
+}
 
 // The moves that take a new Ticket to each status, using only permitted transitions (BR-20).
 const PATHS: Record<TicketStatus, TicketStatus[]> = {
@@ -54,13 +68,17 @@ export async function seedStatusHistory(prisma: PrismaClient): Promise<void> {
     for (const ticket of tickets) {
       const def = SEED_TICKETS.find((t) => t.ticketNumber === ticket.ticketNumber)!;
       // The creation row is a fact for every Ticket; the migration backfill may already have written it (BR-25).
-      if (!ticket.statusChanges.some((c) => c.fromStatus === null)) {
+      const addCreation = !ticket.statusChanges.some((c) => c.fromStatus === null);
+      if (addCreation) {
         await tx.statusChange.create({
           data: { ticketId: ticket.id, fromStatus: null, toStatus: "NEW", changedById: ticket.requesterId, changedAt: ticket.createdAt },
         });
       }
       // The later moves are only described for a Ticket still in its seeded status with no recorded move.
-      if (ticket.currentStatus !== def.status || ticket.statusChanges.some((c) => c.fromStatus !== null)) continue;
+      if (ticket.currentStatus !== def.status || ticket.statusChanges.some((c) => c.fromStatus !== null)) {
+        if (addCreation) await touchLastActivity(tx, ticket.id);
+        continue;
+      }
       const mover = users.get(def.owner ?? STAFF1)!;
       let from: TicketStatus = "NEW";
       for (const [i, to] of PATHS[def.status].entries()) {
@@ -76,8 +94,9 @@ export async function seedStatusHistory(prisma: PrismaClient): Promise<void> {
         });
         from = to;
       }
+      await touchLastActivity(tx, ticket.id);
     }
-  });
+  }, { timeout: SEED_TRANSACTION_TIMEOUT });
 }
 
 interface SeedAction {
@@ -175,6 +194,7 @@ export async function seedActions(prisma: PrismaClient): Promise<void> {
           },
         });
       }
+      await touchLastActivity(tx, ticket.id);
     }
-  });
+  }, { timeout: SEED_TRANSACTION_TIMEOUT });
 }
