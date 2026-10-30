@@ -1,5 +1,6 @@
 import { useLocation } from "react-router-dom";
 import { StaffActionsTaken, useActions } from "../ActionsTaken.js";
+import { StatusHistory } from "../StatusHistory.js";
 import { Attachment, StaffOwner, getAttachmentDownloadUrl, getAttachmentPreviewUrl, getTicketComments, getTicketNotes, postTicketComment, postTicketNote } from "../api.js";
 import { ContentPanel, LockIcon } from "../ContentPanel.js";
 import { Tabs } from "../Tabs.js";
@@ -19,6 +20,8 @@ export default function StaffTicketPanels({
   currentUserId,
   onTicketChanged,
   onOwnersStale,
+  historyKey,
+  tabRequest,
 }: {
   ticketId: number;
   attachments: Attachment[];
@@ -28,6 +31,8 @@ export default function StaffTicketPanels({
   currentUserId: number;
   onTicketChanged: () => void;
   onOwnersStale: () => void;
+  historyKey: number;
+  tabRequest: { id: string; seq: number } | null;
 }) {
   const actions = useActions(ticketId);
   const tab = new URLSearchParams(useLocation().search).get("tab") ?? undefined;
@@ -40,6 +45,7 @@ export default function StaffTicketPanels({
       label="Ticket activity"
       idPrefix="staff-ticket"
       initialId={tab}
+      select={tabRequest}
       tabs={[
         // Lab 4: first, before the conversation (ui-spec.md section 7).
         {
@@ -81,6 +87,8 @@ export default function StaffTicketPanels({
         // Read only for staff: a Requester adds and removes Attachments, staff only read them (BR-54,
         // BR-55). The upload and Remove controls are absent from the page, not merely disabled.
         { id: "attachments", label: "Attachments", count: activeAttachments, content: <AttachmentList attachments={attachments} /> },
+        // Lab 4 ui-spec.md section 9: the Status History, read only, last.
+        { id: "history", label: "History", count: null, content: <StatusHistory ticketId={ticketId} reloadKey={historyKey} /> },
       ]}
     />
   );

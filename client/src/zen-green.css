@@ -526,3 +526,13 @@ input[type="datetime-local"]::-webkit-datetime-edit-ampm-field:focus {
   background-color: var(--color-pale);
   color: var(--color-text);
 }
+
+/* Lab 4 Status History (ui-spec.md section 9): a vertical list joined by a Zen Green rule. */
+.zg-history-entry {
+  border-left: 3px solid var(--color-pale);
+  padding: 0 0 0.75rem 0.75rem;
+  position: relative;
+}
+.zg-history-entry:last-child {
+  padding-bottom: 0;
+}

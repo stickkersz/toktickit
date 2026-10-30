@@ -34,6 +34,12 @@ const STATUS_LABEL: Record<string, string> = {
 };
 const statusLabel = (status: string) => STATUS_LABEL[status] ?? status;
 
+// ui-spec.md section 10: the gate in words, from the counts the server gives.
+const gateSentence = (planned: number) =>
+  planned > 0
+    ? `This ticket cannot be resolved yet: ${planned} planned ${planned === 1 ? "action is" : "actions are"} still open.`
+    : "Record and complete at least one action before resolving.";
+
 // BR-27: 10 to 2000 characters after trimming.
 const SUMMARY_MIN = 10;
 const SUMMARY_MAX = 2000;
@@ -52,7 +58,7 @@ const SAVE_FIELDS: Record<Control, (keyof StaffTicketItem)[]> = {
 const RELOAD_FIELDS: Record<Control, (keyof StaffTicketDetailData)[]> = {
   owner: ["ownerId", "ownerName", "ownerIsActive", "ownerEligible"],
   priority: ["itPriority"],
-  status: ["currentStatus", "permittedNextStatuses", "resolutionSummary"],
+  status: ["currentStatus", "permittedNextStatuses", "resolutionSummary", "resolutionGate"],
 };
 
 function pick<T extends object>(source: T, keys: (keyof T)[]): Partial<T> {
@@ -97,6 +103,13 @@ function StaffTicketDetail() {
   // Closing and cancelling are terminal (no move out of either), so both wait for a confirmation.
   const [confirming, setConfirming] = useState<"CLOSED" | "CANCELLED" | null>(null);
   const [summaryError, setSummaryError] = useState<string | null>(null);
+  // Lab 4: a Resolve the gate blocks is explained next to the control and nothing is sent (ui-spec section 10).
+  const [gateMessage, setGateMessage] = useState<string | null>(null);
+  // Bumped after every successful move so the History and the Actions follow it; also opens a tab on request.
+  const [moves, setMoves] = useState(0);
+  const [tabRequest, setTabRequest] = useState<{ id: string; seq: number } | null>(null);
+  // The status the last move asked for, so a STATUS_CHANGED that names it can be told apart (see fail).
+  const requestedStatus = useRef<string | null>(null);
 
   const loadIdRef = useRef(0);
 
@@ -161,7 +174,20 @@ function StaffTicketDetail() {
   }
 
   function fail(control: Control, e: unknown, generic: string) {
-    if (e instanceof ApiError && e.code === "ALREADY_ASSIGNED") {
+    if (e instanceof ApiError && e.code === "STATUS_CHANGED" && e.currentStatus === requestedStatus.current) {
+      // A retry after a lost response finds the Ticket already where it was asked to go: that is a
+      // success, not someone else's change (ui-spec section 10).
+      setSaved(control);
+      setMoves((m) => m + 1);
+    } else if (e instanceof ApiError && e.code === "STATUS_CHANGED") {
+      setProblem({
+        control,
+        conflict: true,
+        message: `This ticket moved to ${statusLabel(e.currentStatus ?? "")} while you were viewing it.`,
+      });
+    } else if (e instanceof ApiError && (e.code === "ACTIONS_INCOMPLETE" || e.code === "NO_COMPLETED_ACTION")) {
+      setGateMessage(gateSentence(e.code === "ACTIONS_INCOMPLETE" ? (e.plannedActions ?? 1) : 0));
+    } else if (e instanceof ApiError && e.code === "ALREADY_ASSIGNED") {
       setProblem({ control, conflict: true, message: "Someone else has claimed this Ticket. It now shows its current owner." });
     } else if (e instanceof ApiError && e.code === "INVALID_OWNER") {
       setProblem({ control, conflict: true, message: "That person can no longer be a Ticket Owner. The list has been refreshed." });
@@ -241,7 +267,15 @@ function StaffTicketDetail() {
     }
     setProblem(null);
     setSaved(null);
+    setGateMessage(null);
     if (next === "RESOLVED") {
+      // BR-21: explained before anything is sent; the server enforces it again on the move.
+      if (!ticket.resolutionGate.canResolve) {
+        setResolving(false);
+        setConfirming(null);
+        setGateMessage(gateSentence(ticket.resolutionGate.plannedActions));
+        return;
+      }
       // Resolving needs a summary and a confirmation, so nothing is sent yet.
       setResolving(true);
       setConfirming(null);
@@ -253,15 +287,19 @@ function StaffTicketDetail() {
       return;
     }
     setConfirming(null);
-    return run("status", () => changeTicketStatus(ticketId, next), "Unable to change the status. Nothing was changed.", () => refresh("status"));
+    const from = ticket.currentStatus;
+    requestedStatus.current = next;
+    return run("status", () => changeTicketStatus(ticketId, next, undefined, from), "Unable to change the status. Nothing was changed.", () => moved(next));
   }
 
   function confirmTerminal() {
     if (!confirming) return;
     const target = confirming;
-    return run("status", () => changeTicketStatus(ticketId, target), "Unable to change the status. Nothing was changed.", async () => {
+    const from = ticket!.currentStatus;
+    requestedStatus.current = target;
+    return run("status", () => changeTicketStatus(ticketId, target, undefined, from), "Unable to change the status. Nothing was changed.", async () => {
       setConfirming(null);
-      return refresh("status");
+      return moved(target);
     });
   }
 
@@ -272,11 +310,21 @@ function StaffTicketDetail() {
       return;
     }
     setSummaryError(null);
-    return run("status", () => changeTicketStatus(ticketId, "RESOLVED", trimmed), "Unable to resolve the Ticket. Nothing was changed.", async () => {
+    const from = ticket!.currentStatus;
+    requestedStatus.current = "RESOLVED";
+    return run("status", () => changeTicketStatus(ticketId, "RESOLVED", trimmed, from), "Unable to resolve the Ticket. Nothing was changed.", async () => {
       setResolving(false);
       setSummary("");
-      return refresh("status");
+      return moved("RESOLVED");
     });
+  }
+
+  // After a move: the status, permitted moves, gate and summary reload, and the History and Actions follow.
+  async function moved(to: string): Promise<boolean> {
+    requestedStatus.current = to;
+    const ok = await refresh("status");
+    setMoves((m) => m + 1);
+    return ok;
   }
 
   function goBack() {
@@ -332,7 +380,8 @@ function StaffTicketDetail() {
   const feedback = (control: Control) => (
     <div className="zg-field-feedback small" aria-live="polite">
       {busy[control] && !stale[control] && <span className="text-muted">Saving…</span>}
-      {!busy[control] && saved === control && <span className="text-success">Saved</span>}
+      {/* Lab 4 ui-spec section 10 names the status confirmation "Status updated."; the others keep "Saved". */}
+      {!busy[control] && saved === control && <span className="text-success">{control === "status" ? "Status updated." : "Saved"}</span>}
     </div>
   );
 
@@ -512,6 +561,21 @@ function StaffTicketDetail() {
             ))}
           </select>
           {terminal && <div className="text-muted small mt-1">This Ticket is {statusLabel(ticket.currentStatus)}, so its status cannot change.</div>}
+          {gateMessage && (
+            <div className="zg-alert-warning rounded p-2 mt-2 small" role="alert">
+              <p className="mb-1">{gateMessage}</p>
+              <button
+                type="button"
+                className="btn btn-sm btn-outline-secondary zg-touch-target"
+                onClick={() => {
+                  setGateMessage(null);
+                  setTabRequest((r) => ({ id: "actions", seq: (r?.seq ?? 0) + 1 }));
+                }}
+              >
+                Go to Actions Taken
+              </button>
+            </div>
+          )}
           {feedback("status")}
           {staleNote("status")}
           {problemNote("status")}
@@ -566,6 +630,13 @@ function StaffTicketDetail() {
             <div className="border rounded p-3" role="group" aria-label="Confirm the status change">
               <p className="mb-2">
                 {confirming === "CLOSED" ? "Close this Ticket?" : "Cancel this Ticket?"} It cannot move to any other status afterwards.
+                {/* Lab 4 BR-15, ui-spec section 10: say what the cancel takes with it. */}
+                {confirming === "CANCELLED" && ticket.resolutionGate.plannedActions > 0 && (
+                  <>
+                    {" "}
+                    {ticket.resolutionGate.plannedActions === 1 ? "Its 1 planned action will be cancelled too." : `Its ${ticket.resolutionGate.plannedActions} planned actions will be cancelled too.`}
+                  </>
+                )}
               </p>
               <div className="d-flex gap-2 justify-content-end">
                 <button type="button" className="btn btn-outline-secondary btn-sm zg-touch-target" disabled={locked.status} onClick={() => setConfirming(null)}>
@@ -589,8 +660,10 @@ function StaffTicketDetail() {
         ticketStatus={ticket.currentStatus}
         owners={owners}
         currentUserId={user?.id ?? 0}
-        onTicketChanged={() => void refresh("status")}
+        onTicketChanged={() => void moved(ticket.currentStatus)}
         onOwnersStale={() => void refresh("owner")}
+        historyKey={moves}
+        tabRequest={tabRequest}
       />
     </div>
   );

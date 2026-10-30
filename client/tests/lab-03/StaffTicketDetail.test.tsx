@@ -56,6 +56,8 @@ function detail(overrides: Partial<StaffTicketDetail> = {}): StaffTicketDetail {
     ownerEligible: null,
     requesterIsActive: true,
     permittedNextStatuses: [],
+    // Lab 4 BR-21: an open gate, so the Lab 3 resolve flows still test what they were written for.
+    resolutionGate: { plannedActions: 0, completedActions: 1, canResolve: true },
     ...overrides,
   };
   return { ...base, permittedNextStatuses: overrides.permittedNextStatuses ?? PERMITTED[base.currentStatus] };
@@ -322,7 +324,7 @@ describe("Staff Ticket Detail: status", () => {
   it("saves an ordinary move straight away and then offers the moves from the new status", async () => {
     const fake = await openDetail(detail({ currentStatus: "OPEN", ownerId: 20, ownerName: "Wichai Charoen", ownerIsActive: true, ownerEligible: true }));
     await userEvent.selectOptions(screen.getByLabelText("Current Status"), "In Progress");
-    await waitFor(() => expect(fake.setStatus).toHaveBeenCalledWith(42, "IN_PROGRESS"));
+    await waitFor(() => expect(fake.setStatus).toHaveBeenCalledWith(42, "IN_PROGRESS", undefined, expect.any(String)));
     await waitFor(() => expect(screen.getByLabelText("Current Status")).toHaveValue("IN_PROGRESS"));
     expect(optionsOf("Current Status")).toEqual(["In Progress", "Waiting for Requester", "Resolved", "Cancelled"]);
     expect(within(screen.getByRole("heading", { name: "TKT-2026-000042" }).parentElement!).getByText("In Progress")).toHaveClass("zg-badge-in-progress");
@@ -343,7 +345,7 @@ describe("Staff Ticket Detail: status", () => {
 
     await userEvent.selectOptions(screen.getByLabelText("Current Status"), "Closed");
     await userEvent.click(screen.getByRole("button", { name: "Confirm and close" }));
-    await waitFor(() => expect(fake.setStatus).toHaveBeenCalledWith(42, "CLOSED"));
+    await waitFor(() => expect(fake.setStatus).toHaveBeenCalledWith(42, "CLOSED", undefined, expect.any(String)));
     await waitFor(() => expect(screen.queryByRole("group", { name: "Confirm the status change" })).not.toBeInTheDocument());
   });
 
@@ -401,7 +403,7 @@ describe("Staff Ticket Detail: status", () => {
     expect(screen.getByRole("group", { name: "Confirm the status change" })).toHaveTextContent("Cancel this Ticket?");
     expect(fake.setStatus).not.toHaveBeenCalled();
     await userEvent.click(screen.getByRole("button", { name: "Confirm and cancel" }));
-    await waitFor(() => expect(fake.setStatus).toHaveBeenCalledWith(42, "CANCELLED"));
+    await waitFor(() => expect(fake.setStatus).toHaveBeenCalledWith(42, "CANCELLED", undefined, expect.any(String)));
   });
 
   // UI-17 / AC-24, BR-27
@@ -429,7 +431,7 @@ describe("Staff Ticket Detail: status", () => {
     await user.type(box, "  Replaced the faulty access point.  ");
     expect(within(screen.getByLabelText("Resolution Summary *").parentElement!).getByText(/^\d+\/2000$/)).toHaveTextContent("33/2000");
     await user.click(screen.getByRole("button", { name: "Confirm and resolve" }));
-    await waitFor(() => expect(fake.setStatus).toHaveBeenCalledWith(42, "RESOLVED", "Replaced the faulty access point."));
+    await waitFor(() => expect(fake.setStatus).toHaveBeenCalledWith(42, "RESOLVED", "Replaced the faulty access point.", expect.any(String)));
     await waitFor(() => expect(screen.queryByLabelText("Resolution Summary *")).not.toBeInTheDocument());
     expect(screen.getByLabelText("Current Status")).toHaveValue("RESOLVED");
     // The stored summary is now shown, read only.
@@ -501,7 +503,7 @@ describe("Staff Ticket Detail: status", () => {
     await user.click(screen.getByRole("button", { name: "Claim" }));
     await waitFor(() => expect(fake.setOwner).toHaveBeenCalledWith(42, STAFF.id));
     await user.click(await screen.findByRole("button", { name: "Confirm and resolve" }));
-    await waitFor(() => expect(fake.setStatus).toHaveBeenLastCalledWith(42, "RESOLVED", "Replaced the access point and tested."));
+    await waitFor(() => expect(fake.setStatus).toHaveBeenLastCalledWith(42, "RESOLVED", "Replaced the access point and tested.", expect.any(String)));
   });
 
   it("restores the status and says nothing was changed when the request fails outright", async () => {
@@ -584,7 +586,7 @@ describe("Staff Ticket Detail: concurrent saves", () => {
     fake.setPriority.mockReturnValue(prioritySave.promise);
 
     await user.selectOptions(screen.getByLabelText("Current Status"), "In Progress");
-    await waitFor(() => expect(fake.setStatus).toHaveBeenCalledWith(42, "IN_PROGRESS"));
+    await waitFor(() => expect(fake.setStatus).toHaveBeenCalledWith(42, "IN_PROGRESS", undefined, expect.any(String)));
     await user.selectOptions(screen.getByLabelText("Ticket Owner"), `${STAFF.name} (you)`);
     await user.selectOptions(screen.getByLabelText("IT Priority"), "Low");
     ownerSave.resolve(snapshot({ ...ME, currentStatus: "IN_PROGRESS", itPriority: "HIGH" }));
@@ -781,7 +783,8 @@ describe("Staff Ticket Detail: a reload that fails", () => {
     const fake = await openDetail(detail({ currentStatus: "OPEN", ...WICHAI }));
     await userEvent.selectOptions(screen.getByLabelText("Current Status"), "In Progress");
     await waitFor(() => expect(fake.setStatus).toHaveBeenCalledTimes(1));
-    expect(await screen.findByText("Saved")).toBeInTheDocument();
+    // Lab 4 ui-spec section 10: the status control confirms with "Status updated." (superseding change).
+    expect(await screen.findByText("Status updated.")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Reload" })).not.toBeInTheDocument();
   });
 });
@@ -863,8 +866,8 @@ describe("Staff Ticket Detail: Public Comments and Internal Notes", () => {
   it("shows Public Comments, Internal Notes and Attachments as tabs with a count each, Public Comments first and selected", async () => {
     await openWith({ comments: [item({ id: 1 }), item({ id: 2 })], notes: [item({ id: 3 })] }, detail({ attachments: [{ id: 7, originalFilename: "a.png", mimeType: "image/png", sizeBytes: 10, uploadedAt: "2026-09-10T10:00:00.000Z", isRemoved: false }] }));
     const tabs = screen.getAllByRole("tab").map((t) => t.textContent?.replace(/\s+/g, " ").trim());
-    // Lab 4 adds Actions Taken as the first tab (superseding change).
-    expect(tabs).toEqual(["Actions Taken (0)", "Public Comments (2)", "Internal Notes (1)", "Attachments (1)"]);
+    // Lab 4 adds Actions Taken as the first tab and History as the last (superseding change).
+    expect(tabs).toEqual(["Actions Taken (0)", "Public Comments (2)", "Internal Notes (1)", "Attachments (1)", "History"]);
     expect(screen.getByRole("tablist", { name: "Ticket activity" })).toBeInTheDocument();
     expect(tab(/^Public Comments/)).toHaveAttribute("aria-selected", "true");
     expect(tab(/^Internal Notes/)).toHaveAttribute("aria-selected", "false");
@@ -1114,12 +1117,13 @@ describe("Staff Ticket Detail: Public Comments and Internal Notes", () => {
     expect(tab(/^Internal Notes/)).toHaveFocus();
     expect(tab(/^Internal Notes/)).toHaveAttribute("aria-selected", "true");
     await user.keyboard("{End}");
-    expect(tab(/^Attachments/)).toHaveFocus();
-    // Lab 4 puts Actions Taken first, so wrapping and Home land there (superseding change).
+    expect(tab(/^History/)).toHaveFocus();
+    // Lab 4 puts Actions Taken first and History last, so wrapping and Home land on Actions Taken and End
+    // on History (superseding change).
     await user.keyboard("{ArrowRight}");
     expect(tab(/^Actions Taken/)).toHaveFocus(); // wraps
     await user.keyboard("{ArrowLeft}");
-    expect(tab(/^Attachments/)).toHaveFocus();
+    expect(tab(/^History/)).toHaveFocus();
     await user.keyboard("{Home}");
     expect(tab(/^Actions Taken/)).toHaveFocus();
     expect(tab(/^Actions Taken/)).toHaveAttribute("aria-selected", "true");

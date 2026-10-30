@@ -21,6 +21,7 @@ import { PriorityBadge, StatusBadge } from "../Badge.js";
 import { ContentPanel } from "../ContentPanel.js";
 import { TERMINAL_MESSAGE, useContentThread } from "../content.js";
 import { RequesterActionsTaken } from "../ActionsTaken.js";
+import { StatusHistory } from "../StatusHistory.js";
 import {
   ATTACHMENT_REJECT_MESSAGES,
   AttachmentRejectReason,
@@ -483,6 +484,16 @@ export default function TicketDetail() {
       <hr />
 
       <PublicComments ticketId={ticket.id} closed={isTerminal} />
+
+      <hr />
+
+      {/* Lab 4 ui-spec.md section 9: the Status History, read only, after the conversation. */}
+      <section aria-labelledby="requester-history-heading">
+        <h2 id="requester-history-heading" className="h5 mb-3">
+          History
+        </h2>
+        <StatusHistory ticketId={ticket.id} />
+      </section>
     </div>
   );
 }

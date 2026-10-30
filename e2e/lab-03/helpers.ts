@@ -117,3 +117,15 @@ export async function asAdmin(work: (api: APIRequestContext) => Promise<{ ok(): 
 export async function navItems(page: Page): Promise<string[]> {
   return page.locator("#main-nav .navbar-nav a").allTextContents();
 }
+
+// Lab 4 BR-21: Resolved needs a Completed Action. Lab 3 specs that resolve a Ticket give it one through
+// the API before the page loads (superseding change, Lab 4 tests.md section 6).
+export async function completeAnActionOn(ticketId: number): Promise<void> {
+  const api = await apiSignedIn(STAFF.email);
+  const created = await api.post(`/api/tickets/${ticketId}/actions`, { data: { actionAt: new Date().toISOString(), description: "Work that resolves the Ticket." } });
+  const action = await created.json();
+  if (created.status() !== 201) throw new Error(`completeAnActionOn: ${created.status()} ${JSON.stringify(action)}`);
+  const done = await api.post(`/api/actions/${action.id}/complete`, { data: { version: action.version, result: "Done and tested.", actionAt: action.actionAt } });
+  if (done.status() !== 200) throw new Error(`completeAnActionOn: complete ${done.status()} ${await done.text()}`);
+  await api.dispose();
+}
