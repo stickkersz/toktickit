@@ -6,6 +6,7 @@ import App from "../../src/App.js";
 import * as api from "../../src/api.js";
 import type { AuthUser, TicketListItem, TicketListParams, TicketListResult } from "../../src/api.js";
 import { stubDashboards } from "../lab-03/support.js";
+import { ROUTER_FUTURE } from "../../src/routerFuture.js";
 
 const ARI: AuthUser = { id: 1, name: "Ari Anan", email: "ari.anan@example.com", role: "REQUESTER", mustChangePassword: false };
 const BEN: AuthUser = { id: 2, name: "Ben Boon", email: "ben.boon@example.com", role: "REQUESTER", mustChangePassword: false };
@@ -43,7 +44,7 @@ function listResult(
 function renderAtTickets(requester: AuthUser = ARI) {
   vi.spyOn(api, "getCurrentUser").mockResolvedValue(requester);
   return render(
-    <MemoryRouter initialEntries={["/tickets"]}>
+    <MemoryRouter future={ROUTER_FUTURE} initialEntries={["/tickets"]}>
       <App />
     </MemoryRouter>,
   );

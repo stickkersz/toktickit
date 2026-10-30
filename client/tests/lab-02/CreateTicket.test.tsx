@@ -6,6 +6,7 @@ import CreateTicket from "../../src/screens/CreateTicket.js";
 import { AuthProvider } from "../../src/authContext.js";
 import * as api from "../../src/api.js";
 import type { Category, RelatedSystem, AuthUser, Ticket } from "../../src/api.js";
+import { ROUTER_FUTURE } from "../../src/routerFuture.js";
 
 const REQUESTER: AuthUser = { id: 1, name: "Ari Anan", email: "ari.anan@example.com", role: "REQUESTER", mustChangePassword: false };
 const CATEGORY: Category = { id: 1, name: "Hardware" };
@@ -16,7 +17,7 @@ const VALID_DESCRIPTION =
 
 function renderScreen() {
   return render(
-    <MemoryRouter initialEntries={["/tickets/new"]}>
+    <MemoryRouter future={ROUTER_FUTURE} initialEntries={["/tickets/new"]}>
       <AuthProvider>
         <CreateTicket />
       </AuthProvider>

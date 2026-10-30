@@ -4,6 +4,7 @@ import { vi } from "vitest";
 import App from "../../src/App.js";
 import * as api from "../../src/api.js";
 import type { AuthUser } from "../../src/api.js";
+import { ROUTER_FUTURE } from "../../src/routerFuture.js";
 
 export const REQUESTER: AuthUser = {
   id: 7,
@@ -47,7 +48,7 @@ export function renderApp(
   // Lab 4: every role now lands on its Dashboard (ui-spec section 3).
   stubDashboards();
   return render(
-    <MemoryRouter initialEntries={[path]}>
+    <MemoryRouter future={ROUTER_FUTURE} initialEntries={[path]}>
       <App />
     </MemoryRouter>,
   );

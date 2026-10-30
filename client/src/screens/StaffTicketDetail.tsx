@@ -93,6 +93,17 @@ function StaffTicketDetail() {
   const [ticket, setTicket] = useState<StaffTicketDetailData | null>(null);
   const [owners, setOwners] = useState<StaffOwner[]>([]);
   const [busy, setBusy] = useState<Record<Control, boolean>>({ owner: false, priority: false, status: false });
+  // Claim, the status confirmations and Reload remove themselves when they finish, so focus goes back to
+  // the control they acted on once it is usable again, never to the page (Lab 4 FR-17, the #84 sweep).
+  const controlRef = { owner: useRef<HTMLSelectElement>(null), priority: useRef<HTMLSelectElement>(null), status: useRef<HTMLSelectElement>(null) };
+  const [returnTo, setReturnTo] = useState<Control | null>(null);
+  useEffect(() => {
+    if (!returnTo || busy[returnTo]) return;
+    controlRef[returnTo].current?.focus();
+    setReturnTo(null);
+    // controlRef holds stable refs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [returnTo, busy]);
   // A control whose latest values could not be reloaded is locked: its options may be out of date, so
   // nothing more is changed through it until a Reload succeeds.
   const [stale, setStale] = useState<Record<Control, boolean>>({ owner: false, priority: false, status: false });
@@ -168,6 +179,7 @@ function StaffTicketDetail() {
 
   // The Reload button of a locked control.
   async function reload(control: Control) {
+    setReturnTo(control);
     setBusyFor(control, true);
     setSaved(null);
     setProblem(null);
@@ -321,6 +333,7 @@ function StaffTicketDetail() {
       return;
     }
     setSummaryError(null);
+    setReturnTo("status");
     const from = ticket!.currentStatus;
     requestedStatus.current = "RESOLVED";
     return run("status", () => changeTicketStatus(ticketId, "RESOLVED", trimmed, from), "Unable to resolve the Ticket. Nothing was changed.", async () => {
@@ -503,6 +516,7 @@ function StaffTicketDetail() {
           <div className="d-flex gap-2">
             <select
               id="staff-owner"
+              ref={controlRef.owner}
               className="form-select zg-editable"
               value={ticket.ownerId ?? ""}
               disabled={locked.owner}
@@ -523,7 +537,7 @@ function StaffTicketDetail() {
               ))}
             </select>
             {canClaim && user && (
-              <button type="button" className="btn zg-btn-primary zg-touch-target" disabled={locked.owner} onClick={() => void changeOwner(user.id)}>
+              <button type="button" className="btn zg-btn-primary zg-touch-target" disabled={locked.owner} onClick={() => (setReturnTo("owner"), void changeOwner(user.id))}>
                 Claim
               </button>
             )}
@@ -543,6 +557,7 @@ function StaffTicketDetail() {
           <label htmlFor="staff-it-priority" className="form-label fw-semibold">IT Priority</label>
           <select
             id="staff-it-priority"
+            ref={controlRef.priority}
             className="form-select zg-editable"
             value={ticket.itPriority}
             disabled={locked.priority}
@@ -562,6 +577,7 @@ function StaffTicketDetail() {
           <label htmlFor="staff-status" className="form-label fw-semibold">Current Status</label>
           <select
             id="staff-status"
+            ref={controlRef.status}
             className="form-select zg-editable"
             value={resolving ? "RESOLVED" : (confirming ?? ticket.currentStatus)}
             disabled={locked.status || terminal}
@@ -628,6 +644,7 @@ function StaffTicketDetail() {
                   onClick={() => {
                     setResolving(false);
                     setSummaryError(null);
+                    setReturnTo("status");
                   }}
                 >
                   Cancel
@@ -653,10 +670,10 @@ function StaffTicketDetail() {
                 )}
               </p>
               <div className="d-flex gap-2 justify-content-end">
-                <button type="button" className="btn btn-outline-secondary btn-sm zg-touch-target" disabled={locked.status} onClick={() => setConfirming(null)}>
+                <button type="button" className="btn btn-outline-secondary btn-sm zg-touch-target" disabled={locked.status} onClick={() => (setConfirming(null), setReturnTo("status"))}>
                   Keep current status
                 </button>
-                <button type="button" className="btn zg-btn-primary btn-sm zg-touch-target" disabled={locked.status} onClick={() => void confirmTerminal()}>
+                <button type="button" className="btn zg-btn-primary btn-sm zg-touch-target" disabled={locked.status} onClick={() => (setReturnTo("status"), void confirmTerminal())}>
                   {busy.status ? "Saving…" : confirming === "CLOSED" ? "Confirm and close" : "Confirm and cancel"}
                 </button>
               </div>

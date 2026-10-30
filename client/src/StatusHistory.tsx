@@ -47,7 +47,7 @@ export function StatusHistory({ ticketId, reloadKey = 0 }: { ticketId: number; r
     );
 
   return (
-    <ol className="list-unstyled mb-0 zg-history">
+    <ol className="list-unstyled mb-0">
       {history.entries.map((entry, index) => (
         <li key={entry.id} className="zg-history-entry">
           <div className="d-flex flex-wrap align-items-center gap-2">

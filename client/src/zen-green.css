@@ -630,8 +630,8 @@ a.zg-metric-card-attention:hover {
 .zg-status-chip:hover {
   border-color: var(--color-secondary);
 }
+/* Each panel is as tall as its own content, so an empty list is not a tall blank block (found on #87). */
 .zg-dashboard-panel {
-  height: 100%;
   padding: 1rem;
   background-color: var(--color-surface);
   border: 1px solid var(--color-field-editable-border);
@@ -689,4 +689,18 @@ a.zg-metric-card-attention:hover {
   outline: 2px solid var(--color-secondary);
   outline-offset: 2px;
   box-shadow: none;
+}
+
+/* The header at tablet width (found on #87): with Dashboard added, the items no longer fit one row at
+   768px. No label breaks mid-text; instead the user's name, role and buttons move to a second row as one
+   group. Below 768px the menu still collapses (Lab 3 ui-spec section 3). */
+.zg-header .nav-link,
+.zg-header .btn,
+.zg-header-user {
+  white-space: nowrap;
+}
+@media (min-width: 768px) and (max-width: 1199.98px) {
+  .zg-header .navbar-collapse {
+    flex-wrap: wrap;
+  }
 }

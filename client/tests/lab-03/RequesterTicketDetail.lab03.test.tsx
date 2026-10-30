@@ -6,6 +6,8 @@ import * as api from "../../src/api.js";
 import { ApiError, type ContentItem, type TicketDetail } from "../../src/api.js";
 import { REQUESTER, renderApp } from "./support.js";
 
+const UUID = expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+
 afterEach(() => {
   vi.restoreAllMocks();
 });
@@ -170,7 +172,7 @@ describe("Requester Ticket Detail: Public Comments", () => {
     const user = userEvent.setup();
     await user.type(screen.getByLabelText("Add Public Comment"), "Thank you for the update.");
     await user.click(screen.getByRole("button", { name: "Post Comment" }));
-    expect(post).toHaveBeenCalledWith(42, "Thank you for the update.");
+    expect(post).toHaveBeenCalledWith(42, "Thank you for the update.", UUID); // Lab 4 BR-39: with its Idempotency-Key
     expect(await within(panel()).findByText("Thank you for the update.")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Public Comments (3)" })).toBeInTheDocument();
     expect(screen.getByLabelText("Add Public Comment")).toHaveValue("");
