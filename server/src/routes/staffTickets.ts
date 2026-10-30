@@ -1,5 +1,5 @@
 import { Router, type Request, type Response } from "express";
-import type { Prisma, TicketStatus } from "@prisma/client";
+import { Prisma, type TicketStatus } from "@prisma/client";
 import { getPrisma } from "../prisma.js";
 import { sendError } from "../httpErrors.js";
 import { requireAuth } from "../middleware/requireAuth.js";
@@ -23,6 +23,16 @@ export const staffTicketsRouter = Router();
 export function isEligibleOwner(owner: { isActive: boolean; role: string } | null): boolean | null {
   if (!owner) return null;
   return owner.isActive && (owner.role === "IT_STAFF" || owner.role === "ADMINISTRATOR");
+}
+
+// The same rule, read inside the caller's write transaction with a share lock on the user's row
+// (BR-18 here, Lab 4 BR-07 for Responsible Staff). A deactivation or role change locks that row
+// FOR UPDATE (adminUsers lockPeople), so it either waits for the write or is seen by it: nobody
+// deactivated a moment before the write is ever set (review on Lab 4 #83).
+export async function isEligibleStaffLocked(tx: Prisma.TransactionClient, userId: number): Promise<boolean> {
+  const rows = await tx.$queryRaw<{ isActive: boolean; role: string }[]>(Prisma.sql`
+    SELECT "isActive", "role"::text AS "role" FROM "User" WHERE "id" = ${userId} FOR SHARE`);
+  return isEligibleOwner(rows[0] ?? null) === true;
 }
 
 // What every staff-facing Ticket response needs, so the list, the detail and every mutation
@@ -160,7 +170,7 @@ staffTicketsRouter.patch("/api/staff/tickets/:id/owner", ...staffOnly, async (re
   try {
     const ticketId = ticketIdFrom(req);
     const ownerId: unknown = req.body?.ownerId;
-    if (ownerId !== null && !(typeof ownerId === "number" && Number.isInteger(ownerId) && ownerId > 0)) {
+    if (ownerId !== null && !isValidId(ownerId)) {
       return sendError(res, 400, "VALIDATION_ERROR", "ownerId must be a user id, or null to unassign.", {
         ownerId: "ownerId must be a user id, or null to unassign.",
       });
@@ -181,33 +191,37 @@ staffTicketsRouter.patch("/api/staff/tickets/:id/owner", ...staffOnly, async (re
       return res.status(200).json(serializeStaffTicket(updated));
     }
 
-    // BR-18: the target must exist, be active, and hold the IT Staff or Administrator role.
-    const target = await prisma.user.findUnique({ where: { id: ownerId }, select: { isActive: true, role: true } });
-    if (!target || isEligibleOwner(target) !== true) {
+    // BR-18: the target must exist, be active, and hold the IT Staff or Administrator role, checked
+    // inside the same transaction as the write and with the target's row share-locked.
+    const outcome = await prisma.$transaction(async (tx) => {
+      if (!(await isEligibleStaffLocked(tx, ownerId))) return "INVALID_OWNER" as const;
+      if (ownerId === req.user!.id) {
+        // A claim (BR-19, BR-58). The condition is part of the write itself, so two people
+        // claiming at once cannot both win: it succeeds while the Ticket has no owner, is
+        // already yours, or its owner is ineligible, and the loser gets ALREADY_ASSIGNED.
+        const claimed = await tx.ticket.updateMany({
+          where: {
+            id: ticketId,
+            OR: [
+              { ownerId: null },
+              { ownerId: req.user!.id },
+              { owner: { is: { OR: [{ isActive: false }, { role: "REQUESTER" }] } } },
+            ],
+          },
+          data: { ownerId: req.user!.id },
+        });
+        if (claimed.count === 0) return "ALREADY_ASSIGNED" as const;
+      } else {
+        // Assigning or reassigning to someone else, whether or not it is currently assigned (BR-20).
+        await tx.ticket.update({ where: { id: ticketId }, data: { ownerId } });
+      }
+      return "OK" as const;
+    });
+    if (outcome === "INVALID_OWNER") {
       return sendError(res, 409, "INVALID_OWNER", "That user cannot be a Ticket Owner: they must be an active IT Staff member or Administrator.");
     }
-
-    if (ownerId === req.user!.id) {
-      // A claim (BR-19, BR-58). The condition is part of the write itself, so two people
-      // claiming at once cannot both win: it succeeds while the Ticket has no owner, is
-      // already yours, or its owner is ineligible, and the loser gets ALREADY_ASSIGNED.
-      const claimed = await prisma.ticket.updateMany({
-        where: {
-          id: ticketId,
-          OR: [
-            { ownerId: null },
-            { ownerId: req.user!.id },
-            { owner: { is: { OR: [{ isActive: false }, { role: "REQUESTER" }] } } },
-          ],
-        },
-        data: { ownerId: req.user!.id },
-      });
-      if (claimed.count === 0) {
-        return sendError(res, 409, "ALREADY_ASSIGNED", "This Ticket already has an owner. Ask them, or an administrator, to reassign it.");
-      }
-    } else {
-      // Assigning or reassigning to someone else, whether or not it is currently assigned (BR-20).
-      await prisma.ticket.update({ where: { id: ticketId }, data: { ownerId } });
+    if (outcome === "ALREADY_ASSIGNED") {
+      return sendError(res, 409, "ALREADY_ASSIGNED", "This Ticket already has an owner. Ask them, or an administrator, to reassign it.");
     }
 
     const updated = await prisma.ticket.findUniqueOrThrow({ where: { id: ticketId }, include: staffTicketInclude });

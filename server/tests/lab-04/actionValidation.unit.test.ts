@@ -66,8 +66,11 @@ describe("Action fields (BR-03, BR-04)", () => {
     // Turning it on with no note stored or sent is refused.
     const off = { followUpRequired: false, followUpNote: null };
     expect(validateActionFields({ followUpRequired: true }, { ticketCreatedAt, now, partial: off }).fields).toHaveProperty("followUpNote");
-    // A note sent while the stored flag is off is cleared, not stored.
-    expect(validateActionFields({ followUpNote: "A note." }, { ticketCreatedAt, now, partial: off }).data).toEqual({ followUpNote: null });
+    // A note sent alone while the stored flag is off is not stored, and changes nothing.
+    expect(validateActionFields({ followUpNote: "A note." }, { ticketCreatedAt, now, partial: off }).data).toEqual({});
+    // Responsible Staff must be a 32-bit id.
+    expect(validateActionFields({ ...valid, responsibleStaffId: 2147483647 }, { ticketCreatedAt, now }).fields).toEqual({});
+    expect(validateActionFields({ ...valid, responsibleStaffId: 2147483648 }, { ticketCreatedAt, now }).fields).toHaveProperty("responsibleStaffId");
   });
 });
 

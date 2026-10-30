@@ -5,7 +5,7 @@ import { sendError } from "../httpErrors.js";
 import { requireAuth } from "../middleware/requireAuth.js";
 import { requireRole } from "../middleware/requireRole.js";
 import { isValidId } from "../ids.js";
-import { isEligibleOwner } from "./staffTickets.js";
+import { isEligibleOwner, isEligibleStaffLocked } from "./staffTickets.js";
 import {
   validateActionAt,
   validateActionFields,
@@ -71,29 +71,24 @@ const actionNotFound = (res: Response) => sendError(res, 404, "NOT_FOUND", "Acti
 const invalid = (res: Response, fields: Record<string, string>) =>
   sendError(res, 400, "VALIDATION_ERROR", Object.keys(fields).length === 1 ? Object.values(fields)[0] : "Some fields are not valid.", fields);
 const INVALID_RESPONSIBLE = "Choose an active IT Staff member.";
+const invalidResponsible = (res: Response) => sendError(res, 409, "INVALID_RESPONSIBLE", INVALID_RESPONSIBLE, { responsibleStaffId: INVALID_RESPONSIBLE });
 
 // A path id that is not a positive 32-bit integer names nothing: 404, never a 500.
 function idFrom(raw: string): number | null {
   const id = Number(raw);
-  return isValidId(id) && id <= 2147483647 ? id : null;
+  return isValidId(id) ? id : null;
 }
 
-// BR-07: an existing, active IT Staff member or Administrator, at the moment it is set.
-async function isEligibleStaff(prisma: PrismaClient | Prisma.TransactionClient, userId: number): Promise<boolean> {
-  return isEligibleOwner(await prisma.user.findUnique({ where: { id: userId }, select: { isActive: true, role: true } })) === true;
-}
 
-// Locks the Ticket row while it is workable, or returns false. Every Action write runs inside this lock
+// Locks the Ticket row and says whether it is workable. Every Action write runs inside this lock
 // and also updates the Ticket's last activity (BR-19), so writes on one Ticket are serialised: two edits
 // from one version cannot both pass the version check, and a resolve or cancel of the Ticket (which takes
 // the same row) cannot interleave with an Action write (BR-14, BR-21). The lock is FOR NO KEY UPDATE, not
 // FOR SHARE, because the same transaction updates the row: two shared holders upgrading would deadlock.
-async function lockWorkableTicket(tx: Prisma.TransactionClient, ticketId: number): Promise<boolean> {
-  const rows = await tx.$queryRaw<{ id: number }[]>(Prisma.sql`
-    SELECT "id" FROM "Ticket"
-    WHERE "id" = ${ticketId} AND "currentStatus"::text IN (${Prisma.join([...WORKABLE])})
-    FOR NO KEY UPDATE`);
-  return rows.length === 1;
+async function lockTicket(tx: Prisma.TransactionClient, ticketId: number): Promise<{ workable: boolean }> {
+  const rows = await tx.$queryRaw<{ currentStatus: TicketStatus }[]>(Prisma.sql`
+    SELECT "currentStatus" FROM "Ticket" WHERE "id" = ${ticketId} FOR NO KEY UPDATE`);
+  return { workable: rows.length === 1 && WORKABLE.includes(rows[0].currentStatus) };
 }
 const touchTicket = (tx: Prisma.TransactionClient, ticketId: number) => tx.ticket.update({ where: { id: ticketId }, data: { updatedAt: new Date() } });
 
@@ -145,12 +140,12 @@ actionsRouter.post("/api/tickets/:id/actions", ...staffOnly, async (req: Request
     if (prior && prior.requestHash === hash) return replay(prior);
 
     const responsibleStaffId = data.responsibleStaffId ?? userId;
-    if (!(await isEligibleStaff(prisma, responsibleStaffId))) {
-      return sendError(res, 409, "INVALID_RESPONSIBLE", INVALID_RESPONSIBLE, { responsibleStaffId: INVALID_RESPONSIBLE });
-    }
-
     const outcome = await prisma.$transaction(async (tx) => {
-      if (!(await lockWorkableTicket(tx, ticketId))) return "NOT_WORKABLE" as const;
+      const { workable } = await lockTicket(tx, ticketId);
+      // BR-07 "at the moment it is set": checked inside the lock, as the edit path does, so a
+      // deactivation that commits before the insert is seen.
+      if (!(await isEligibleStaffLocked(tx, responsibleStaffId))) return "INVALID_RESPONSIBLE" as const;
+      if (!workable) return "NOT_WORKABLE" as const;
       if (prior) return "REUSED" as const;
       // Recorded By, Recorded at, status, and version come from the server only (BR-06).
       const row = await tx.actionTaken.create({
@@ -171,6 +166,7 @@ actionsRouter.post("/api/tickets/:id/actions", ...staffOnly, async (req: Request
       await touchTicket(tx, ticketId);
       return row;
     });
+    if (outcome === "INVALID_RESPONSIBLE") return invalidResponsible(res);
     if (outcome === "NOT_WORKABLE") return notWorkable(res);
     if (outcome === "REUSED") return reused();
     res.status(201).json(serialize(outcome));
@@ -197,7 +193,7 @@ const loadAction = (prisma: PrismaClient, id: number) =>
 
 function versionFrom(body: unknown): number | null {
   const v = (body as { version?: unknown } | undefined)?.version;
-  return Number.isInteger(v) && (v as number) > 0 ? (v as number) : null;
+  return isValidId(v) ? v : null;
 }
 const VERSION_ERROR = "Version must be the positive whole number you loaded.";
 
@@ -213,7 +209,7 @@ async function writeAction(
 ) {
   const prisma = getPrisma();
   const outcome = await prisma.$transaction(async (tx) => {
-    if (!(await lockWorkableTicket(tx, action.ticketId))) return "NOT_WORKABLE" as const;
+    if (!(await lockTicket(tx, action.ticketId)).workable) return "NOT_WORKABLE" as const;
     const current = await tx.actionTaken.findUniqueOrThrow({ where: { id: action.id }, include: withPeople });
     if (current.status !== "PLANNED") return "FINAL" as const;
     if (current.version !== version) return { stale: current };
@@ -228,7 +224,7 @@ async function writeAction(
   });
   if (outcome === "NOT_WORKABLE") return notWorkable(res);
   if (outcome === "FINAL") return sendError(res, 409, "ACTION_FINAL", "This action is already completed or cancelled.");
-  if (outcome === "INVALID_RESPONSIBLE") return sendError(res, 409, "INVALID_RESPONSIBLE", INVALID_RESPONSIBLE, { responsibleStaffId: INVALID_RESPONSIBLE });
+  if (outcome === "INVALID_RESPONSIBLE") return invalidResponsible(res);
   if ("stale" in outcome) {
     return res.status(409).json({ error: "STALE_ACTION", message: "Someone else changed this action. Reload it and try again.", action: serialize(outcome.stale) });
   }
@@ -265,7 +261,7 @@ onAction("patch", "", "save", async (req, res, action) => {
 
   const reassign = data.responsibleStaffId;
   await writeAction(res, action, version!, { ...data, lastEditedById: req.user!.id }, async (tx) =>
-    reassign === undefined || (await isEligibleStaff(tx, reassign)) ? null : "INVALID_RESPONSIBLE",
+    reassign === undefined || (await isEligibleStaffLocked(tx, reassign)) ? null : "INVALID_RESPONSIBLE",
   );
 });
 

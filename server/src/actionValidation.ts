@@ -1,5 +1,6 @@
 import type { ActionStatus } from "@prisma/client";
 import type { FieldValidationResult } from "./validation.js";
+import { isValidId } from "./ids.js";
 
 // BR-03, BR-04, BR-10, BR-11: lengths after trimming.
 export const ACTION_LIMITS = {
@@ -81,7 +82,7 @@ export function validateActionFields(
     else data.actionAt = r.value;
   }
   if (sent("responsibleStaffId")) {
-    if (Number.isInteger(b.responsibleStaffId) && (b.responsibleStaffId as number) > 0) data.responsibleStaffId = b.responsibleStaffId as number;
+    if (isValidId(b.responsibleStaffId)) data.responsibleStaffId = b.responsibleStaffId;
     else fields.responsibleStaffId = "Responsible staff must be a user id.";
   }
   if (sent("attachmentNotes")) {
@@ -109,7 +110,8 @@ export function validateActionFields(
       if (r.error) fields.followUpNote = r.error;
       else data.followUpNote = r.value;
     }
-  } else if (!edit || sent("followUpRequired") || sent("followUpNote")) {
+  } else if (!edit || sent("followUpRequired")) {
+    // With the flag off a stored note is already null, so a note sent alone in an edit changes nothing.
     data.followUpNote = null;
   }
   return { data, fields };

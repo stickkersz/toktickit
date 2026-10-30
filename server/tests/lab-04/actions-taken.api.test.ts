@@ -158,6 +158,50 @@ describe("POST /api/tickets/:id/actions", () => {
       expect(res.body.error).toBe("INVALID_RESPONSIBLE");
     }
     expect(await stored(a.id)).toMatchObject({ responsibleStaffId: staffId, version: 1 });
+
+    // An id outside the database's 32-bit range is not a user id: 400, never a 500 (review on #83).
+    for (const id of [2147483648, 100000000000]) {
+      const created = await create(t.id, { responsibleStaffId: id });
+      expect(created.status, `create ${id}`).toBe(400);
+      expect(created.body.fields, `create ${id}`).toHaveProperty("responsibleStaffId");
+      const edited = await staff.patch(`/api/actions/${a.id}`).send({ version: 1, responsibleStaffId: id });
+      expect(edited.status, `edit ${id}`).toBe(400);
+      expect(edited.body.fields, `edit ${id}`).toHaveProperty("responsibleStaffId");
+    }
+    // The largest 32-bit id is a well-formed id that names nobody.
+    expect((await create(t.id, { responsibleStaffId: 2147483647 })).body.error).toBe("INVALID_RESPONSIBLE");
+    expect(await actionRows(t.id)).toHaveLength(1);
+    expect(await stored(a.id)).toMatchObject({ responsibleStaffId: staffId, version: 1 });
+  });
+
+  // API-04 / AC-04, BR-07 ("at the moment it is set")
+  it("refuses a Responsible Staff member deactivated after the request was checked but before the Action is written", async () => {
+    const t = await makeTicket();
+    const leaving = (await createUser({ role: "IT_STAFF" })).user;
+    const real = iso.db.client;
+    // The deactivation commits just before the write transaction starts, after every check made outside it.
+    const restore = iso.override(
+      new Proxy(real, {
+        get(target, prop) {
+          if (prop === "$transaction") {
+            return async (...args: Parameters<typeof real.$transaction>) => {
+              await real.user.update({ where: { id: leaving.id }, data: { isActive: false } });
+              return (real.$transaction as (...a: unknown[]) => unknown)(...args);
+            };
+          }
+          const value = Reflect.get(target, prop);
+          return typeof value === "function" ? value.bind(target) : value;
+        },
+      }),
+    );
+    try {
+      const res = await create(t.id, { responsibleStaffId: leaving.id });
+      expect(res.status).toBe(409);
+      expect(res.body.error).toBe("INVALID_RESPONSIBLE");
+    } finally {
+      restore();
+    }
+    expect(await actionRows(t.id)).toHaveLength(0);
   });
 
   // API-05 / AC-05, BR-04
@@ -177,6 +221,10 @@ describe("POST /api/tickets/:id/actions", () => {
     // Turning it off on edit clears the stored note.
     const off = await staff.patch(`/api/actions/${kept.body.id}`).send({ version: 1, followUpRequired: false });
     expect(off.body).toMatchObject({ followUpRequired: false, followUpNote: null, version: 2 });
+    // A note alone, while follow-up is not required, changes nothing, so it is refused rather than written (review on #83).
+    const noteOnly = await staff.patch(`/api/actions/${kept.body.id}`).send({ version: 2, followUpNote: "A note nobody needs." });
+    expect(noteOnly.status).toBe(400);
+    expect(await stored(kept.body.id)).toMatchObject({ version: 2, followUpNote: null });
   });
 
   // API-06 / AC-06, BR-03, BR-10, BR-11
@@ -308,7 +356,7 @@ describe("PATCH /api/actions/:id", () => {
 
     const nothing = await staff.patch(`/api/actions/${a.id}`).send({ version: 2, status: "CANCELLED" });
     expect(nothing.status).toBe(400);
-    for (const version of [undefined, 0, -1, 1.5, "2"]) {
+    for (const version of [undefined, 0, -1, 1.5, "2", 2147483648]) {
       expect((await staff.patch(`/api/actions/${a.id}`).send({ version, description: "Another description." })).body.fields, String(version)).toHaveProperty("version");
     }
     for (const id of ["999999", "abc", "2147483648"]) expect((await staff.patch(`/api/actions/${id}`).send({ version: 1, description: "Valid text" })).status, id).toBe(404);
