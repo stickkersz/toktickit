@@ -57,14 +57,18 @@ test.describe("Actions Taken", () => {
     await page.getByRole("button", { name: "Save Action" }).click();
     await expect(page.getByText("Description must be between 5 and 2000 characters.")).toBeVisible();
     await expect(page.getByText("Follow-up note must be between 5 and 1000 characters.")).toBeVisible();
-    await page.screenshot({ path: shot("validation-desktop"), fullPage: true });
+    await page.screenshot({ animations: "disabled", path: shot("validation-desktop"), fullPage: true });
     await page.getByLabel(/Action Description/).fill("Replace the LAN cable at desk 4B and retest the link.");
     await page.getByLabel(/Follow-Up Note/).fill("Check the switch port if the link drops again.");
     await page.getByLabel(/Attachment Notes/).fill("Photo of the port in Attachments.");
+    // Leave the last field so every touched field shows its settled, valid state.
+    await page.getByLabel(/Action Description/).focus();
+    await page.getByLabel(/Attachment Notes/).focus();
+    await page.getByLabel(/Action Date\/Time/).focus();
     for (const [size, viewport] of SIZES) {
       await page.setViewportSize(viewport);
       expect(await hasNoHorizontalScroll(page), `create ${size}`).toBe(true);
-      await page.screenshot({ path: shot(`create-${size}`), fullPage: true });
+      await page.screenshot({ animations: "disabled", path: shot(`create-${size}`), fullPage: true });
     }
     await page.setViewportSize(VIEWPORTS.desktop);
     await page.getByRole("button", { name: "Save Action" }).click();
@@ -77,7 +81,7 @@ test.describe("Actions Taken", () => {
     for (const [size, viewport] of SIZES) {
       await page.setViewportSize(viewport);
       expect(await hasNoHorizontalScroll(page), `list ${size}`).toBe(true);
-      await page.screenshot({ path: shot(`list-${size}`), fullPage: true });
+      await page.screenshot({ animations: "disabled", path: shot(`list-${size}`), fullPage: true });
     }
     await page.setViewportSize(VIEWPORTS.desktop);
     // The table replaces the cards once the window is wide again.
@@ -88,7 +92,8 @@ test.describe("Actions Taken", () => {
     await page.getByRole("button", { name: "Edit" }).click();
     await page.getByLabel(/Action Description/).fill("Replace the LAN cable and the wall port at desk 4B.");
     await page.getByLabel(/Responsible Staff/).selectOption({ label: OTHER_STAFF.name });
-    await page.screenshot({ path: shot("edit-desktop"), fullPage: true });
+    await expect(page.getByRole("button", { name: "Save Changes" })).toBeEnabled();
+    await page.screenshot({ animations: "disabled", path: shot("edit-desktop"), fullPage: true });
     await page.getByRole("button", { name: "Save Changes" }).click();
     await expect(page.getByText("Changes saved.")).toBeVisible();
 
@@ -97,12 +102,15 @@ test.describe("Actions Taken", () => {
     const dialog = page.getByRole("dialog");
     await expect(dialog.getByLabel(/Result/)).toBeFocused();
     await dialog.getByLabel(/Result/).fill("Cable and port replaced; link stable at 1 Gbps for 30 minutes.");
-    await page.keyboard.press("Tab");
-    await page.keyboard.press("Tab");
-    await page.screenshot({ path: shot("focus-dialog-desktop") });
+    // Keyboard focus on the primary button, reached with Tab alone (the date field has a stop per part).
+    const markDone = dialog.getByRole("button", { name: "Mark as Completed" });
+    for (let i = 0; i < 12 && !(await markDone.evaluate((el) => el === document.activeElement)); i++) await page.keyboard.press("Tab");
+    await expect(markDone).toBeFocused();
+    await page.screenshot({ animations: "disabled", path: shot("focus-dialog-desktop") });
+    await dialog.getByLabel(/Result/).focus();
     for (const [size, viewport] of SIZES) {
       await page.setViewportSize(viewport);
-      await page.screenshot({ path: shot(`complete-dialog-${size}`) });
+      await page.screenshot({ animations: "disabled", path: shot(`complete-dialog-${size}`) });
     }
     await page.setViewportSize(VIEWPORTS.desktop);
     await dialog.getByRole("button", { name: "Mark as Completed" }).click();
@@ -112,7 +120,7 @@ test.describe("Actions Taken", () => {
     await actionRow(page, "Clear the browser cache").click();
     await page.getByRole("button", { name: "Cancel Action" }).click();
     await page.getByRole("dialog").getByLabel(/Reason/).fill("Not needed: the error comes from the server.");
-    await page.screenshot({ path: shot("cancel-dialog-desktop") });
+    await page.screenshot({ animations: "disabled", path: shot("cancel-dialog-desktop") });
     await page.getByRole("dialog").getByRole("button", { name: "Cancel Action" }).click();
     await expect(page.getByText("Action cancelled.")).toBeVisible();
     // The badge in each row (the open detail repeats the status).
@@ -132,7 +140,7 @@ test.describe("Actions Taken", () => {
     for (const [size, viewport] of SIZES) {
       await page.setViewportSize(viewport);
       expect(await hasNoHorizontalScroll(page), `requester ${size}`).toBe(true);
-      await page.screenshot({ path: shot(`requester-view-${size}`), fullPage: true });
+      await page.screenshot({ animations: "disabled", path: shot(`requester-view-${size}`), fullPage: true });
     }
   });
 
@@ -158,7 +166,7 @@ test.describe("Actions Taken", () => {
     // Nothing was recorded and the typed text is still there.
     await expect(page.getByLabel(/Action Description/)).toHaveValue("Run the battery health report on the laptop.");
     await expect(page.getByRole("tab", { name: "Actions Taken (0)" })).toBeVisible();
-    await page.screenshot({ path: shot("inactive-responsible-desktop"), fullPage: true });
+    await page.screenshot({ animations: "disabled", path: shot("inactive-responsible-desktop"), fullPage: true });
   });
 
   // The STALE_ACTION callout (UI-14), captured against the real server.
@@ -189,6 +197,6 @@ test.describe("Actions Taken", () => {
     await expect(callout).toContainText("Someone else changed this action.");
     await expect(callout.getByText("Reinstall the VPN client.")).toBeVisible();
     await expect(page.getByLabel(/Action Description/)).toHaveValue("Check the VPN client version and update it.");
-    await page.screenshot({ path: shot("stale-conflict-desktop"), fullPage: true });
+    await page.screenshot({ animations: "disabled", path: shot("stale-conflict-desktop"), fullPage: true });
   });
 });

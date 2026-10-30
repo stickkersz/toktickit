@@ -24,8 +24,8 @@ const LIMITS = { description: [5, 2000], followUpNote: [5, 1000], attachmentNote
 
 // Times are stored in UTC and shown, and entered, in Asia/Bangkok, which has no daylight saving (BR-29).
 const BANGKOK_OFFSET = 7 * 60 * 60 * 1000;
-const DATE_TIME = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Bangkok", dateStyle: "medium", timeStyle: "short" });
-export const formatBangkok = (iso: string) => DATE_TIME.format(new Date(iso));
+// The same style as every other date on the Ticket Detail (attachmentDisplay formatDate), pinned to Bangkok.
+export const formatBangkok = (iso: string) => new Date(iso).toLocaleString(undefined, { timeZone: "Asia/Bangkok" });
 // The value of a datetime-local input, in Bangkok time, for an instant.
 const toLocalInput = (date: Date) => new Date(date.getTime() + BANGKOK_OFFSET).toISOString().slice(0, 16);
 // The instant a datetime-local value names in Bangkok, or null when it is not a full date and time.
@@ -749,7 +749,7 @@ function CompleteDialog({ action, ticketCreatedAt, busy, problem, onSubmit, onCl
             {problem.message}
           </div>
         )}
-        <div className="d-flex gap-2 justify-content-end flex-wrap">
+        <div className="d-flex gap-2 justify-content-end flex-wrap mt-3">
           <button type="button" className="btn btn-outline-secondary zg-touch-target" onClick={onClose}>
             Keep Planned
           </button>
@@ -782,7 +782,7 @@ function CancelDialog({ action, busy, problem, onSubmit, onClose }: { action: Ac
             {problem.message}
           </div>
         )}
-        <div className="d-flex gap-2 justify-content-end flex-wrap">
+        <div className="d-flex gap-2 justify-content-end flex-wrap mt-3">
           <button type="button" className="btn btn-outline-secondary zg-touch-target" onClick={onClose}>
             Keep Action
           </button>

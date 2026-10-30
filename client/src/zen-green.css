@@ -118,8 +118,29 @@ a:focus-visible {
   border-color: var(--color-secondary);
   color: #ffffff;
 }
-.zg-btn-primary:disabled {
+/* Disabled keeps the primary colours at half strength; Bootstrap's own .btn:disabled would otherwise
+   replace them with a grey outline (Lab 4 screen check). */
+.zg-btn-primary:disabled,
+.zg-btn-primary.disabled {
+  background-color: var(--color-primary);
+  border-color: var(--color-primary);
+  color: #ffffff;
   opacity: 0.5;
+}
+
+/* Secondary buttons: Bootstrap fills btn-outline-secondary with its own grey on focus and press. They
+   stay an outline in the Zen Green tokens, the focus ring alone marking focus (Lab 4 screen check). */
+.btn-outline-secondary {
+  color: var(--color-text);
+  border-color: var(--color-field-editable-border);
+}
+.btn-outline-secondary:hover:not(:disabled),
+.btn-outline-secondary:focus-visible,
+.btn-outline-secondary:active,
+.btn-outline-secondary.active {
+  background-color: var(--color-pale);
+  border-color: var(--color-secondary);
+  color: var(--color-text);
 }
 
 /* ui-spec.md §3 — error/failure callout. */
@@ -343,14 +364,16 @@ a:hover {
   background: transparent;
   border-bottom-color: var(--color-primary);
 }
-/* On a phone the three tabs share the width and wrap their labels, so none is hidden off the edge of a
-   scrolling strip where its existence would go unnoticed. */
+/* On a phone the tabs share the width and wrap their labels, so none is hidden off the edge of a
+   scrolling strip where its existence would go unnoticed. Lab 4's fourth tab makes a single word such as
+   "Attachments" wider than a quarter of 375px, so they sit two to a row instead. */
 @media (max-width: 767.98px) {
   .zg-tabs {
     overflow-x: visible;
+    flex-wrap: wrap !important;
   }
   .zg-tabs .zg-tab.nav-link {
-    flex: 1 1 0;
+    flex: 1 1 50%;
     min-width: 0;
     white-space: normal;
     text-align: center;
@@ -491,4 +514,15 @@ a:hover {
   background-color: var(--color-surface);
   border-radius: 0.5rem;
   padding: 1.25rem;
+}
+
+/* The date and time field's selected segment: Zen Green pale, not the browser's blue highlight. */
+input[type="datetime-local"]::-webkit-datetime-edit-day-field:focus,
+input[type="datetime-local"]::-webkit-datetime-edit-month-field:focus,
+input[type="datetime-local"]::-webkit-datetime-edit-year-field:focus,
+input[type="datetime-local"]::-webkit-datetime-edit-hour-field:focus,
+input[type="datetime-local"]::-webkit-datetime-edit-minute-field:focus,
+input[type="datetime-local"]::-webkit-datetime-edit-ampm-field:focus {
+  background-color: var(--color-pale);
+  color: var(--color-text);
 }
