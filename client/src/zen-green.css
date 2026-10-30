@@ -364,16 +364,17 @@ a:hover {
   background: transparent;
   border-bottom-color: var(--color-primary);
 }
-/* On a phone the tabs share the width and wrap their labels, so none is hidden off the edge of a
-   scrolling strip where its existence would go unnoticed. Lab 4's fourth tab makes a single word such as
-   "Attachments" wider than a quarter of 375px, so they sit two to a row instead. */
-@media (max-width: 767.98px) {
+/* Below 992px the tabs share the width and wrap onto further rows, so none is hidden off the edge of a
+   scrolling strip where its existence would go unnoticed. With Lab 4's five tabs a single row overflows a
+   768px screen, and a single word such as "Attachments" is wider than a fifth of 375px, so each tab takes
+   the width its label needs and the rows fill up. */
+@media (max-width: 991.98px) {
   .zg-tabs {
     overflow-x: visible;
     flex-wrap: wrap !important;
   }
   .zg-tabs .zg-tab.nav-link {
-    flex: 1 1 50%;
+    flex: 1 1 auto;
     min-width: 0;
     white-space: normal;
     text-align: center;
@@ -525,4 +526,14 @@ input[type="datetime-local"]::-webkit-datetime-edit-minute-field:focus,
 input[type="datetime-local"]::-webkit-datetime-edit-ampm-field:focus {
   background-color: var(--color-pale);
   color: var(--color-text);
+}
+
+/* Lab 4 Status History (ui-spec.md section 9): a vertical list joined by a Zen Green rule. */
+.zg-history-entry {
+  border-left: 3px solid var(--color-pale);
+  padding: 0 0 0.75rem 0.75rem;
+  position: relative;
+}
+.zg-history-entry:last-child {
+  padding-bottom: 0;
 }

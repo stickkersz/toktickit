@@ -105,7 +105,8 @@ test.describe("User administration", () => {
     const former = await createUserAsAdmin("IT_STAFF", "former-owner");
     const ticket = await createTicketAsRequester(`E2E orphaned ${short()}`);
     await asAdmin((api) => api.patch(`/api/staff/tickets/${ticket.id}/owner`, { data: { ownerId: former.id } }));
-    await asAdmin((api) => api.patch(`/api/staff/tickets/${ticket.id}/status`, { data: { currentStatus: "OPEN" } }));
+    // Lab 4 BR-23: a move states the status it was chosen from (superseding change).
+    await asAdmin((api) => api.patch(`/api/staff/tickets/${ticket.id}/status`, { data: { fromStatus: "NEW", currentStatus: "OPEN" } }));
 
     // The Administrator deactivates the owner through User Management.
     await signIn(page, ADMIN.email, LANDING.ADMINISTRATOR);

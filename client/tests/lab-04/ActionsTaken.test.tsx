@@ -43,6 +43,7 @@ function staffDetail(overrides: Partial<StaffTicketDetail> = {}): StaffTicketDet
     ownerEligible: true,
     requesterIsActive: true,
     permittedNextStatuses: [],
+    resolutionGate: { plannedActions: 0, completedActions: 0, canResolve: false },
     ...overrides,
   };
 }

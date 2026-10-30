@@ -17,6 +17,7 @@ import {
   signIn,
   STAFF,
   VIEWPORTS,
+  completeAnActionOn,
 } from "./helpers.js";
 
 // RESP-01 (AC-35) and RESP-02 (ui-spec sections 13 and 14) from docs/lab-03/tests.md.
@@ -110,6 +111,7 @@ test.describe("Lab 3 screenshots (RESP-02)", () => {
 
   test("staff ticket detail", async ({ page }) => {
     const ticket = await createTicketAsRequester(`E2E screenshot detail ${short()}`);
+    await completeAnActionOn(ticket.id);
     await signIn(page, STAFF.email, LANDING.IT_STAFF);
     await page.goto(`/staff/tickets/${ticket.id}`);
     await expect(page.getByRole("heading", { name: ticket.ticketNumber })).toBeVisible();

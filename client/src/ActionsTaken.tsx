@@ -827,6 +827,7 @@ export function StaffActionsTaken({
   actions,
   onTicketChanged,
   onOwnersStale,
+  onActionsChanged,
 }: {
   ticketId: number;
   ticketCreatedAt: string;
@@ -836,6 +837,9 @@ export function StaffActionsTaken({
   actions: ActionsState;
   onTicketChanged: () => void;
   onOwnersStale: () => void;
+  // After every Action write that succeeded or was found already final: the Ticket's resolution gate and
+  // the Cancel confirmation's count are derived from the Actions, so the screen re-reads them (review on #85).
+  onActionsChanged: () => void;
 }) {
   const workable = WORKABLE.includes(ticketStatus);
   const [creating, setCreating] = useState(false);
@@ -890,11 +894,14 @@ export function StaffActionsTaken({
         (list) => {
           const reloaded = list.find((a) => a.id === (openId ?? dialog?.id));
           actions.reload();
+          onActionsChanged();
           if (id !== null) focusAfter.current = id;
           setNotice({ kind: "conflict", text: reloaded ? finalNotice(reloaded) : "This action is already completed or cancelled." });
         },
         () => {
           actions.reload();
+          // Someone else finished the Action, so the gate changed whether or not the list could be re-read.
+          onActionsChanged();
           setNotice({ kind: "conflict", text: "This action is already completed or cancelled." });
         },
       );
@@ -943,6 +950,7 @@ export function StaffActionsTaken({
         const created = await createAction(ticketId, toInput(values, ticketCreatedAt), keyRef.current);
         keyRef.current = newKey();
         actions.replace(created);
+        onActionsChanged();
         setCreating(false);
         draft.current = null;
         setOpenId(null);
@@ -968,6 +976,7 @@ export function StaffActionsTaken({
       try {
         const updated = await updateAction(action.id, version, changes);
         actions.replace(updated);
+        onActionsChanged();
         setEditingId(null);
         draft.current = null;
         focusAfter.current = updated.id;
@@ -983,6 +992,7 @@ export function StaffActionsTaken({
       try {
         const updated = kind === "complete" ? await completeAction(action.id, action.version, text, actionAt!) : await cancelAction(action.id, action.version, text);
         actions.replace(updated);
+        onActionsChanged();
         setDialog(null);
         // The button that opened the dialog is gone now the Action is final, so focus goes to its row
         // (AC-49), as after create and save; the dialog's own return to its opener would land on the body.

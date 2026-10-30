@@ -151,6 +151,9 @@ export class ApiError extends Error {
   fields?: Record<string, string>;
   // On 409 STALE_ACTION: the Action as the server now holds it (Lab 4 api-spec, optimistic concurrency).
   action?: ActionItem;
+  // On 409 STATUS_CHANGED: the status the Ticket has now. On 409 ACTIONS_INCOMPLETE: how many are open.
+  currentStatus?: string;
+  plannedActions?: number;
   constructor(message: string, status: number, code?: string) {
     super(message);
     this.status = status;
@@ -355,7 +358,7 @@ async function authRequest(path: string, init?: RequestInit): Promise<{ res: Res
 }
 
 function errorFromResponse(status: number, body: unknown, fallback: string): ApiError {
-  const payload = (body ?? {}) as { error?: string; message?: string; fields?: Record<string, string>; permitted?: string[]; action?: ActionItem };
+  const payload = (body ?? {}) as { error?: string; message?: string; fields?: Record<string, string>; permitted?: string[]; action?: ActionItem; currentStatus?: string; plannedActions?: number };
   if (payload.error === "VALIDATION_ERROR") {
     return new ValidationError(payload.message ?? "Validation failed.", payload.fields ?? {});
   }
@@ -363,6 +366,8 @@ function errorFromResponse(status: number, body: unknown, fallback: string): Api
   if (Array.isArray(payload.permitted)) error.permitted = payload.permitted;
   if (payload.fields) error.fields = payload.fields;
   if (payload.action) error.action = payload.action;
+  if (typeof payload.currentStatus === "string") error.currentStatus = payload.currentStatus;
+  if (typeof payload.plannedActions === "number") error.plannedActions = payload.plannedActions;
   return error;
 }
 
@@ -481,6 +486,8 @@ export interface StaffTicketDetail extends TicketDetail {
   requesterIsActive: boolean;
   // Straight from the server's workflow table: the client carries no copy of BR-25.
   permittedNextStatuses: string[];
+  // Lab 4 BR-21: the counts the resolution gate is decided on (api-spec endpoint 8).
+  resolutionGate: { plannedActions: number; completedActions: number; canResolve: boolean };
 }
 
 export interface StaffOwner {
@@ -522,11 +529,12 @@ export function setTicketPriority(ticketId: number, itPriority: TicketPriority):
   return patchTicket(ticketId, "priority", { itPriority }, "Unable to change the IT Priority.");
 }
 
-export function changeTicketStatus(ticketId: number, currentStatus: string, resolutionSummary?: string): Promise<StaffTicketItem> {
+// Lab 4 BR-23: every move states `fromStatus`, the status the person saw when they chose it.
+export function changeTicketStatus(ticketId: number, currentStatus: string, resolutionSummary: string | undefined, fromStatus: string): Promise<StaffTicketItem> {
   return patchTicket(
     ticketId,
     "status",
-    resolutionSummary === undefined ? { currentStatus } : { currentStatus, resolutionSummary },
+    resolutionSummary === undefined ? { fromStatus, currentStatus } : { fromStatus, currentStatus, resolutionSummary },
     "Unable to change the Ticket status.",
   );
 }
@@ -686,3 +694,24 @@ export const completeAction = (id: number, version: number, result: string, acti
   sendAction(`/api/actions/${id}/complete`, "POST", { version, result, actionAt }, "Unable to complete the action.");
 export const cancelAction = (id: number, version: number, reason: string) =>
   sendAction(`/api/actions/${id}/cancel`, "POST", { version, reason }, "Unable to cancel the action.");
+
+// Lab 4 Status History (api-spec.md endpoint 6): oldest first, read only.
+export interface StatusHistoryEntry {
+  id: number;
+  fromStatus: string | null;
+  toStatus: string;
+  changedBy: ActionPerson;
+  changedAt: string;
+  resolutionSummary: string | null;
+}
+export interface StatusHistory {
+  entries: StatusHistoryEntry[];
+  earlierChangesUnrecorded: boolean;
+}
+
+export async function getTicketHistory(ticketId: number): Promise<StatusHistory> {
+  const { res, body } = await authRequest(`/api/tickets/${ticketId}/history`);
+  if (res.status === 404) throw new NotFoundError("Ticket not found.");
+  if (!res.ok) throw errorFromResponse(res.status, body, "Unable to load the status history.");
+  return body as StatusHistory;
+}

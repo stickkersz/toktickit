@@ -127,6 +127,7 @@ describe("Staff Ticket Queue: rows", () => {
       ownerEligible: null,
       requesterIsActive: true,
       permittedNextStatuses: ["IN_PROGRESS"],
+      resolutionGate: { plannedActions: 0, completedActions: 0, canResolve: false },
     });
     const user = userEvent.setup();
     let rows = await within(await screen.findByRole("table")).findAllByRole("button");

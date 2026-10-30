@@ -9,14 +9,15 @@ import {
   validateResolutionSummary,
 } from "../../src/ticketStatus.js";
 
-// BR-25, written out independently of the implementation's own table.
+// BR-25, written out independently of the implementation's own table, with the two moves Lab 4 BR-20 adds
+// (Waiting for Requester and Reopened to Cancelled; superseding change, Lab 4 tests.md section 6).
 const EXPECTED: Record<string, string[]> = {
   NEW: ["OPEN", "CANCELLED"],
   OPEN: ["IN_PROGRESS", "WAITING_FOR_REQUESTER", "CANCELLED"],
   IN_PROGRESS: ["WAITING_FOR_REQUESTER", "RESOLVED", "CANCELLED"],
-  WAITING_FOR_REQUESTER: ["IN_PROGRESS", "RESOLVED"],
+  WAITING_FOR_REQUESTER: ["IN_PROGRESS", "RESOLVED", "CANCELLED"],
   RESOLVED: ["CLOSED", "REOPENED"],
-  REOPENED: ["IN_PROGRESS", "WAITING_FOR_REQUESTER"],
+  REOPENED: ["IN_PROGRESS", "WAITING_FOR_REQUESTER", "CANCELLED"],
   CLOSED: [],
   CANCELLED: [],
 };
@@ -33,8 +34,8 @@ describe("isTransitionPermitted", () => {
         if (expected) allowed++;
       }
     }
-    // 2 + 3 + 3 + 2 + 2 + 2 permitted moves in the matrix.
-    expect(allowed).toBe(14);
+    // 2 + 3 + 3 + 3 + 2 + 3 permitted moves in the matrix (Lab 3's 14 plus Lab 4's two Cancel moves).
+    expect(allowed).toBe(16);
   });
 
   it("refuses a move to the current status, whatever the status", () => {

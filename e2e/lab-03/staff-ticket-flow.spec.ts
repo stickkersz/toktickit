@@ -1,12 +1,13 @@
 import { expect, test } from "@playwright/test";
 import { createTicket } from "../lab-02/helpers.js";
-import { createTicketAsRequester, LANDING, logout, REQUESTER, short, signIn, STAFF } from "./helpers.js";
+import { completeAnActionOn, createTicketAsRequester, LANDING, logout, REQUESTER, short, signIn, STAFF } from "./helpers.js";
 
 // E2E-03 and E2E-04 from docs/lab-03/tests.md.
 test.describe("Staff Ticket flow and Requester regression", () => {
   // E2E-03 (AC-16 to AC-27)
   test("finds, claims, prioritises, moves, comments on, notes and resolves a Ticket; the Requester sees all but the note", async ({ page }) => {
     const ticket = await createTicketAsRequester(`E2E staff flow ${short()}`);
+    await completeAnActionOn(ticket.id);
     const comment = `We are looking at it now ${short()}`;
     const note = `Internal: VPN profile expired on the gateway ${short()}`;
     const resolution = `Reissued the VPN profile and confirmed the connection ${short()}`;
