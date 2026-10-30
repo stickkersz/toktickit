@@ -668,9 +668,15 @@ app.delete("/api/attachments/:id", ...requesterOnly, async (req: Request, res: R
     // succeed: exactly one updates a row, and the loser gets the documented
     // 409 rather than silently overwriting the first one's removedAt and
     // removalReason, which BR-30 requires be retained.
-    const removal = await getPrisma().attachment.updateMany({
-      where: { id: attachmentId, isRemoved: false },
-      data: { isRemoved: true, removedAt: new Date(), removalReason: reasonResult.value },
+    // Lab 4 BR-38: the removal and the Ticket's last activity are one transaction, so a failure cannot
+    // leave a removal that happened reported as a 500 (review on Lab 4 #86).
+    const removal = await getPrisma().$transaction(async (tx) => {
+      const removed = await tx.attachment.updateMany({
+        where: { id: attachmentId, isRemoved: false },
+        data: { isRemoved: true, removedAt: new Date(), removalReason: reasonResult.value },
+      });
+      if (removed.count === 1) await tx.ticket.update({ where: { id: attachment.ticketId }, data: { updatedAt: new Date() } });
+      return removed;
     });
 
     if (removal.count === 0) {
@@ -680,8 +686,6 @@ app.delete("/api/attachments/:id", ...requesterOnly, async (req: Request, res: R
     }
 
     const updated = await getPrisma().attachment.findUniqueOrThrow({ where: { id: attachmentId } });
-    // Lab 4 BR-38: an Attachment removed is Ticket activity.
-    await getPrisma().ticket.update({ where: { id: updated.ticketId }, data: { updatedAt: new Date() } });
 
     res.status(200).json(serializeAttachment(updated));
   } catch {

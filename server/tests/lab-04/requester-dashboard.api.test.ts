@@ -183,6 +183,72 @@ describe("last activity (BR-38)", () => {
   });
 });
 
+describe("concurrent writes that touch last activity (review on #86)", () => {
+  // DASH-09 / BR-38: the Requester comment path locks the Ticket row and then updates it
+  it("accepts two Public Comments posted on one Ticket at the same moment, both stored", async () => {
+    for (let round = 0; round < 5; round++) {
+      const t = await ticket(aliceId, "IN_PROGRESS");
+      const [a, b] = await Promise.all([
+        alice.post(`/api/tickets/${t.id}/comments`).send({ body: `First at the same moment, round ${round}.` }),
+        alice.post(`/api/tickets/${t.id}/comments`).send({ body: `Second at the same moment, round ${round}.` }),
+      ]);
+      expect([a.status, b.status], `round ${round}`).toEqual([201, 201]);
+      expect(await iso.db.client.publicComment.count({ where: { ticketId: t.id } })).toBe(2);
+    }
+  });
+});
+
+describe("a write and its last-activity touch are one (sweep on #86)", () => {
+  // Makes every UPDATE of one Ticket fail inside the database, as a lost connection or a constraint would.
+  async function failTicketUpdates(ticketId: number) {
+    const db = iso.db.client;
+    await db.$executeRawUnsafe(`CREATE OR REPLACE FUNCTION toktickit_fail_touch() RETURNS trigger AS $$ BEGIN RAISE EXCEPTION 'injected failure'; END; $$ LANGUAGE plpgsql`);
+    await db.$executeRawUnsafe(`CREATE TRIGGER toktickit_fail_touch BEFORE UPDATE ON "Ticket" FOR EACH ROW WHEN (NEW.id = ${ticketId}) EXECUTE FUNCTION toktickit_fail_touch()`);
+    return () => db.$executeRawUnsafe(`DROP TRIGGER IF EXISTS toktickit_fail_touch ON "Ticket"`);
+  }
+
+  // DASH-09 / BR-38: IT Staff's comment and its touch
+  it("stores no IT Staff Public Comment when its last-activity touch fails, and a retry stores exactly one", async () => {
+    const t = await ticket(aliceId, "IN_PROGRESS");
+    const restore = await failTicketUpdates(t.id);
+    try {
+      expect((await staff.post(`/api/tickets/${t.id}/comments`).send({ body: "We are looking at it now." })).status).toBe(500);
+      expect(await iso.db.client.publicComment.count({ where: { ticketId: t.id } })).toBe(0);
+    } finally {
+      await restore();
+    }
+    expect((await staff.post(`/api/tickets/${t.id}/comments`).send({ body: "We are looking at it now." })).status).toBe(201);
+    expect(await iso.db.client.publicComment.count({ where: { ticketId: t.id } })).toBe(1);
+  });
+
+  // DASH-09 / BR-38: the Requester's Attachment removal and its touch
+  it("keeps an Attachment when the removal's last-activity touch fails", async () => {
+    const t = await ticket(aliceId, "IN_PROGRESS");
+    const upload = await alice.post(`/api/tickets/${t.id}/attachments`).attach("files", Buffer.from("screen"), { filename: "keep.png", contentType: "image/png" });
+    const id = upload.body.uploaded[0].id;
+    const restore = await failTicketUpdates(t.id);
+    try {
+      expect((await alice.delete(`/api/attachments/${id}`).send({ reason: "Uploaded the wrong file." })).status).toBe(500);
+    } finally {
+      await restore();
+    }
+    expect(await iso.db.client.attachment.findUniqueOrThrow({ where: { id } })).toMatchObject({ isRemoved: false, removedAt: null });
+  });
+
+  // DASH-09: the two lock-taking writes on one Ticket at once
+  it("stores a Requester comment, an IT Staff comment and an upload made on one Ticket at the same moment", async () => {
+    const t = await ticket(aliceId, "IN_PROGRESS");
+    const results = await Promise.all([
+      alice.post(`/api/tickets/${t.id}/comments`).send({ body: "From the Requester at the same moment." }),
+      staff.post(`/api/tickets/${t.id}/comments`).send({ body: "From IT at the same moment." }),
+      alice.post(`/api/tickets/${t.id}/attachments`).attach("files", Buffer.from("x"), { filename: "same.png", contentType: "image/png" }),
+    ]);
+    expect(results.map((r) => r.status)).toEqual([201, 201, 201]);
+    expect(await iso.db.client.publicComment.count({ where: { ticketId: t.id } })).toBe(2);
+    expect(await iso.db.client.attachment.count({ where: { ticketId: t.id } })).toBe(1);
+  });
+});
+
 describe("list filters for the drill-downs (api-spec section 11)", () => {
   // API-19 / BR-36
   it("filters My Tickets and the queue by statusGroup, takes all eight statuses on My Tickets, and sorts by last activity", async () => {

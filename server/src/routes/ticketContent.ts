@@ -107,22 +107,27 @@ function mount(path: "comments" | "notes", guards: typeof anyRole, store: Conten
       const data = { ticketId, authorId: req.user!.id, authorRole: req.user!.role, body: checked.value! };
 
       // BR-34: a Requester may not comment on a CLOSED or CANCELLED Ticket. The check and the
-      // insert are one transaction holding a share lock on the Ticket row, so a close that lands
-      // in between waits for the comment, or the comment waits for it and then sees the new status.
-      // Without the lock a comment could be written just after the Ticket was closed.
+      // insert are one transaction holding a lock on the Ticket row, so a close that lands in between
+      // waits for the comment, or the comment waits for it and then sees the new status. Without the
+      // lock a comment could be written just after the Ticket was closed. The lock is FOR NO KEY UPDATE,
+      // not FOR SHARE: the same transaction updates the row's last activity (Lab 4 BR-38), and two
+      // share holders upgrading would deadlock (review on Lab 4 #86; the Lab 4 #83 lesson).
       if (path === "comments" && req.user!.role === "REQUESTER") {
         const created = await prisma.$transaction(async (tx) => {
           const open = await tx.$queryRaw<{ id: number }[]>(Prisma.sql`
             SELECT "id" FROM "Ticket"
             WHERE "id" = ${ticketId} AND "currentStatus"::text NOT IN (${Prisma.join([...TERMINAL_STATUSES])})
-            FOR SHARE`);
+            FOR NO KEY UPDATE`);
           return open.length === 0 ? null : store.create(tx, data);
         });
         if (!created) return sendError(res, 409, "TICKET_TERMINAL", "This Ticket is closed, so comments can no longer be added.");
         return res.status(201).json(serialize(created));
       }
 
-      res.status(201).json(serialize(await store.create(prisma, data)));
+      // One transaction for every role: a Public Comment and its last-activity touch are stored together or
+      // not at all (sweep on Lab 4 #86). No lock is needed here; the insert's foreign key takes only a key
+      // share on the Ticket, which never deadlocks with the touch.
+      res.status(201).json(serialize(await prisma.$transaction((tx) => store.create(tx, data))));
     } catch {
       sendError(res, 500, "INTERNAL_ERROR", `Unable to add the ${label}.`);
     }
