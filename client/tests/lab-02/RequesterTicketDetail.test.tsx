@@ -49,6 +49,7 @@ describe("Requester Ticket Detail", () => {
     vi.spyOn(api, "getCurrentUser").mockResolvedValue(ARI);
     vi.spyOn(api, "getTicketDetail").mockResolvedValue(ticketDetail());
     vi.spyOn(api, "getTicketComments").mockResolvedValue([]);
+    vi.spyOn(api, "getTicketActions").mockResolvedValue([]);
 
     renderAtDetail();
 
@@ -59,7 +60,10 @@ describe("Requester Ticket Detail", () => {
     expect(summaryField).toHaveAttribute("readonly");
     expect(summaryField).not.toBeDisabled();
     expect(screen.queryByText(/internal note/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/actions taken/i)).not.toBeInTheDocument();
+    // Lab 4 BR-17 supersedes "no Actions": the Requester now sees Actions Taken, read-only, with no control
+    // to add or change one (Lab 4 tests.md section 6).
+    expect(await screen.findByRole("heading", { name: /^Actions Taken/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /add action|edit|complete|cancel action/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("combobox", { name: /status/i })).not.toBeInTheDocument();
   });
 

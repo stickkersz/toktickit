@@ -582,7 +582,15 @@ function StaffTicketDetail() {
 
       <hr />
 
-      <StaffTicketPanels ticketId={ticketId} attachments={ticket.attachments} />
+      <StaffTicketPanels
+        ticketId={ticketId}
+        attachments={ticket.attachments}
+        ticketStatus={ticket.currentStatus}
+        owners={owners}
+        currentUserId={user?.id ?? 0}
+        onTicketChanged={() => void refresh("status")}
+        onOwnersStale={() => void refresh("owner")}
+      />
     </div>
   );
 }

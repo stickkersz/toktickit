@@ -433,3 +433,62 @@ a:hover {
 .form-check-input:disabled {
   opacity: 0.5;
 }
+
+/* Lab 4 Actions Taken (ui-spec.md sections 2 and 7). Badges are text plus a token colour, never colour alone. */
+.zg-badge-action-planned {
+  background-color: var(--color-surface);
+  color: var(--color-primary);
+  border: 1px solid var(--color-primary);
+}
+.zg-badge-action-completed {
+  background-color: var(--color-success);
+  color: var(--color-surface);
+}
+.zg-badge-action-cancelled {
+  background-color: var(--color-field-readonly-bg);
+  color: var(--color-text-muted);
+  border: 1px solid var(--color-field-editable-border);
+}
+.zg-badge-followup {
+  background-color: var(--color-warning-bg);
+  color: var(--color-text);
+  border: 1px solid var(--color-warning);
+}
+.zg-badge-not-active {
+  background-color: var(--color-field-readonly-bg);
+  color: var(--color-text-muted);
+  border: 1px solid var(--color-field-editable-border);
+}
+/* Long descriptions wrap inside their cell instead of widening the page. */
+.zg-action-description {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.zg-action-detail-row > td {
+  background-color: var(--color-pale);
+}
+.zg-action-form {
+  background-color: var(--color-surface);
+}
+
+/* Modal dialog (ui-spec.md sections 7 and 12): centred, full width minus 16px margins on a phone, and
+   scrolling inside itself when taller than the screen. */
+.zg-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1050;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background-color: rgba(27, 43, 35, 0.45);
+}
+.zg-dialog {
+  width: 100%;
+  max-width: 560px;
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  background-color: var(--color-surface);
+  border-radius: 0.5rem;
+  padding: 1.25rem;
+}

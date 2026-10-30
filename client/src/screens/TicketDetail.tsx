@@ -20,6 +20,7 @@ import { TruncatedFilename, fileTypeLabel, formatDate, formatFileSize } from "..
 import { PriorityBadge, StatusBadge } from "../Badge.js";
 import { ContentPanel } from "../ContentPanel.js";
 import { TERMINAL_MESSAGE, useContentThread } from "../content.js";
+import { RequesterActionsTaken } from "../ActionsTaken.js";
 import {
   ATTACHMENT_REJECT_MESSAGES,
   AttachmentRejectReason,
@@ -323,6 +324,11 @@ export default function TicketDetail() {
           </p>
         )}
       </div>
+
+      <hr />
+
+      {/* Lab 4 ui-spec.md section 8: read-only, between the Ticket fields and the conversation. */}
+      <RequesterActionsTaken ticketId={ticket.id} />
 
       <hr />
 

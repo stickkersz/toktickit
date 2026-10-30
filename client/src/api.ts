@@ -149,6 +149,8 @@ export class ApiError extends Error {
   permitted?: string[];
   // On a refusal that names a field, such as EMAIL_TAKEN: the message for that field.
   fields?: Record<string, string>;
+  // On 409 STALE_ACTION: the Action as the server now holds it (Lab 4 api-spec, optimistic concurrency).
+  action?: ActionItem;
   constructor(message: string, status: number, code?: string) {
     super(message);
     this.status = status;
@@ -353,13 +355,14 @@ async function authRequest(path: string, init?: RequestInit): Promise<{ res: Res
 }
 
 function errorFromResponse(status: number, body: unknown, fallback: string): ApiError {
-  const payload = (body ?? {}) as { error?: string; message?: string; fields?: Record<string, string>; permitted?: string[] };
+  const payload = (body ?? {}) as { error?: string; message?: string; fields?: Record<string, string>; permitted?: string[]; action?: ActionItem };
   if (payload.error === "VALIDATION_ERROR") {
     return new ValidationError(payload.message ?? "Validation failed.", payload.fields ?? {});
   }
   const error = new ApiError(payload.message ?? fallback, status, payload.error);
   if (Array.isArray(payload.permitted)) error.permitted = payload.permitted;
   if (payload.fields) error.fields = payload.fields;
+  if (payload.action) error.action = payload.action;
   return error;
 }
 
@@ -622,3 +625,64 @@ export async function setInitialPassword(id: number, initialPassword: string): P
   if (!res.ok) throw errorFromResponse(res.status, body, "Unable to set the initial password.");
   return body as AdminUser;
 }
+
+// Lab 4 Actions Taken (api-spec.md endpoints 1 to 5). Every person is { id, name }; no email is sent.
+export type ActionStatus = "PLANNED" | "COMPLETED" | "CANCELLED";
+export interface ActionPerson {
+  id: number;
+  name: string;
+}
+export interface ActionItem {
+  id: number;
+  ticketId: number;
+  status: ActionStatus;
+  actionAt: string;
+  description: string;
+  result: string | null;
+  followUpRequired: boolean;
+  followUpNote: string | null;
+  attachmentNotes: string | null;
+  recordedBy: ActionPerson;
+  recordedAt: string;
+  responsibleStaff: ActionPerson & { eligible: boolean };
+  performedBy: ActionPerson | null;
+  completedAt: string | null;
+  cancelledBy: ActionPerson | null;
+  cancelledAt: string | null;
+  cancelReason: string | null;
+  lastEditedBy: ActionPerson | null;
+  version: number;
+  updatedAt: string;
+}
+export interface ActionInput {
+  actionAt: string;
+  description: string;
+  responsibleStaffId: number;
+  followUpRequired: boolean;
+  followUpNote?: string;
+  attachmentNotes?: string;
+}
+
+export async function getTicketActions(ticketId: number): Promise<ActionItem[]> {
+  const { res, body } = await authRequest(`/api/tickets/${ticketId}/actions`);
+  if (res.status === 404) throw new NotFoundError("Ticket not found.");
+  if (!res.ok) throw errorFromResponse(res.status, body, "Unable to load the actions.");
+  return body as ActionItem[];
+}
+
+async function sendAction(path: string, method: string, data: object, fallback: string, headers: Record<string, string> = {}): Promise<ActionItem> {
+  const { res, body } = await authRequest(path, { method, headers: { ...JSON_HEADERS, ...headers }, body: JSON.stringify(data) });
+  if (!res.ok) throw errorFromResponse(res.status, body, fallback);
+  return body as ActionItem;
+}
+
+// One Idempotency-Key per form submission (BR-39): the form keeps it for a retry and replaces it only
+// after a confirmed success, a change to what was typed, or IDEMPOTENCY_KEY_REUSED.
+export const createAction = (ticketId: number, input: ActionInput, idempotencyKey: string) =>
+  sendAction(`/api/tickets/${ticketId}/actions`, "POST", input, "Unable to add the action.", { "Idempotency-Key": idempotencyKey });
+export const updateAction = (id: number, version: number, changes: Partial<ActionInput>) =>
+  sendAction(`/api/actions/${id}`, "PATCH", { version, ...changes }, "Unable to save the action.");
+export const completeAction = (id: number, version: number, result: string, actionAt: string) =>
+  sendAction(`/api/actions/${id}/complete`, "POST", { version, result, actionAt }, "Unable to complete the action.");
+export const cancelAction = (id: number, version: number, reason: string) =>
+  sendAction(`/api/actions/${id}/cancel`, "POST", { version, reason }, "Unable to cancel the action.");
