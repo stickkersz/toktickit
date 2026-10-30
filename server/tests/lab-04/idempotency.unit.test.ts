@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { isIdempotencyKey, requestHash } from "../../src/idempotency.js";
 
@@ -30,15 +31,9 @@ describe("Idempotency-Key and the request fingerprint (BR-39)", () => {
     expect(requestHash("/api/tickets/42/actions", { description: "Swap the cable", actionAt: "2026-10-03T02:00:00.000Z" }, accepted)).not.toBe(base);
   });
 
-  // UNIT-06 / BR-39 (Ticket create with files)
-  it("includes each file's original name and size, in upload order", () => {
-    const body = { summary: "VPN fails" };
-    const files = [{ originalname: "a.png", size: 10 }, { originalname: "b.txt", size: 20 }];
-    const base = requestHash("/api/tickets", body, ["summary"], files);
-    expect(requestHash("/api/tickets", body, ["summary"], [{ originalname: "a.png", size: 10 }, { originalname: "b.txt", size: 20 }])).toBe(base);
-    expect(requestHash("/api/tickets", body, ["summary"], [{ originalname: "c.png", size: 10 }, { originalname: "b.txt", size: 20 }])).not.toBe(base);
-    expect(requestHash("/api/tickets", body, ["summary"], [{ originalname: "a.png", size: 11 }, { originalname: "b.txt", size: 20 }])).not.toBe(base);
-    expect(requestHash("/api/tickets", body, ["summary"], [...files].reverse())).not.toBe(base);
-    expect(requestHash("/api/tickets", body, ["summary"])).not.toBe(base);
+  // UNIT-06 / BR-39: the hashed text is unchanged from Issue 03, so hashes already stored still match
+  it("hashes the same text as before Issue 08", () => {
+    const canonical = JSON.stringify({ path: "/api/tickets", fields: { summary: "VPN fails" }, files: null });
+    expect(requestHash("/api/tickets", { summary: " VPN fails " }, ["summary"])).toBe(createHash("sha256").update(canonical).digest("hex"));
   });
 });

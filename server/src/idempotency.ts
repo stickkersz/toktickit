@@ -12,22 +12,18 @@ export function isIdempotencyKey(value: unknown): value is string {
   return typeof value === "string" && UUID.test(value);
 }
 
-// The fingerprint of a request (BR-39, api-spec "Idempotency-Key"): the path with its Ticket id, every
-// body field the endpoint accepts, trimmed, keys sorted, absent ones left out, and for Ticket create
-// each file's original name and size in upload order. Fields the endpoint ignores are not part of it,
-// so a replay is recognised by what the server would store, not by the exact bytes sent.
-export function requestHash(
-  path: string,
-  body: Record<string, unknown> | undefined,
-  accepted: readonly string[],
-  files?: readonly { originalname: string; size: number }[],
-): string {
+// The fingerprint of a request (BR-39, api-spec "Idempotency-Key"): the path with its Ticket id and every
+// body field the endpoint accepts, trimmed, keys sorted, absent ones left out. Fields the endpoint ignores
+// are not part of it, so a replay is recognised by what the server would store, not by the exact bytes
+// sent. No create endpoint carries files (Ticket create's Attachments are uploaded afterwards), but the
+// hashed text keeps its `files: null`, so hashes stored before Issue 08 still match.
+export function requestHash(path: string, body: Record<string, unknown> | undefined, accepted: readonly string[]): string {
   const fields: Record<string, unknown> = {};
   for (const key of [...accepted].sort()) {
     const value = body?.[key];
     if (value !== undefined) fields[key] = typeof value === "string" ? value.trim() : value;
   }
-  const canonical = JSON.stringify({ path, fields, files: files?.map((f) => [f.originalname, f.size]) ?? null });
+  const canonical = JSON.stringify({ path, fields, files: null });
   return createHash("sha256").update(canonical).digest("hex");
 }
 
