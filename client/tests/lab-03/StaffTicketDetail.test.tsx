@@ -852,7 +852,9 @@ describe("Staff Ticket Detail: Public Comments and Internal Notes", () => {
     vi.mocked(api.getTicketComments).mockResolvedValue(content.comments ?? []);
     vi.mocked(api.getTicketNotes).mockResolvedValue(content.notes ?? []);
     await screen.findByRole("heading", { name: ticket.ticketNumber });
-    await screen.findByRole("tab", { name: /^Public Comments/ });
+    // Lab 4 ui-spec.md section 7 puts Actions Taken first and selected, so these Lab 3 tests open the
+    // Public Comments tab first (superseding change, Lab 4 tests.md section 6).
+    await userEvent.setup().click(await screen.findByRole("tab", { name: /^Public Comments/ }));
   }
   const tab = (name: RegExp | string) => screen.getByRole("tab", { name });
   const panel = () => screen.getByRole("tabpanel");
@@ -861,7 +863,8 @@ describe("Staff Ticket Detail: Public Comments and Internal Notes", () => {
   it("shows Public Comments, Internal Notes and Attachments as tabs with a count each, Public Comments first and selected", async () => {
     await openWith({ comments: [item({ id: 1 }), item({ id: 2 })], notes: [item({ id: 3 })] }, detail({ attachments: [{ id: 7, originalFilename: "a.png", mimeType: "image/png", sizeBytes: 10, uploadedAt: "2026-09-10T10:00:00.000Z", isRemoved: false }] }));
     const tabs = screen.getAllByRole("tab").map((t) => t.textContent?.replace(/\s+/g, " ").trim());
-    expect(tabs).toEqual(["Public Comments (2)", "Internal Notes (1)", "Attachments (1)"]);
+    // Lab 4 adds Actions Taken as the first tab (superseding change).
+    expect(tabs).toEqual(["Actions Taken (0)", "Public Comments (2)", "Internal Notes (1)", "Attachments (1)"]);
     expect(screen.getByRole("tablist", { name: "Ticket activity" })).toBeInTheDocument();
     expect(tab(/^Public Comments/)).toHaveAttribute("aria-selected", "true");
     expect(tab(/^Internal Notes/)).toHaveAttribute("aria-selected", "false");
@@ -1088,6 +1091,8 @@ describe("Staff Ticket Detail: Public Comments and Internal Notes", () => {
     vi.mocked(api.getTicketNotes).mockResolvedValue([]);
     await screen.findByRole("heading", { name: "TKT-2026-000042" });
     expect(await screen.findByRole("tab", { name: "Public Comments" })).toBeInTheDocument(); // no "(n)" for what is not known
+    // Lab 4: Actions Taken is the first tab, so the comments tab is opened (superseding change).
+    await userEvent.click(tab("Public Comments"));
     expect(tab("Internal Notes (0)")).toBeInTheDocument(); // the other list is unaffected
     expect(await screen.findByRole("alert")).toHaveTextContent("Unable to load the comments.");
     expect(screen.queryByLabelText("Add Public Comment")).not.toBeInTheDocument();
@@ -1110,13 +1115,14 @@ describe("Staff Ticket Detail: Public Comments and Internal Notes", () => {
     expect(tab(/^Internal Notes/)).toHaveAttribute("aria-selected", "true");
     await user.keyboard("{End}");
     expect(tab(/^Attachments/)).toHaveFocus();
+    // Lab 4 puts Actions Taken first, so wrapping and Home land there (superseding change).
     await user.keyboard("{ArrowRight}");
-    expect(tab(/^Public Comments/)).toHaveFocus(); // wraps
+    expect(tab(/^Actions Taken/)).toHaveFocus(); // wraps
     await user.keyboard("{ArrowLeft}");
     expect(tab(/^Attachments/)).toHaveFocus();
     await user.keyboard("{Home}");
-    expect(tab(/^Public Comments/)).toHaveFocus();
-    expect(tab(/^Public Comments/)).toHaveAttribute("aria-selected", "true");
+    expect(tab(/^Actions Taken/)).toHaveFocus();
+    expect(tab(/^Actions Taken/)).toHaveAttribute("aria-selected", "true");
   });
 
   it("asks for the comments and the notes of the Ticket it is showing, once each", async () => {
@@ -1143,6 +1149,7 @@ describe("Staff Ticket Detail: Public Comments and Internal Notes", () => {
     const slowPost = deferred<ContentItem>();
     vi.spyOn(api, "getTicketComments").mockImplementation((id: number) => (id === 42 ? slowList.promise : Promise.resolve([item({ id: 77, body: "belongs to Ticket 43" })])));
     vi.spyOn(api, "getTicketNotes").mockResolvedValue([]);
+    vi.spyOn(api, "getTicketActions").mockResolvedValue([]);
     vi.spyOn(api, "postTicketNote").mockReturnValue(slowPost.promise);
     render(
       <MemoryRouter initialEntries={["/staff/tickets/42"]}>
@@ -1159,6 +1166,7 @@ describe("Staff Ticket Detail: Public Comments and Internal Notes", () => {
     // The comments list and the note post for Ticket 42 are both still in flight when Ticket 43 opens.
     await user.click(screen.getByRole("button", { name: "jump to /staff/tickets/43" }));
     await screen.findByRole("heading", { name: "TKT-2026-000043" });
+    await user.click(await screen.findByRole("tab", { name: /^Public Comments/ }));
     expect(await within(screen.getByRole("tabpanel")).findByText("belongs to Ticket 43")).toBeInTheDocument();
     expect(screen.getByLabelText("Add Public Comment")).toHaveValue("");
 

@@ -20,6 +20,7 @@ import { TruncatedFilename, fileTypeLabel, formatDate, formatFileSize } from "..
 import { PriorityBadge, StatusBadge } from "../Badge.js";
 import { ContentPanel } from "../ContentPanel.js";
 import { TERMINAL_MESSAGE, useContentThread } from "../content.js";
+import { RequesterActionsTaken } from "../ActionsTaken.js";
 import {
   ATTACHMENT_REJECT_MESSAGES,
   AttachmentRejectReason,
@@ -217,33 +218,33 @@ export default function TicketDetail() {
       </div>
 
       <div className="row g-3 mb-4">
-        <div className="col-md-3">
+        <div className="col-md-6 col-lg-3">
           <label htmlFor="detail-ticket-number" className="form-label fw-semibold">Ticket No.</label>
           <input id="detail-ticket-number" className="form-control" readOnly value={ticket.ticketNumber} />
         </div>
-        <div className="col-md-3">
+        <div className="col-md-6 col-lg-3">
           <label htmlFor="detail-ticket-date" className="form-label fw-semibold">Ticket Date</label>
           <input id="detail-ticket-date" className="form-control" readOnly value={formatDate(ticket.createdAt)} />
         </div>
-        <div className="col-md-3">
+        <div className="col-md-6 col-lg-3">
           <label htmlFor="detail-category" className="form-label fw-semibold">Category</label>
           <input id="detail-category" className="form-control" readOnly value={ticket.categoryName} />
         </div>
-        <div className="col-md-3">
+        <div className="col-md-6 col-lg-3">
           <label htmlFor="detail-related-system" className="form-label fw-semibold">Related System</label>
           <input id="detail-related-system" className="form-control" readOnly value={ticket.relatedSystemName} />
         </div>
-        <div className="col-md-3">
+        <div className="col-md-6 col-lg-3">
           <label htmlFor="detail-requester" className="form-label fw-semibold">Requester</label>
           <input id="detail-requester" className="form-control" readOnly value={ticket.requesterName} />
         </div>
-        <div className="col-md-3">
+        <div className="col-md-6 col-lg-3">
           <label className="form-label fw-semibold">Requested Priority</label>
           <div>
             <PriorityBadge value={ticket.requestedPriority} />
           </div>
         </div>
-        <div className="col-md-3">
+        <div className="col-md-6 col-lg-3">
           <label className="form-label fw-semibold">Current Status</label>
           <div>
             <StatusBadge value={ticket.currentStatus} />
@@ -323,6 +324,11 @@ export default function TicketDetail() {
           </p>
         )}
       </div>
+
+      <hr />
+
+      {/* Lab 4 ui-spec.md section 8: read-only, between the Ticket fields and the conversation. */}
+      <RequesterActionsTaken ticketId={ticket.id} />
 
       <hr />
 

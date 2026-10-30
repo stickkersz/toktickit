@@ -47,6 +47,14 @@ describe("integers read from a request (BR-47, review on #83)", () => {
     expect(parseStaffQueueQuery({ owner: "2147483647", page: "2147483647" })).toMatchObject({ owner: { kind: "id", id: 2147483647 }, page: 2147483647 });
     expect((await staff.get("/api/staff/tickets").query(big)).status).toBe(200);
     expect((await requester.get("/api/tickets").query(big)).status).toBe(200);
+    // The largest page still reaches the database: with pageSize 50 the offset is about 1.07e11, which
+    // Prisma takes as a 64-bit skip and answers with an empty page (review on #83).
+    const queue = await staff.get("/api/staff/tickets").query({ page: "2147483647", pageSize: "50" });
+    expect(queue.status).toBe(200);
+    expect(queue.body.tickets).toEqual([]);
+    const mine = await requester.get("/api/tickets").query({ page: "2147483647", pageSize: "50" });
+    expect(mine.status).toBe(200);
+    expect(mine.body.data).toEqual([]);
   });
 
   // SEC-07

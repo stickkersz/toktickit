@@ -388,19 +388,19 @@ function StaffTicketDetail() {
 
       <h2 className="h6 text-muted text-uppercase mb-2">Ticket information</h2>
       <div className="row g-3 mb-4">
-        <div className="col-md-3">
+        <div className="col-md-6 col-lg-3">
           <label htmlFor="staff-ticket-number" className="form-label fw-semibold">Ticket No.</label>
           <input id="staff-ticket-number" className="form-control" readOnly value={ticket.ticketNumber} />
         </div>
-        <div className="col-md-3">
+        <div className="col-md-6 col-lg-3">
           <label htmlFor="staff-category" className="form-label fw-semibold">Category</label>
           <input id="staff-category" className="form-control" readOnly value={ticket.categoryName} />
         </div>
-        <div className="col-md-3">
+        <div className="col-md-6 col-lg-3">
           <label htmlFor="staff-related-system" className="form-label fw-semibold">Related System</label>
           <input id="staff-related-system" className="form-control" readOnly value={ticket.relatedSystemName} />
         </div>
-        <div className="col-md-3">
+        <div className="col-md-6 col-lg-3">
           <label htmlFor="staff-requester" className="form-label fw-semibold">Requester</label>
           <input
             id="staff-requester"
@@ -409,11 +409,11 @@ function StaffTicketDetail() {
             value={ticket.requesterIsActive ? ticket.requesterName : `${ticket.requesterName} (inactive)`}
           />
         </div>
-        <div className="col-md-3">
+        <div className="col-md-6 col-lg-3">
           <span className="form-label fw-semibold d-block">Requested Priority</span>
           <PriorityBadge value={ticket.requestedPriority} />
         </div>
-        <div className="col-md-3">
+        <div className="col-md-6 col-lg-3">
           <label htmlFor="staff-created" className="form-label fw-semibold">Created Date</label>
           <input id="staff-created" className="form-control" readOnly value={formatDate(ticket.createdAt)} />
         </div>
@@ -582,7 +582,16 @@ function StaffTicketDetail() {
 
       <hr />
 
-      <StaffTicketPanels ticketId={ticketId} attachments={ticket.attachments} />
+      <StaffTicketPanels
+        ticketId={ticketId}
+        attachments={ticket.attachments}
+        ticketCreatedAt={ticket.createdAt}
+        ticketStatus={ticket.currentStatus}
+        owners={owners}
+        currentUserId={user?.id ?? 0}
+        onTicketChanged={() => void refresh("status")}
+        onOwnersStale={() => void refresh("owner")}
+      />
     </div>
   );
 }

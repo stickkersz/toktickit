@@ -13,8 +13,9 @@ export interface TabSpec {
 // The WAI-ARIA tabs pattern: a tablist of real buttons, arrow keys, Home and End move between tabs
 // with the selected one alone in the tab order, and only the selected tab's panel is in the page.
 // Nothing that belongs to a hidden tab is rendered, so it cannot be reached, typed into or announced.
-export function Tabs({ label, idPrefix, tabs }: { label: string; idPrefix: string; tabs: TabSpec[] }) {
-  const [activeId, setActiveId] = useState(tabs[0].id);
+// `initialId` opens a tab other than the first, for a link such as ?tab=actions (Lab 4 ui-spec.md section 7).
+export function Tabs({ label, idPrefix, tabs, initialId }: { label: string; idPrefix: string; tabs: TabSpec[]; initialId?: string }) {
+  const [activeId, setActiveId] = useState(() => (tabs.some((t) => t.id === initialId) ? initialId! : tabs[0].id));
   const refs = useRef<Record<string, HTMLButtonElement | null>>({});
   const active = tabs.find((t) => t.id === activeId) ?? tabs[0];
 

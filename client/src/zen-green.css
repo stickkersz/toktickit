@@ -118,8 +118,29 @@ a:focus-visible {
   border-color: var(--color-secondary);
   color: #ffffff;
 }
-.zg-btn-primary:disabled {
+/* Disabled keeps the primary colours at half strength; Bootstrap's own .btn:disabled would otherwise
+   replace them with a grey outline (Lab 4 screen check). */
+.zg-btn-primary:disabled,
+.zg-btn-primary.disabled {
+  background-color: var(--color-primary);
+  border-color: var(--color-primary);
+  color: #ffffff;
   opacity: 0.5;
+}
+
+/* Secondary buttons: Bootstrap fills btn-outline-secondary with its own grey on focus and press. They
+   stay an outline in the Zen Green tokens, the focus ring alone marking focus (Lab 4 screen check). */
+.btn-outline-secondary {
+  color: var(--color-text);
+  border-color: var(--color-field-editable-border);
+}
+.btn-outline-secondary:hover:not(:disabled),
+.btn-outline-secondary:focus-visible,
+.btn-outline-secondary:active,
+.btn-outline-secondary.active {
+  background-color: var(--color-pale);
+  border-color: var(--color-secondary);
+  color: var(--color-text);
 }
 
 /* ui-spec.md §3 — error/failure callout. */
@@ -343,14 +364,16 @@ a:hover {
   background: transparent;
   border-bottom-color: var(--color-primary);
 }
-/* On a phone the three tabs share the width and wrap their labels, so none is hidden off the edge of a
-   scrolling strip where its existence would go unnoticed. */
+/* On a phone the tabs share the width and wrap their labels, so none is hidden off the edge of a
+   scrolling strip where its existence would go unnoticed. Lab 4's fourth tab makes a single word such as
+   "Attachments" wider than a quarter of 375px, so they sit two to a row instead. */
 @media (max-width: 767.98px) {
   .zg-tabs {
     overflow-x: visible;
+    flex-wrap: wrap !important;
   }
   .zg-tabs .zg-tab.nav-link {
-    flex: 1 1 0;
+    flex: 1 1 50%;
     min-width: 0;
     white-space: normal;
     text-align: center;
@@ -432,4 +455,74 @@ a:hover {
 }
 .form-check-input:disabled {
   opacity: 0.5;
+}
+
+/* Lab 4 Actions Taken (ui-spec.md sections 2 and 7). Badges are text plus a token colour, never colour alone. */
+.zg-badge-action-planned {
+  background-color: var(--color-surface);
+  color: var(--color-primary);
+  border: 1px solid var(--color-primary);
+}
+.zg-badge-action-completed {
+  background-color: var(--color-success);
+  color: var(--color-surface);
+}
+.zg-badge-action-cancelled {
+  background-color: var(--color-field-readonly-bg);
+  color: var(--color-text-muted);
+  border: 1px solid var(--color-field-editable-border);
+}
+.zg-badge-followup {
+  background-color: var(--color-warning-bg);
+  color: var(--color-text);
+  border: 1px solid var(--color-warning);
+}
+.zg-badge-not-active {
+  background-color: var(--color-field-readonly-bg);
+  color: var(--color-text-muted);
+  border: 1px solid var(--color-field-editable-border);
+}
+/* Long descriptions wrap inside their cell instead of widening the page. */
+.zg-action-description {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.zg-action-detail-row > td {
+  background-color: var(--color-pale);
+}
+.zg-action-form {
+  background-color: var(--color-surface);
+}
+
+/* Modal dialog (ui-spec.md sections 7 and 12): centred, full width minus 16px margins on a phone, and
+   scrolling inside itself when taller than the screen. */
+.zg-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1050;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background-color: rgba(27, 43, 35, 0.45);
+}
+.zg-dialog {
+  width: 100%;
+  max-width: 560px;
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  background-color: var(--color-surface);
+  border-radius: 0.5rem;
+  padding: 1.25rem;
+}
+
+/* The date and time field's selected segment: Zen Green pale, not the browser's blue highlight. */
+input[type="datetime-local"]::-webkit-datetime-edit-day-field:focus,
+input[type="datetime-local"]::-webkit-datetime-edit-month-field:focus,
+input[type="datetime-local"]::-webkit-datetime-edit-year-field:focus,
+input[type="datetime-local"]::-webkit-datetime-edit-hour-field:focus,
+input[type="datetime-local"]::-webkit-datetime-edit-minute-field:focus,
+input[type="datetime-local"]::-webkit-datetime-edit-ampm-field:focus {
+  background-color: var(--color-pale);
+  color: var(--color-text);
 }
