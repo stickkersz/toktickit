@@ -161,6 +161,9 @@ describe("dashboard authorization", () => {
       request(app).post(`/api/actions/${a.id}/complete`).send({ version: a.version, result: "No session here." }),
       request(app).post(`/api/actions/${a.id}/cancel`).send({ version: a.version, reason: "No session here." }),
       request(app).get(`/api/tickets/${t.id}/history`),
+      // Endpoints 7 and 8, changed in Lab 4.
+      request(app).patch(`/api/staff/tickets/${t.id}/status`).send({ fromStatus: t.currentStatus, currentStatus: "CANCELLED" }),
+      request(app).get(`/api/tickets/${t.id}`),
     ];
     for (const res of await Promise.all(calls)) {
       expect(res.status).toBe(401);

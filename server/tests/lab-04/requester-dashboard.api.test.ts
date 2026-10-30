@@ -153,6 +153,9 @@ describe("GET /api/dashboard/requester", () => {
     const resolved = res.body.recentlyResolved.map((t: { resolvedAt: string }) => Date.parse(t.resolvedAt));
     expect(resolved).toEqual([...resolved].sort((a, b) => b - a));
     expect(res.body.recentlyResolved[0].link).toBe(`/tickets/${res.body.recentlyResolved[0].id}`);
+    // BR-37: each listed Ticket shows its number, summary, status badge, and time, and opens its detail.
+    expect(Object.keys(res.body.recentlyUpdated[0]).sort()).toEqual(["currentStatus", "id", "link", "summary", "ticketNumber", "updatedAt"]);
+    expect(Object.keys(res.body.recentlyResolved[0]).sort()).toEqual(["currentStatus", "id", "link", "resolvedAt", "summary", "ticketNumber"]);
   });
 });
 
