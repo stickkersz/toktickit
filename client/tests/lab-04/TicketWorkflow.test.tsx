@@ -197,6 +197,18 @@ describe("Status History", () => {
     expect(within(panel).queryByRole("button")).not.toBeInTheDocument();
   });
 
+  // UI-23 / BR-42: a History that cannot be loaded says so and offers Retry
+  it("offers Retry when the History cannot be loaded, and shows it once it can", async () => {
+    await open(detail());
+    vi.mocked(api.getTicketHistory).mockRejectedValueOnce(new ApiError("down", 500)).mockResolvedValueOnce(history([{}]));
+    await userEvent.click(screen.getByRole("tab", { name: "History" }));
+    const panel = screen.getByRole("tabpanel");
+    expect(await within(panel).findByRole("alert")).toHaveTextContent("Unable to load the status history.");
+    await userEvent.click(within(panel).getByRole("button", { name: "Retry" }));
+    expect(await within(panel).findByText("Created as New")).toBeInTheDocument();
+    expect(within(panel).queryByRole("alert")).not.toBeInTheDocument();
+  });
+
   // UI-19 (History part) / AC-25: the Requester's read-only view
   it("shows the Requester the history after the conversation, with the Resolution Summary and no control", async () => {
     renderApp("/tickets/42", REQUESTER);
