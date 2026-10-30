@@ -27,6 +27,8 @@ import { ticketContentRouter } from "./routes/ticketContent.js";
 import { staffTicketsRouter } from "./routes/staffTickets.js";
 import { requireAuth } from "./middleware/requireAuth.js";
 import { requireRole } from "./middleware/requireRole.js";
+import { resolutionGate } from "./actionValidation.js";
+import { statusHistoryRouter } from "./routes/statusHistory.js";
 
 const upload = multer({
   storage: multer.diskStorage({
@@ -49,6 +51,7 @@ app.use(staffTicketsRouter); // Lab 3: /api/staff/tickets
 app.use(ticketContentRouter); // Lab 3: /api/tickets/:id/comments and /notes
 app.use(adminUsersRouter); // Lab 3: /api/admin/users
 app.use(actionsRouter); // Lab 4: /api/tickets/:id/actions and /api/actions/:id
+app.use(statusHistoryRouter); // Lab 4: /api/tickets/:id/history
 
 // ---------------------------------------------------------------------------
 // Issue 2 — API health check
@@ -189,7 +192,7 @@ app.post("/api/tickets", ...requesterOnly, async (req: Request, res: Response) =
       >`SELECT nextval('ticket_number_seq') AS nextval`;
       const ticketNumber = formatTicketNumber(new Date().getFullYear(), nextval);
 
-      return tx.ticket.create({
+      const created = await tx.ticket.create({
         data: {
           ticketNumber,
           requesterId,
@@ -203,6 +206,11 @@ app.post("/api/tickets", ...requesterOnly, async (req: Request, res: Response) =
           itPriority: priorityResult.value!,
         },
       });
+      // Lab 4 BR-24: the creation is the first Status History entry, written with the Ticket.
+      await tx.statusChange.create({
+        data: { ticketId: created.id, fromStatus: null, toStatus: "NEW", changedById: requesterId, changedAt: created.createdAt },
+      });
+      return created;
     });
 
     res.status(201).json({
@@ -472,6 +480,11 @@ app.get("/api/tickets/:id", ...anyRole, async (req: Request, res: Response) => {
 
     if (!staff) return res.status(200).json(base);
 
+    // Lab 4 BR-21: the counts the resolution gate is decided on, so the status control can explain a
+    // blocked Resolve before the move is tried. The move itself checks them again.
+    const counts = await getPrisma().actionTaken.groupBy({ by: ["status"], where: { ticketId: ticket.id }, _count: { _all: true } });
+    const countOf = (s: string) => counts.find((c) => c.status === s)?._count._all ?? 0;
+
     // Staff also get IT Priority, ownership, and the statuses the Ticket may move to, taken from
     // the one workflow table so the client carries no copy of it (BR-25, BR-57, BR-59).
     res.status(200).json({
@@ -483,6 +496,7 @@ app.get("/api/tickets/:id", ...anyRole, async (req: Request, res: Response) => {
       ownerEligible: isEligibleOwner(ticket.owner),
       requesterIsActive: ticket.requester.isActive,
       permittedNextStatuses: permittedNext(ticket.currentStatus),
+      resolutionGate: resolutionGate(countOf("PLANNED"), countOf("COMPLETED")),
     });
   } catch {
     res.status(500).json({ error: "INTERNAL_ERROR", message: "Unable to load the Ticket." });

@@ -1,15 +1,16 @@
 import type { TicketStatus } from "@prisma/client";
 
-// BR-25: the permitted status transitions, and no others. This is the single source of
-// truth: the API enforces it, and the API also reports the permitted next statuses to the
-// client, so the client never carries a second copy of the matrix.
+// Lab 3 BR-25, refined by Lab 4 BR-20: the permitted status transitions, and no others. This is the
+// single source of truth: the API enforces it, and the API also reports the permitted next statuses
+// to the client, so the client never carries a second copy of the matrix. Lab 4 adds Cancelled from
+// Waiting for Requester and from Reopened, so a Ticket nobody answers can still be closed off.
 export const TRANSITIONS: Record<TicketStatus, readonly TicketStatus[]> = {
   NEW: ["OPEN", "CANCELLED"],
   OPEN: ["IN_PROGRESS", "WAITING_FOR_REQUESTER", "CANCELLED"],
   IN_PROGRESS: ["WAITING_FOR_REQUESTER", "RESOLVED", "CANCELLED"],
-  WAITING_FOR_REQUESTER: ["IN_PROGRESS", "RESOLVED"],
+  WAITING_FOR_REQUESTER: ["IN_PROGRESS", "RESOLVED", "CANCELLED"],
   RESOLVED: ["CLOSED", "REOPENED"],
-  REOPENED: ["IN_PROGRESS", "WAITING_FOR_REQUESTER"],
+  REOPENED: ["IN_PROGRESS", "WAITING_FOR_REQUESTER", "CANCELLED"],
   CLOSED: [],
   CANCELLED: [],
 };

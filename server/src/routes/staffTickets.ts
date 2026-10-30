@@ -259,92 +259,122 @@ staffTicketsRouter.patch("/api/staff/tickets/:id/priority", ...staffOnly, async 
   }
 });
 
-// PATCH /api/staff/tickets/:id/status (endpoint 10, FR-14, BR-25 to BR-28, BR-58).
-// Checked in this order: the request itself (400), the Ticket (404), the transition
-// (409 INVALID_TRANSITION), then the owner (409 OWNER_REQUIRED).
+// PATCH /api/staff/tickets/:id/status (Lab 3 endpoint 10, changed by Lab 4 api-spec endpoint 7: FR-07 to
+// FR-09, BR-15, BR-20 to BR-24). Checked in this order: the request (400), the Ticket (404), the status the
+// user saw (409 STATUS_CHANGED), the transition (409 INVALID_TRANSITION), the owner (409 OWNER_REQUIRED), and
+// for Resolved the gate (409 ACTIONS_INCOMPLETE, then NO_COMPLETED_ACTION).
+//
+// Everything after the request checks runs in one transaction holding FOR UPDATE on the Ticket row: the
+// judgement, the move, its Status Change, and a cancel's cascade to Planned Actions. Action writes take the
+// same row (routes/actions.ts), so an Action cannot be added between the gate and the move (BR-21), and
+// the owner's row is share-locked so a deactivation cannot slip in either.
+const STATUS_LABEL: Record<TicketStatus, string> = {
+  NEW: "New",
+  OPEN: "Open",
+  IN_PROGRESS: "In Progress",
+  WAITING_FOR_REQUESTER: "Waiting for Requester",
+  RESOLVED: "Resolved",
+  CLOSED: "Closed",
+  REOPENED: "Reopened",
+  CANCELLED: "Cancelled",
+};
+
+type MoveOutcome =
+  | { kind: "moved" }
+  | { kind: "notFound" }
+  | { kind: "changed"; current: TicketStatus }
+  | { kind: "invalid"; current: TicketStatus }
+  | { kind: "ownerRequired" }
+  | { kind: "incomplete"; plannedActions: number }
+  | { kind: "noCompleted" };
+
 staffTicketsRouter.patch("/api/staff/tickets/:id/status", ...staffOnly, async (req: Request, res: Response) => {
   try {
     const ticketId = ticketIdFrom(req);
     const target: unknown = req.body?.currentStatus;
-    if (!isTicketStatus(target)) {
-      return sendError(res, 400, "VALIDATION_ERROR", "Unknown status.", { currentStatus: "Choose one of the eight Ticket statuses." });
-    }
+    const from: unknown = req.body?.fromStatus;
+    const fields: Record<string, string> = {};
+    if (!isTicketStatus(target)) fields.currentStatus = "Choose one of the eight Ticket statuses.";
+    // BR-23: the status the user saw, so a move is never applied against a status they did not see.
+    if (!isTicketStatus(from)) fields.fromStatus = "Send the status the Ticket had when you chose the move.";
     let summary: string | undefined;
     if (target === "RESOLVED") {
       const result = validateResolutionSummary(req.body?.resolutionSummary);
-      if (result.error) return sendError(res, 400, "VALIDATION_ERROR", result.error, { resolutionSummary: result.error });
-      summary = result.value;
+      if (result.error) fields.resolutionSummary = result.error;
+      else summary = result.value;
+    }
+    if (Object.keys(fields).length > 0) {
+      return sendError(res, 400, "VALIDATION_ERROR", Object.keys(fields).length === 1 ? Object.values(fields)[0] : "Some fields are not valid.", fields);
     }
     if (ticketId === null) return sendError(res, 404, "NOT_FOUND", "Ticket not found.");
+    const to = target as TicketStatus;
+    const seen = from as TicketStatus;
+    const userId = req.user!.id;
 
-    const prisma = getPrisma();
+    const outcome = await getPrisma().$transaction(async (tx): Promise<MoveOutcome> => {
+      const rows = await tx.$queryRaw<{ currentStatus: TicketStatus; ownerId: number | null }[]>(Prisma.sql`
+        SELECT "currentStatus", "ownerId" FROM "Ticket" WHERE "id" = ${ticketId} FOR UPDATE`);
+      if (rows.length === 0) return { kind: "notFound" };
+      const { currentStatus, ownerId } = rows[0];
+      if (currentStatus !== seen) return { kind: "changed", current: currentStatus };
+      if (!isTransitionPermitted(currentStatus, to)) return { kind: "invalid", current: currentStatus };
+      if (requiresOwner(to) && (ownerId === null || !(await isEligibleStaffLocked(tx, ownerId)))) return { kind: "ownerRequired" };
+      if (to === "RESOLVED") {
+        const counts = await tx.actionTaken.groupBy({ by: ["status"], where: { ticketId }, _count: { _all: true } });
+        const count = (s: string) => counts.find((c) => c.status === s)?._count._all ?? 0;
+        if (count("PLANNED") > 0) return { kind: "incomplete", plannedActions: count("PLANNED") };
+        if (count("COMPLETED") === 0) return { kind: "noCompleted" };
+      }
 
-    // Judges the move against ONE read of the Ticket and hands back the status it judged. That
-    // exact status is what the write is conditional on: judging one read and then guarding the
-    // write with a second, unjudged read would let a concurrent change be mistaken for the status
-    // that had been checked, and an unvalidated move, even one out of CLOSED or CANCELLED, would
-    // go through.
-    type Verdict = { ok: true; from: TicketStatus } | { ok: false; refusal: Refusal };
-    type Refusal = { status: 404 } | { status: 409; code: "INVALID_TRANSITION" | "OWNER_REQUIRED"; from: TicketStatus };
-    const judge = async (): Promise<Verdict> => {
-      const t = await prisma.ticket.findUnique({
-        where: { id: ticketId },
-        select: { currentStatus: true, owner: { select: { isActive: true, role: true } } },
+      await tx.ticket.update({ where: { id: ticketId }, data: { currentStatus: to, ...(summary !== undefined ? { resolutionSummary: summary } : {}) } });
+      await tx.statusChange.create({
+        data: { ticketId, fromStatus: currentStatus, toStatus: to, changedById: userId, resolutionSummary: to === "RESOLVED" ? summary! : null },
       });
-      if (!t) return { ok: false, refusal: { status: 404 } };
-      if (!isTransitionPermitted(t.currentStatus, target)) {
-        return { ok: false, refusal: { status: 409, code: "INVALID_TRANSITION", from: t.currentStatus } };
+      if (to === "CANCELLED") {
+        // BR-15: a Cancelled Ticket leaves no work hanging. Each Planned Action is cancelled with the Ticket
+        // and its version moved on, as any cancellation does (BR-13).
+        await tx.actionTaken.updateMany({
+          where: { ticketId, status: "PLANNED" },
+          data: { status: "CANCELLED", cancelReason: "Ticket cancelled", cancelledById: userId, cancelledAt: new Date(), version: { increment: 1 } },
+        });
       }
-      if (requiresOwner(target) && isEligibleOwner(t.owner) !== true) {
-        return { ok: false, refusal: { status: 409, code: "OWNER_REQUIRED", from: t.currentStatus } };
-      }
-      return { ok: true, from: t.currentStatus };
-    };
-    const respondRefusal = (r: Refusal) => {
-      if (r.status === 404) return sendError(res, 404, "NOT_FOUND", "Ticket not found.");
-      if (r.code === "INVALID_TRANSITION") {
-        const permitted = permittedNext(r.from);
+      return { kind: "moved" };
+    });
+
+    switch (outcome.kind) {
+      case "notFound":
+        return sendError(res, 404, "NOT_FOUND", "Ticket not found.");
+      case "changed":
+        return res.status(409).json({
+          error: "STATUS_CHANGED",
+          message: `This Ticket moved to ${STATUS_LABEL[outcome.current]} while you were viewing it. Check the current status and try again.`,
+          currentStatus: outcome.current,
+          permitted: permittedNext(outcome.current),
+        });
+      case "invalid": {
+        const permitted = permittedNext(outcome.current);
         return res.status(409).json({
           error: "INVALID_TRANSITION",
           message:
             permitted.length > 0
-              ? `A Ticket that is ${r.from} cannot move to ${target}. It can move to: ${permitted.join(", ")}.`
-              : `A Ticket that is ${r.from} cannot move to any other status.`,
-          currentStatus: r.from,
+              ? `A Ticket that is ${outcome.current} cannot move to ${to}. It can move to: ${permitted.join(", ")}.`
+              : `A Ticket that is ${outcome.current} cannot move to any other status.`,
+          currentStatus: outcome.current,
           permitted,
         });
       }
-      return sendError(res, 409, "OWNER_REQUIRED", `A Ticket needs an active IT Staff owner before it can move to ${target}. Claim it or assign an owner first.`);
-    };
-
-    const verdict = await judge();
-    if (!verdict.ok) return respondRefusal(verdict.refusal);
-
-    // Conditional on the Ticket still being in the status that was judged, and on the owner still
-    // being eligible when one is required. If it has moved on, nothing is written and the move is
-    // judged again from where the Ticket actually is: it is never applied on the strength of a
-    // check made against a status the Ticket no longer has.
-    const moved = await prisma.ticket.updateMany({
-      where: {
-        id: ticketId,
-        currentStatus: verdict.from,
-        ...(requiresOwner(target) ? { owner: { is: { isActive: true, role: { in: ["IT_STAFF", "ADMINISTRATOR"] } } } } : {}),
-      },
-      data: { currentStatus: target, ...(summary !== undefined ? { resolutionSummary: summary } : {}) },
-    });
-    if (moved.count === 0) {
-      const again = await judge();
-      if (!again.ok) return respondRefusal(again.refusal);
-      // Still permitted from its new status, but that is not the status it was judged against.
-      return res.status(409).json({
-        error: "INVALID_TRANSITION",
-        message: "The Ticket changed while you were editing it. Reload and try again.",
-        currentStatus: again.from,
-        permitted: permittedNext(again.from),
-      });
+      case "ownerRequired":
+        return sendError(res, 409, "OWNER_REQUIRED", `A Ticket needs an active IT Staff owner before it can move to ${to}. Claim it or assign an owner first.`);
+      case "incomplete":
+        return res.status(409).json({
+          error: "ACTIONS_INCOMPLETE",
+          message: `This ticket cannot be resolved yet: ${outcome.plannedActions} planned ${outcome.plannedActions === 1 ? "action is" : "actions are"} still open.`,
+          plannedActions: outcome.plannedActions,
+        });
+      case "noCompleted":
+        return res.status(409).json({ error: "NO_COMPLETED_ACTION", message: "Record and complete at least one action before resolving.", completedActions: 0 });
     }
-
-    const updated = await prisma.ticket.findUniqueOrThrow({ where: { id: ticketId }, include: staffTicketInclude });
+    const updated = await getPrisma().ticket.findUniqueOrThrow({ where: { id: ticketId }, include: staffTicketInclude });
     res.status(200).json(serializeStaffTicket(updated));
   } catch {
     sendError(res, 500, "INTERNAL_ERROR", "Unable to change the Ticket status.");

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   ACTION_LIMITS,
   canMoveAction,
+  resolutionGate,
   validateActionAt,
   validateActionFields,
   validateCancelReason,
@@ -100,5 +101,16 @@ describe("Action Status moves (BR-09)", () => {
     const all = ["PLANNED", "COMPLETED", "CANCELLED"] as const;
     const allowed = all.flatMap((from) => all.filter((to) => canMoveAction(from, to)).map((to) => `${from}>${to}`));
     expect(allowed.sort()).toEqual(["PLANNED>CANCELLED", "PLANNED>COMPLETED"]);
+  });
+});
+
+describe("Resolution gate (BR-21)", () => {
+  // UNIT-04 / BR-21
+  it("allows Resolved only with no Planned Action and at least one Completed Action", () => {
+    expect(resolutionGate(0, 0)).toEqual({ plannedActions: 0, completedActions: 0, canResolve: false });
+    expect(resolutionGate(0, 1)).toEqual({ plannedActions: 0, completedActions: 1, canResolve: true });
+    expect(resolutionGate(1, 1).canResolve).toBe(false);
+    expect(resolutionGate(2, 0).canResolve).toBe(false);
+    expect(resolutionGate(0, 5).canResolve).toBe(true);
   });
 });

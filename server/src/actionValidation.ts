@@ -116,3 +116,8 @@ export function validateActionFields(
   }
   return { data, fields };
 }
+
+// BR-21: a Ticket may be resolved only with no Planned Action and at least one Completed Action.
+export function resolutionGate(plannedActions: number, completedActions: number) {
+  return { plannedActions, completedActions, canResolve: plannedActions === 0 && completedActions > 0 };
+}

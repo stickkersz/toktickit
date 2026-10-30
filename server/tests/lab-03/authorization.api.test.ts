@@ -242,6 +242,7 @@ const OTHER_PROTECTED: Endpoint[] = [
   endpoint("get", "/api/tickets/:id/comments"),
   endpoint("post", "/api/tickets/:id/comments", { body: { body: "A comment nobody may write" } }),
   endpoint("get", "/api/tickets/:id/actions"),
+  endpoint("get", "/api/tickets/:id/history"),
 ];
 
 const PROTECTED = [...OTHER_PROTECTED, ...STAFF, ...ADMIN];

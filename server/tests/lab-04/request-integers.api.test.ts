@@ -71,7 +71,7 @@ describe("integers read from a request (BR-47, review on #83)", () => {
         ["notes", staff.get(`/api/tickets/${id}/notes`)],
         ["owner", staff.patch(`/api/staff/tickets/${id}/owner`).send({ ownerId: null })],
         ["priority", staff.patch(`/api/staff/tickets/${id}/priority`).send({ itPriority: "HIGH" })],
-        ["status", staff.patch(`/api/staff/tickets/${id}/status`).send({ currentStatus: "OPEN" })],
+        ["status", staff.patch(`/api/staff/tickets/${id}/status`).send({ fromStatus: "NEW", currentStatus: "OPEN" })],
         ["admin user", admin.patch(`/api/admin/users/${id}`).send({ isActive: false })],
         ["actions", staff.get(`/api/tickets/${id}/actions`)],
       ];
