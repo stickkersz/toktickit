@@ -1,4 +1,6 @@
 import { createHash } from "node:crypto";
+import { Prisma } from "@prisma/client";
+import type { Request } from "express";
 
 // BR-39, ADR 0003: a client sends one Idempotency-Key, a UUID of any version, per form submission.
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -27,4 +29,43 @@ export function requestHash(
   }
   const canonical = JSON.stringify({ path, fields, files: files?.map((f) => [f.originalname, f.size]) ?? null });
   return createHash("sha256").update(canonical).digest("hex");
+}
+
+// The key and fingerprint hash of a create request (BR-39), or the 400 message for a malformed key. The
+// key is stored lower-case, as on Action create, so case alone never makes two keys.
+export function readKey(req: Request, path: string, accepted: readonly string[]): { key: string | null; hash: string | null; error?: string } {
+  const raw = req.get("Idempotency-Key");
+  if (raw === undefined) return { key: null, hash: null };
+  if (!isIdempotencyKey(raw)) return { key: null, hash: null, error: IDEMPOTENCY_KEY_MESSAGE };
+  return { key: raw.toLowerCase(), hash: requestHash(path, req.body, accepted) };
+}
+
+export type Keyed<T, R> = { kind: "replay"; row: T } | { kind: "reused" } | { kind: "created"; value: R };
+
+const isUniqueViolation = (e: unknown) => e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002";
+
+// A create under BR-39 for Ticket, Public Comment and Internal Note (Action create keeps its own flow,
+// Issue 03). A row already stored under the key is a replay when its hash matches and a reuse when it does
+// not. Two sends of one key at the same moment both pass that check; the unique constraint lets one insert
+// in, and the other is then answered from the winner's row.
+export async function keyedCreate<T extends { requestHash: string | null }, R>(
+  key: string | null,
+  hash: string | null,
+  find: () => Promise<T | null>,
+  create: () => Promise<R>,
+): Promise<Keyed<T, R>> {
+  const settle = (row: T): Keyed<T, R> => (row.requestHash === hash ? { kind: "replay", row } : { kind: "reused" });
+  if (key) {
+    const prior = await find();
+    if (prior) return settle(prior);
+  }
+  try {
+    return { kind: "created", value: await create() };
+  } catch (e) {
+    if (key && isUniqueViolation(e)) {
+      const winner = await find();
+      if (winner) return settle(winner);
+    }
+    throw e;
+  }
 }

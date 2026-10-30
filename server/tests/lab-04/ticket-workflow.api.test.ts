@@ -1,4 +1,7 @@
 import { beforeAll, describe, expect, it } from "vitest";
+import { randomUUID } from "node:crypto";
+import request from "supertest";
+import { app } from "../../src/app.js";
 import type { ActionStatus, TicketStatus } from "@prisma/client";
 import { ALL_STATUSES, isTransitionPermitted } from "../../src/ticketStatus.js";
 import { createUser, signedIn, useIsolatedDatabase } from "../lab-03/helpers.js";
@@ -355,3 +358,61 @@ describe("GET /api/tickets/:id resolution gate", () => {
   });
 });
 
+describe("health and safe failures", () => {
+  // API-21 / AC-52, FR-20
+  it("answers the health check as in Lab 1", async () => {
+    const res = await request(app).get("/api/health");
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ status: "ok", service: "TokTickIT API" });
+  });
+
+  // API-22 / BR-42, FR-17: every Lab 4 endpoint, and the create endpoints Lab 4 changed, with the database
+  // failing after the session is checked. The error carries a detail that must never reach the client.
+  it("answers every Lab 4 endpoint with the generic 500 when the database fails, and writes nothing", async () => {
+    const t = await makeTicket();
+    const a = await addAction(t.id, "PLANNED");
+    const real = iso.db.client;
+    const detail = 'connection refused at /var/lib/postgres: SELECT * FROM "Ticket" token=abc123';
+    const fail = () => Promise.reject(new Error(detail));
+    const failing: object = new Proxy({}, { get: () => fail });
+    // Sessions and users still answer, so each request reaches its handler; everything else throws.
+    const broken = new Proxy(real, {
+      get: (target, prop) => (prop === "session" || prop === "user" ? Reflect.get(target, prop) : prop === "$transaction" || prop === "$queryRaw" || prop === "$executeRaw" ? fail : failing),
+    });
+    const counts = async () => [await real.actionTaken.count(), await real.statusChange.count(), await real.ticket.count(), await real.publicComment.count(), await real.internalNote.count()];
+    const before = await counts();
+
+    const key = () => randomUUID();
+    const restore = iso.override(broken);
+    try {
+      const calls: [string, Promise<request.Response>][] = [
+        ["staff dashboard", staff.get("/api/dashboard/staff")],
+        ["requester dashboard", requester.get("/api/dashboard/requester")],
+        ["actions list", staff.get(`/api/tickets/${t.id}/actions`)],
+        ["action create", staff.post(`/api/tickets/${t.id}/actions`).set("Idempotency-Key", key()).send({ actionAt: new Date(Date.now() - HOUR).toISOString(), description: "Swap the dock." })],
+        ["action edit", staff.patch(`/api/actions/${a.id}`).send({ version: a.version, description: "Swap the dock again." })],
+        ["action complete", staff.post(`/api/actions/${a.id}/complete`).send({ version: a.version, result: "The dock works now." })],
+        ["action cancel", staff.post(`/api/actions/${a.id}/cancel`).send({ version: a.version, reason: "Not needed any more." })],
+        ["status history", staff.get(`/api/tickets/${t.id}/history`)],
+        ["status move", staff.patch(`/api/staff/tickets/${t.id}/status`).send({ fromStatus: "IN_PROGRESS", currentStatus: "WAITING_FOR_REQUESTER" })],
+        // Ticket Detail is one role-aware endpoint (api-spec endpoint 8).
+        ["staff ticket detail", staff.get(`/api/tickets/${t.id}`)],
+        ["requester ticket detail", requester.get(`/api/tickets/${t.id}`)],
+        ["ticket create", requester.post("/api/tickets").set("Idempotency-Key", key()).send({ summary: "Projector is dead", description: "No picture on the projector in room 4.", requestedPriority: "LOW", categoryId: 1, relatedSystemId: 1 })],
+        ["comment create", requester.post(`/api/tickets/${t.id}/comments`).set("Idempotency-Key", key()).send({ body: "Any news on this one?" })],
+        ["note create", staff.post(`/api/tickets/${t.id}/notes`).set("Idempotency-Key", key()).send({ body: "Waiting on the vendor." })],
+      ];
+      for (const [name, call] of calls) {
+        const res = await call;
+        expect(res.status, name).toBe(500);
+        expect(Object.keys(res.body).sort(), name).toEqual(["error", "message"]);
+        expect(res.body.error, name).toBe("INTERNAL_ERROR");
+        // No stack trace, SQL, path, or token in what the client sees.
+        expect(res.text, name).not.toMatch(/postgres|SELECT|token|abc123|at \w+ \(|\.ts:/);
+      }
+    } finally {
+      restore();
+    }
+    expect(await counts()).toEqual(before);
+  });
+});
