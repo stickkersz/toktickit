@@ -55,10 +55,11 @@ describe("role based route protection", () => {
       expect(screen.queryByRole("link", { name: "My Tickets" })).not.toBeInTheDocument();
     }
     expectNoProtectedRequests();
-    // The way out is the user's own home screen, not the screen they were refused.
+    // The way out is the user's own home screen, not the screen they were refused. Lab 4 FR-14 made
+    // that the role's Dashboard.
     expect(screen.getByRole("link", { name: "Go to your home screen" })).toHaveAttribute(
       "href",
-      user.role === "ADMINISTRATOR" ? "/admin/users" : user.role === "IT_STAFF" ? "/staff/tickets" : "/tickets",
+      user.role === "REQUESTER" ? "/dashboard" : "/staff/dashboard",
     );
   });
 
@@ -90,16 +91,17 @@ describe("role based route protection", () => {
 
   it("sends an unknown URL to the signed-in user's own landing route, never to Requester screens", async () => {
     renderApp("/no/such/page", STAFF);
-    expect(await screen.findByRole("heading", { name: "Ticket Queue" })).toBeInTheDocument();
-    // The queue loads its own filter list, so only the Requester screens' requests are ruled out.
+    // Lab 4 FR-14: the landing route is the staff Dashboard.
+    expect(await screen.findByText("Your work and the queue at a glance")).toBeInTheDocument();
+    expect(api.getRequesterDashboard).not.toHaveBeenCalled();
     expect(api.getTickets).not.toHaveBeenCalled();
     expect(api.getTicketDetail).not.toHaveBeenCalled();
     expect(api.getRelatedSystems).not.toHaveBeenCalled();
 
     vi.restoreAllMocks();
     renderApp("/still/not/a/page", ADMIN);
-    // An Administrator lands on User Management.
-    expect(await screen.findByRole("heading", { name: "User Management" })).toBeInTheDocument();
+    // An Administrator lands on the staff Dashboard too (Lab 4 ui-spec section 3; Lab 3 sent them to User Management).
+    expect(await screen.findByText("Your work and the queue at a glance")).toBeInTheDocument();
   });
 });
 
@@ -134,7 +136,7 @@ describe("a stale Lab 2 Development Requester selection in browser storage", () 
 
     vi.restoreAllMocks();
     renderApp("/select-requester", STAFF);
-    expect(await screen.findByRole("heading", { name: "Ticket Queue" })).toBeInTheDocument();
+    expect(await screen.findByText("Your work and the queue at a glance")).toBeInTheDocument();
     expect(screen.queryByText("Select Development Requester")).not.toBeInTheDocument();
   });
 

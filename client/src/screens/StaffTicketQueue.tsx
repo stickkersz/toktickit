@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Category, getCategories, getStaffTickets, StaffTicketItem } from "../api.js";
-import { PriorityBadge, StatusBadge } from "../Badge.js";
+import { PriorityBadge, STATUS_OPTIONS, StatusBadge } from "../Badge.js";
+import { FilterChip, STATUS_GROUP_LABEL, parseStatusGroup } from "../dashboard.js";
 
 type ListState = "loading" | "ready" | "error";
 type SortableField = "ticketNumber" | "createdAt" | "itPriority" | "currentStatus";
@@ -21,17 +22,6 @@ const SORT_OPTIONS: [string, string][] = [
   ["itPriority", "IT Priority, lowest first"],
   ["currentStatus", "Status, workflow order"],
   ["-currentStatus", "Status, reverse order"],
-];
-
-const STATUS_OPTIONS: [string, string][] = [
-  ["NEW", "New"],
-  ["OPEN", "Open"],
-  ["IN_PROGRESS", "In Progress"],
-  ["WAITING_FOR_REQUESTER", "Waiting for Requester"],
-  ["RESOLVED", "Resolved"],
-  ["CLOSED", "Closed"],
-  ["REOPENED", "Reopened"],
-  ["CANCELLED", "Cancelled"],
 ];
 
 function formatDate(iso: string): string {
@@ -86,6 +76,8 @@ export default function StaffTicketQueue() {
 
   const search = params.get("search") ?? "";
   const status = params.get("status") ?? "";
+  // Lab 4 ui-spec section 6: a dashboard drill-down can narrow to active Tickets.
+  const statusGroup = parseStatusGroup(params.get("statusGroup"));
   const itPriority = params.get("itPriority") ?? "";
   const categoryId = params.get("category") ?? "";
   const owner = params.get("owner") ?? "";
@@ -115,6 +107,7 @@ export default function StaffTicketQueue() {
     getStaffTickets({
       search: search || undefined,
       status: status || undefined,
+      statusGroup,
       itPriority: itPriority || undefined,
       category: categoryId ? Number(categoryId) : undefined,
       owner: owner || undefined,
@@ -141,9 +134,9 @@ export default function StaffTicketQueue() {
   }
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(load, [search, status, itPriority, categoryId, owner, sort, page]);
+  useEffect(load, [search, status, statusGroup, itPriority, categoryId, owner, sort, page]);
 
-  const anyFilterActive = Boolean(search || status || itPriority || categoryId || owner);
+  const anyFilterActive = Boolean(search || status || statusGroup || itPriority || categoryId || owner);
 
   // Every change replaces the history entry: stepping Back should leave the queue, not walk
   // through each keystroke of a search.
@@ -285,7 +278,8 @@ export default function StaffTicketQueue() {
             </div>
           </div>
           {anyFilterActive && (
-            <div className="mb-3">
+            <div className="d-flex flex-wrap align-items-center gap-2 mb-3">
+              {statusGroup && <FilterChip label={STATUS_GROUP_LABEL[statusGroup]} onRemove={() => update({ statusGroup: "" })} />}
               <button type="button" className="btn btn-link p-0" onClick={clearFilters}>
                 Clear filters
               </button>

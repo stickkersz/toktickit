@@ -5,6 +5,7 @@ import { MemoryRouter } from "react-router-dom";
 import App from "../../src/App.js";
 import * as api from "../../src/api.js";
 import type { AuthUser, TicketListItem, TicketListParams, TicketListResult } from "../../src/api.js";
+import { stubDashboards } from "../lab-03/support.js";
 
 const ARI: AuthUser = { id: 1, name: "Ari Anan", email: "ari.anan@example.com", role: "REQUESTER", mustChangePassword: false };
 const BEN: AuthUser = { id: 2, name: "Ben Boon", email: "ben.boon@example.com", role: "REQUESTER", mustChangePassword: false };
@@ -235,6 +236,7 @@ describe("My Tickets", () => {
     vi.spyOn(api, "getCategories").mockResolvedValue([]);
     vi.spyOn(api, "logout").mockResolvedValue();
     vi.spyOn(api, "login").mockResolvedValue(BEN);
+    stubDashboards();
 
     let resolveBenFetch: (value: TicketListResult) => void = () => {};
     vi.spyOn(api, "getTickets")
@@ -257,8 +259,10 @@ describe("My Tickets", () => {
     await userEvent.type(screen.getByLabelText("Password *"), "Str0ng!Pass");
     await userEvent.click(screen.getByRole("button", { name: "Sign In" }));
 
-    // Landed on My Tickets for Ben; his fetch has not resolved yet, so Ari's rows
-    // must not still be showing (no stale flash).
+    // Ben lands on his Dashboard (Lab 4 FR-14) and opens My Tickets; his fetch has not resolved yet,
+    // so Ari's rows must not still be showing (no stale flash).
+    await screen.findByText("Your tickets at a glance");
+    await userEvent.click(screen.getByRole("link", { name: "My Tickets" }));
     await screen.findByRole("heading", { name: "My Tickets" });
     expect(screen.queryByText("Ari's ticket")).not.toBeInTheDocument();
 

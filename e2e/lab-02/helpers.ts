@@ -68,7 +68,10 @@ export async function login(page: Page, email: string, password = E2E_PASSWORD):
   await page.getByLabel("Email address *").fill(email);
   await page.getByLabel("Password *", { exact: true }).fill(password);
   await page.getByRole("button", { name: "Sign In" }).click();
-  await expect(page).toHaveURL(/\/tickets$/);
+  // Lab 4 FR-14: a Requester lands on the Dashboard; the Lab 2 specs start from My Tickets.
+  await expect(page).toHaveURL(/\/dashboard$/);
+  await page.goto("/tickets");
+  await expect(page.getByRole("heading", { name: "My Tickets" })).toBeVisible();
 }
 
 // Signs in as the seeded Requester at that position and returns their name.

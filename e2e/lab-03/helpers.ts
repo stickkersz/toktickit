@@ -16,7 +16,8 @@ export const INACTIVE_REQUESTER = { name: "Somsak Rattanakosin", email: "somsak.
 // What a user created by these specs is given as an initial password.
 export const INITIAL_PASSWORD = "Init!Pass8";
 
-export const LANDING = { REQUESTER: /\/tickets$/, IT_STAFF: /\/staff\/tickets$/, ADMINISTRATOR: /\/admin\/users$/ } as const;
+// Lab 4 FR-14: every role lands on its Dashboard (Lab 3 landed on My Tickets, the queue, and Users).
+export const LANDING = { REQUESTER: /\/dashboard$/, IT_STAFF: /\/staff\/dashboard$/, ADMINISTRATOR: /\/staff\/dashboard$/ } as const;
 
 const SHOTS = "artifacts/lab-03/screenshots";
 export const shot = (group: string, name: string) => `${SHOTS}/${group}/${name}.png`;
@@ -31,11 +32,13 @@ export async function fillLogin(page: Page, email: string, password: string): Pr
   await page.getByRole("button", { name: "Sign In" }).click();
 }
 
-// Signs a seeded account in through the Login screen and waits for its role's landing screen.
-export async function signIn(page: Page, email: string, landing: RegExp): Promise<void> {
+// Signs a seeded account in through the Login screen and waits for its role's landing screen. Since Lab 4
+// that is the Dashboard, so a spec that starts on another screen names it in `open`.
+export async function signIn(page: Page, email: string, landing: RegExp, open?: string): Promise<void> {
   await prepareAccount(email);
   await fillLogin(page, email, E2E_PASSWORD);
   await expect(page).toHaveURL(landing);
+  if (open) await page.goto(open);
 }
 
 export async function logout(page: Page): Promise<void> {

@@ -83,7 +83,7 @@ test.describe("Lab 3 screenshots (RESP-02)", () => {
   });
 
   test("staff queue", async ({ page }) => {
-    await signIn(page, STAFF.email, LANDING.IT_STAFF);
+    await signIn(page, STAFF.email, LANDING.IT_STAFF, "/staff/tickets");
     await expect(page.getByRole("table")).toBeVisible();
     await capture(page, "staff-queue", "loaded");
     await capture(page, "staff-queue", "loaded", "tablet");
@@ -161,7 +161,7 @@ test.describe("Lab 3 screenshots (RESP-02)", () => {
   });
 
   test("user management", async ({ page }) => {
-    await signIn(page, ADMIN.email, LANDING.ADMINISTRATOR);
+    await signIn(page, ADMIN.email, LANDING.ADMINISTRATOR, "/admin/users");
     await expect(page.getByRole("table")).toBeVisible();
     await capture(page, "user-management", "list");
     await capture(page, "user-management", "list", "tablet");
@@ -230,7 +230,7 @@ test.describe("Lab 3 responsive layout (RESP-01)", () => {
     await fits("Forbidden");
     await page.context().clearCookies();
 
-    await signIn(page, STAFF.email, LANDING.IT_STAFF);
+    await signIn(page, STAFF.email, LANDING.IT_STAFF, "/staff/tickets");
     await fits("Ticket Queue");
     for (const [viewport, width] of [["desktop", 1280], ["992", 992]] as const) {
       await page.setViewportSize({ width, height: 900 });
@@ -251,7 +251,7 @@ test.describe("Lab 3 responsive layout (RESP-01)", () => {
     }
     await page.context().clearCookies();
 
-    await signIn(page, ADMIN.email, LANDING.ADMINISTRATOR);
+    await signIn(page, ADMIN.email, LANDING.ADMINISTRATOR, "/admin/users");
     await fits("User Management list");
     await page.setViewportSize(VIEWPORTS.mobile);
     await page.getByRole("button", { name: "Create User" }).click();
@@ -284,7 +284,7 @@ test.describe("Keyboard focus in the green header (A11Y-04)", () => {
   });
 
   test("queue rows and sortable headers show the Zen Green ring, never the browser's blue", async ({ page }) => {
-    await signIn(page, STAFF.email, LANDING.IT_STAFF);
+    await signIn(page, STAFF.email, LANDING.IT_STAFF, "/staff/tickets");
     const table = page.getByRole("table");
     for (const control of [table.getByRole("columnheader", { name: /Ticket No\./ }), table.getByRole("button").first()]) {
       await page.keyboard.press("Shift");

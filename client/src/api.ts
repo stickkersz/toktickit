@@ -135,6 +135,10 @@ export interface TicketListParams {
   category?: number;
   requestedPriority?: TicketPriority;
   currentStatus?: string;
+  // Lab 4 api-spec section 11: the dashboard drill-downs.
+  statusGroup?: "active" | "resolved";
+  updatedWithinDays?: number;
+  resolvedWithinDays?: number;
   sort?: string;
   page?: number;
   pageSize?: number;
@@ -246,6 +250,9 @@ export async function getTickets(params: TicketListParams): Promise<TicketListRe
   if (params.category) query.set("category", String(params.category));
   if (params.requestedPriority) query.set("requestedPriority", params.requestedPriority);
   if (params.currentStatus) query.set("currentStatus", params.currentStatus);
+  if (params.statusGroup) query.set("statusGroup", params.statusGroup);
+  if (params.updatedWithinDays) query.set("updatedWithinDays", String(params.updatedWithinDays));
+  if (params.resolvedWithinDays) query.set("resolvedWithinDays", String(params.resolvedWithinDays));
   if (params.sort) query.set("sort", params.sort);
   if (params.page) query.set("page", String(params.page));
   if (params.pageSize) query.set("pageSize", String(params.pageSize));
@@ -442,6 +449,8 @@ export interface StaffTicketItem {
 export interface StaffQueueParams {
   search?: string;
   status?: string;
+  // Lab 4 api-spec section 11.
+  statusGroup?: "active" | "resolved";
   itPriority?: string;
   category?: number;
   // A User id, or "unassigned", "me" or "needs-owner".
@@ -460,6 +469,7 @@ export async function getStaffTickets(params: StaffQueueParams): Promise<StaffQu
   const query = new URLSearchParams();
   if (params.search) query.set("search", params.search);
   if (params.status) query.set("status", params.status);
+  if (params.statusGroup) query.set("statusGroup", params.statusGroup);
   if (params.itPriority) query.set("itPriority", params.itPriority);
   if (params.category) query.set("category", String(params.category));
   if (params.owner) query.set("owner", params.owner);
@@ -715,3 +725,53 @@ export async function getTicketHistory(ticketId: number): Promise<StatusHistory>
   if (!res.ok) throw errorFromResponse(res.status, body, "Unable to load the status history.");
   return body as StatusHistory;
 }
+
+// Lab 4 dashboards (api-spec.md endpoints 9 and 10). Every figure is counted by the server (BR-28).
+export interface DashboardFigure {
+  count: number;
+  link: string;
+}
+export interface DashboardTicket {
+  id: number;
+  ticketNumber: string;
+  summary: string;
+  currentStatus: string;
+  updatedAt: string;
+  link: string;
+}
+export interface StaffDashboard {
+  generatedAt: string;
+  timeZone: string;
+  metrics: {
+    unassigned: DashboardFigure;
+    myTickets: DashboardFigure;
+    urgent: DashboardFigure;
+    byStatus: (DashboardFigure & { status: string })[];
+  };
+  myPlannedActions: {
+    count: number;
+    items: { actionId: number; ticketId: number; ticketNumber: string; description: string; actionAt: string; link: string }[];
+  };
+  recentlyUpdated: DashboardTicket[];
+  accounts?: { active: Record<UserRole, number>; inactive: number; link: string };
+}
+export interface RequesterDashboard {
+  generatedAt: string;
+  timeZone: string;
+  metrics: {
+    open: DashboardFigure;
+    waitingForYou: DashboardFigure;
+    recentlyUpdated: DashboardFigure & { windowDays: number };
+    recentlyResolved: DashboardFigure & { windowDays: number };
+  };
+  recentlyUpdated: DashboardTicket[];
+  recentlyResolved: (Omit<DashboardTicket, "updatedAt"> & { resolvedAt: string })[];
+}
+
+async function getDashboard<T>(path: string): Promise<T> {
+  const { res, body } = await authRequest(path);
+  if (!res.ok) throw errorFromResponse(res.status, body, "The dashboard could not be loaded.");
+  return body as T;
+}
+export const getStaffDashboard = () => getDashboard<StaffDashboard>("/api/dashboard/staff");
+export const getRequesterDashboard = () => getDashboard<RequesterDashboard>("/api/dashboard/requester");
