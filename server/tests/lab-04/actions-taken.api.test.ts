@@ -34,6 +34,7 @@ const ago = (ms: number) => new Date(Date.now() - ms).toISOString();
 const valid = () => ({ actionAt: ago(HOUR), description: "Replace the LAN cable at desk 4B and retest the link." });
 const actionRows = (ticketId: number) => iso.db.client.actionTaken.findMany({ where: { ticketId }, orderBy: { id: "asc" } });
 const stored = (id: number) => iso.db.client.actionTaken.findUniqueOrThrow({ where: { id } });
+const lastActivity = async (ticketId: number) => (await iso.db.client.ticket.findUniqueOrThrow({ where: { id: ticketId } })).updatedAt.getTime();
 
 async function create(ticketId: number, body: Record<string, unknown> = {}, by: Caller = staff) {
   return by.post(`/api/tickets/${ticketId}/actions`).send({ ...valid(), ...body });
@@ -127,6 +128,12 @@ describe("POST /api/tickets/:id/actions", () => {
     });
     const row = await stored(res.body.id);
     expect(row).toMatchObject({ ticketId: t.id, recordedById: staffId, responsibleStaffId: staff2Id });
+    // BR-02: Ticket Owner, Recorded By, and Responsible Staff are independent of each other.
+    const owned = await iso.db.client.ticket.update({ where: { id: (await makeTicket()).id }, data: { ownerId: staff2Id } });
+    const byOther = await create(owned.id, { responsibleStaffId: adminId });
+    expect(byOther.status).toBe(201);
+    expect(byOther.body).toMatchObject({ recordedBy: { id: staffId }, responsibleStaff: { id: adminId } });
+    expect((await iso.db.client.ticket.findUniqueOrThrow({ where: { id: owned.id } })).ownerId).toBe(staff2Id);
     // Responsible Staff defaults to the caller; an Administrator may record too.
     expect((await create(t.id, {}, admin)).body.responsibleStaff.id).toBe(adminId);
     // Recording an Action is Ticket activity (BR-19).
@@ -266,6 +273,7 @@ describe("PATCH /api/actions/:id", () => {
     const t = await makeTicket();
     const a = await planned(t.id);
     const before = await stored(a.id);
+    const activity = await lastActivity(t.id);
     const res = await staff2.patch(`/api/actions/${a.id}`).send({
       version: 1,
       description: "Replace the LAN cable and the wall port.",
@@ -295,6 +303,8 @@ describe("PATCH /api/actions/:id", () => {
     const after = await stored(a.id);
     expect(after).toMatchObject({ ticketId: t.id, recordedById: staffId, status: "PLANNED", result: null });
     expect(after.createdAt).toEqual(before.createdAt);
+    // Editing an Action is Ticket activity (BR-19).
+    expect(await lastActivity(t.id)).toBeGreaterThan(activity);
 
     const nothing = await staff.patch(`/api/actions/${a.id}`).send({ version: 2, status: "CANCELLED" });
     expect(nothing.status).toBe(400);
@@ -331,8 +341,10 @@ describe("POST /api/actions/:id/complete and /cancel", () => {
   it("completes with the caller as Performed By and the server time, after which the Action is final", async () => {
     const t = await makeTicket();
     const a = await planned(t.id, { responsibleStaffId: staff2Id });
+    const activity = await lastActivity(t.id);
     const res = await staff.post(`/api/actions/${a.id}/complete`).send({ version: 1, result: "  Cable replaced; link stable.  " });
     expect(res.status).toBe(200);
+    expect(await lastActivity(t.id)).toBeGreaterThan(activity);
     expect(res.body).toMatchObject({ status: "COMPLETED", result: "Cable replaced; link stable.", performedBy: { id: staffId }, version: 2 });
     expect(Math.abs(new Date(res.body.completedAt).getTime() - Date.now())).toBeLessThan(60_000);
 
@@ -346,8 +358,10 @@ describe("POST /api/actions/:id/complete and /cancel", () => {
   it("cancels with a reason, Cancelled By and Cancelled at, and refuses a second cancel or a complete", async () => {
     const t = await makeTicket();
     const a = await planned(t.id);
+    const activity = await lastActivity(t.id);
     const res = await staff2.post(`/api/actions/${a.id}/cancel`).send({ version: 1, reason: "  Duplicate of the cable action.  " });
     expect(res.status).toBe(200);
+    expect(await lastActivity(t.id)).toBeGreaterThan(activity);
     expect(res.body).toMatchObject({ status: "CANCELLED", cancelReason: "Duplicate of the cable action.", cancelledBy: { id: staff2Id }, version: 2, performedBy: null });
     expect(res.body.cancelledAt).not.toBeNull();
 
@@ -394,6 +408,7 @@ describe("POST /api/actions/:id/complete and /cancel", () => {
       const t = await makeTicket();
       const a = await planned(t.id);
       await iso.db.client.ticket.update({ where: { id: t.id }, data: { currentStatus: status } });
+      const finished = await lastActivity(t.id);
       const attempts = [
         await create(t.id),
         await staff.patch(`/api/actions/${a.id}`).send({ version: 1, description: "Edit on a finished Ticket." }),
@@ -405,6 +420,7 @@ describe("POST /api/actions/:id/complete and /cancel", () => {
         expect(res.body.error, status).toBe("TICKET_NOT_WORKABLE");
       }
       expect(await actionRows(t.id)).toEqual([expect.objectContaining({ id: a.id, status: "PLANNED", version: 1 })]);
+      expect(await lastActivity(t.id), status).toBe(finished);
     }
     // Every workable status accepts an Action.
     for (const status of ["NEW", "OPEN", "IN_PROGRESS", "WAITING_FOR_REQUESTER", "REOPENED"] as const) {
