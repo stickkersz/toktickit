@@ -104,6 +104,22 @@ describe("the Public Comment and Internal Note composer", () => {
     expect(send.mock.calls[1][2]).not.toBe(send.mock.calls[0][2]);
   });
 
+  // UI-25, UI-27 / AC-42, BR-39 (the Internal Note composer, same hook, its own noun)
+  it("keeps an Internal Note's text and key after a failure, and starts a new key on IDEMPOTENCY_KEY_REUSED", async () => {
+    const reused = new ApiError("This request was already submitted with different content. Refresh and try again.", 409, "IDEMPOTENCY_KEY_REUSED");
+    const send = vi.fn().mockRejectedValueOnce(down()).mockRejectedValueOnce(reused).mockResolvedValueOnce({ ...item, authorRole: "IT_STAFF" });
+    const { result } = renderHook(() => useContentThread(42, async () => [], send, "note"));
+    act(() => result.current.setDraft("Switch port looks fine."));
+    await act(() => result.current.post());
+    expect(result.current.problem).toBe("Unable to add the note. Nothing was added.");
+    await act(() => result.current.post());
+    expect(send.mock.calls[1][2]).toBe(send.mock.calls[0][2]);
+    expect(result.current.problem).toBe(reused.message);
+    expect(result.current.draft).toBe("Switch port looks fine.");
+    await act(() => result.current.post());
+    expect(send.mock.calls[2][2]).not.toBe(send.mock.calls[1][2]);
+  });
+
   // A replay answers with the record already created; it is never listed twice.
   it("lists a replayed comment once", async () => {
     const send = vi.fn().mockResolvedValue(item);
