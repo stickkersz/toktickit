@@ -33,7 +33,7 @@ cd server
 cp .env.example .env      # edit DATABASE_URL / PORT if needed
 npm install
 npx prisma migrate deploy # applies every migration, in order, without touching existing data
-npm run prisma:seed       # then, as a SEPARATE second step: Categories, Related Systems, and the Lab 3 user accounts
+npm run prisma:seed       # then, as a SEPARATE second step: Categories, Related Systems, user accounts, Tickets, Actions Taken, Status History
 npm run dev                # http://localhost:3000 (PORT from .env)
 ```
 
@@ -43,17 +43,30 @@ The API accepts credentialed cross-origin requests (the session cookie) only fro
 
 Use `prisma migrate deploy`, not `prisma migrate dev`, on a database that already holds data: `migrate dev` would regenerate the rename as a destructive drop and create.
 
+**Lab 4 migration and recovery.** The Lab 4 migration (`20261030090000_lab4_actions_status_history`) is additive only: it adds the Actions Taken and Status History tables, nullable `idempotencyKey` and `requestHash` columns, and dashboard indexes, and gives every existing Ticket one Status History entry for its creation. It changes no existing column and deletes no row. Before applying it to a database that holds data you care about, take a backup:
+
+```bash
+docker exec toktickit-pg pg_dump -U toktickit -d toktickit > backup-before-lab4.sql
+```
+
+To undo it, either restore that backup into an empty database, or run the tested down script, which removes only the Lab 4 objects (Actions Taken and Status History recorded since are lost) and then tells Prisma the migration is no longer applied:
+
+```bash
+npx prisma db execute --file prisma/rollback/lab-04-down.sql
+npx prisma migrate resolve --rolled-back 20261030090000_lab4_actions_status_history
+```
+
 ### Development accounts (local only)
 
 These accounts exist only in a local development database and are created by the seed. The shared initial password is a **local development credential, not a real secret**; every account must replace it at first sign in.
 
 | Role | Accounts | Initial password |
 |---|---|---|
-| Requester | `kanokwan.srisuwan@toktickit.test`, `thanapon.wattana@toktickit.test`, `nutchanon.boonmee@toktickit.test`, `ploypailin.chaisiri@toktickit.test` (active), `somsak.rattanakosin@toktickit.test` (inactive) | `ChangeMe!23` |
-| IT Staff | `pimchanok.somboon@toktickit.test`, `wichai.charoen@toktickit.test`, `anucha.prasert@toktickit.test` (active), `sunisa.kaewmanee@toktickit.test` (inactive) | `ChangeMe!23` |
+| Requester | `kanokwan.srisuwan@toktickit.test`, `thanapon.wattana@toktickit.test`, `nutchanon.boonmee@toktickit.test`, `ploypailin.chaisiri@toktickit.test`, `malee.thongdee@toktickit.test` (active; Malee has no Tickets), `somsak.rattanakosin@toktickit.test` (inactive) | `ChangeMe!23` |
+| IT Staff | `pimchanok.somboon@toktickit.test`, `wichai.charoen@toktickit.test`, `anucha.prasert@toktickit.test`, `kittipong.saelim@toktickit.test` (active; Kittipong owns no Ticket and no Action), `sunisa.kaewmanee@toktickit.test` (inactive) | `ChangeMe!23` |
 | Administrator | `aekkarat.wongsa@toktickit.test` | `ChangeMe!23` |
 
-Sign in at `http://localhost:5173/login`. An account that still holds the initial password is taken straight to Change Password and can reach nothing else until it has chosen a new one. The seed also creates 14 example Tickets (numbers `TKT-2026-900001` to `TKT-2026-900014`) spread over every status, priority and Requester, with some unassigned and two owned by the inactive IT Staff account, so the IT Staff Ticket Queue has something to show and its "Needs new owner" markers have real rows. Twelve of them carry example Public Comments and Internal Notes (15 and 9, containing nothing sensitive). Re-running the seed never changes a Ticket that already exists and never duplicates or overwrites a comment or note. IT Staff and Administrators land on the Ticket Queue; try the Owner filter's "Needs an owner" option, then open a Ticket to claim it, change its IT Priority and status, and read or download its attachments. As the Administrator, the Users screen lists, searches and filters accounts and creates, edits, deactivates and issues initial passwords for them; nobody is ever deleted, and you cannot deactivate yourself or the last active Administrator. On the Ticket Detail, Public Comments, Internal Notes and Attachments are tabs with counts: a Public Comment is visible to the Requester, an Internal Note never is (a Requester gets 403 on the notes endpoint even for their own Ticket), and both are append only. Resolving asks for a Resolution Summary, which the Requester can read; the Requester can answer "Problem appears resolved", which staff see as a banner and which never changes the status by itself.
+Sign in at `http://localhost:5173/login`. An account that still holds the initial password is taken straight to Change Password and can reach nothing else until it has chosen a new one. The seed also creates 14 example Tickets (numbers `TKT-2026-900001` to `TKT-2026-900014`) spread over every status, priority and Requester, with some unassigned and two owned by the inactive IT Staff account, so the IT Staff Ticket Queue has something to show and its "Needs new owner" markers have real rows. Twelve of them carry example Public Comments and Internal Notes (15 and 9, containing nothing sensitive). Nine of the Tickets carry 13 example Actions Taken (4 Planned, 7 Completed, 2 Cancelled), so there are Tickets with zero, one and several Actions, and every seeded Ticket has a Status History that leads from New to its current status. Malee and Kittipong exist so that a dashboard with only zero figures can be shown. Re-running the seed never changes a Ticket that already exists, never duplicates or overwrites a comment, note, Action or Status History entry, and adds nothing to a seeded Ticket that has since been moved or worked on through the application. IT Staff and Administrators land on the Ticket Queue; try the Owner filter's "Needs an owner" option, then open a Ticket to claim it, change its IT Priority and status, and read or download its attachments. As the Administrator, the Users screen lists, searches and filters accounts and creates, edits, deactivates and issues initial passwords for them; nobody is ever deleted, and you cannot deactivate yourself or the last active Administrator. On the Ticket Detail, Public Comments, Internal Notes and Attachments are tabs with counts: a Public Comment is visible to the Requester, an Internal Note never is (a Requester gets 403 on the notes endpoint even for their own Ticket), and both are append only. Resolving asks for a Resolution Summary, which the Requester can read; the Requester can answer "Problem appears resolved", which staff see as a banner and which never changes the status by itself.
 
 The Lab 2 Development Requester selector no longer exists: you are always the account you signed in as. Each role sees only its own navigation, and a screen its role may not use shows an "Access denied" state even by direct URL. Once an account has chosen its own password the seed never resets it, so to sign in with `ChangeMe!23` again use an account you have not touched yet.
 

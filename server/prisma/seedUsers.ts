@@ -14,7 +14,7 @@ export interface SeedUser {
 }
 
 // BR-50: 4 active and 1 inactive Requester, 3 active and 1 inactive IT Staff,
-// 1 active Administrator. The five Requesters stay first so that on a fresh
+// 1 active Administrator, plus the two Lab 4 zero-dashboard users below. The five Requesters stay first so that on a fresh
 // database they keep ids 1 to 5, which the Lab 2 tests rely on.
 export const SEED_USERS: SeedUser[] = [
   { name: "Kanokwan Srisuwan", email: "kanokwan.srisuwan@toktickit.test", role: "REQUESTER", isActive: true },
@@ -27,7 +27,15 @@ export const SEED_USERS: SeedUser[] = [
   { name: "Anucha Prasert", email: "anucha.prasert@toktickit.test", role: "IT_STAFF", isActive: true },
   { name: "Sunisa Kaewmanee", email: "sunisa.kaewmanee@toktickit.test", role: "IT_STAFF", isActive: false },
   { name: "Aekkarat Wongsa", email: "aekkarat.wongsa@toktickit.test", role: "ADMINISTRATOR", isActive: true },
+  // Lab 4 BR-46: one active Requester with no Tickets and one active IT Staff member who owns no
+  // Ticket and is responsible for no Action, so every figure of their own dashboard is zero.
+  // Added last, so every earlier fixture keeps its id.
+  { name: "Malee Thongdee", email: "malee.thongdee@toktickit.test", role: "REQUESTER", isActive: true },
+  { name: "Kittipong Saelim", email: "kittipong.saelim@toktickit.test", role: "IT_STAFF", isActive: true },
 ];
+
+export const ZERO_REQUESTER_EMAIL = "malee.thongdee@toktickit.test";
+export const ZERO_STAFF_EMAIL = "kittipong.saelim@toktickit.test";
 
 // BR-52: idempotent, upserting on email. Identity fields of the fixture rows are
 // re-asserted on every run. A credential is issued only to a new row or to a row
