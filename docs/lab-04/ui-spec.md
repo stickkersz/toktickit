@@ -108,7 +108,7 @@ Selecting an Action expands it into a detail panel:
 
 ### Complete and Cancel dialogs
 
-Each is a modal dialog with `role="dialog"`, `aria-modal="true"`, a heading that names the Action, focus moved to its first field, focus kept inside while open, Escape and the secondary button closing it, and focus returned to the button that opened it.
+Each is a modal dialog with `role="dialog"`, `aria-modal="true"`, a heading that names the Action, focus moved to its first field, focus kept inside while open, Escape and the secondary button closing it, and focus returned to the button that opened it. After a successful Complete or Cancel, or a refusal that makes the Action final, that button no longer exists, so focus goes to the Action's row instead; it never falls to the page. The same holds for the create and edit forms: whenever the control that was used disappears, focus goes to the Action's row, back into the form, or to the explanation shown.
 
 - **Complete Action**: `Result *` (5 to 2000, counter), `Action Date/Time *` pre-filled with the stored value, or with now when the stored value is in the future, and always sent as `actionAt` with the loaded `version` so a Planned Action dated ahead completes without a 400 (BR-05), and buttons "Mark as Completed" and "Keep Planned". Helper text: "Once completed, this action cannot be changed."
 - **Cancel Action**: `Reason *` (5 to 500), sent with the loaded `version`, and buttons "Cancel Action" and "Keep Action".

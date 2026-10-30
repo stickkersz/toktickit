@@ -468,6 +468,14 @@ function ActionForm({
   const [submitted, setSubmitted] = useState(false);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const firstRef = useRef<HTMLInputElement>(null);
+  const cancelRef = useRef<HTMLButtonElement>(null);
+  const submitRef = useRef<HTMLButtonElement>(null);
+  // A button that was pressed inside a callout or confirmation is gone once that closes; focus then goes
+  // back into the form instead of falling to the page (review on #84).
+  useEffect(() => {
+    if (busy) return;
+    if (document.activeElement === document.body || document.activeElement === null) submitRef.current?.focus();
+  }, [problem, busy]);
   // Focus moves in when the form opens, not when a layout change remounts it mid-edit.
   const reopened = useRef(draft.current !== null);
   useEffect(() => {
@@ -635,7 +643,14 @@ function ActionForm({
         <div className="border rounded p-2 mt-2 d-flex justify-content-between align-items-center gap-2 flex-wrap" role="group" aria-label="Discard what you typed">
           <span>Discard the action you started? What you typed will be lost.</span>
           <span className="d-flex gap-2">
-            <button type="button" className="btn btn-sm btn-outline-secondary zg-touch-target" onClick={() => setConfirmDiscard(false)}>
+            <button
+              type="button"
+              className="btn btn-sm btn-outline-secondary zg-touch-target"
+              onClick={() => {
+                setConfirmDiscard(false);
+                cancelRef.current?.focus();
+              }}
+            >
               Keep editing
             </button>
             <button type="button" className="btn btn-sm zg-btn-primary zg-touch-target" onClick={() => onCancel()}>
@@ -646,6 +661,7 @@ function ActionForm({
       )}
       <div className="d-flex gap-2 justify-content-end mt-2 flex-wrap">
         <button
+          ref={cancelRef}
           type="button"
           className="btn btn-outline-secondary zg-touch-target"
           disabled={busy}
@@ -655,7 +671,7 @@ function ActionForm({
         >
           {mode === "create" ? "Cancel" : "Discard"}
         </button>
-        <button type="submit" className="btn zg-btn-primary zg-touch-target" disabled={busy || (mode === "edit" && !dirty) || !!problem?.stale}>
+        <button ref={submitRef} type="submit" className="btn zg-btn-primary zg-touch-target" disabled={busy || (mode === "edit" && !dirty) || !!problem?.stale}>
           {busy ? "Saving..." : mode === "create" ? "Save Action" : "Save Changes"}
         </button>
       </div>
@@ -834,7 +850,8 @@ export function StaffActionsTaken({
   const keyRef = useRef(newKey());
   const rowRefs = useRef<Record<string, HTMLElement | null>>({});
   const addRef = useRef<HTMLButtonElement>(null);
-  const focusAfter = useRef<number | "add" | null>(null);
+  const focusAfter = useRef<number | "add" | "notice" | null>(null);
+  const noticeRef = useRef<HTMLParagraphElement>(null);
   // The open form's typed values, kept across a remount (see ActionForm). Cleared whenever a form opens or closes.
   const draft = useRef<FormValues | null>(null);
 
@@ -850,6 +867,7 @@ export function StaffActionsTaken({
     if (target === null) return;
     focusAfter.current = null;
     if (target === "add") addRef.current?.focus();
+    else if (target === "notice") noticeRef.current?.focus();
     else (rowRefs.current[`row-${target}`] ?? rowRefs.current[`card-${target}`])?.focus();
   });
 
@@ -863,12 +881,16 @@ export function StaffActionsTaken({
       return { stale: e.action };
     }
     if (e instanceof ApiError && e.code === "ACTION_FINAL") {
+      // The form or dialog closes and its buttons go with it; the Action's row stays (review on #84).
+      const id = dialog?.id ?? editingId;
+      if (id !== null) focusAfter.current = id;
       setEditingId(null);
       setDialog(null);
       getTicketActions(ticketId).then(
         (list) => {
           const reloaded = list.find((a) => a.id === (openId ?? dialog?.id));
           actions.reload();
+          if (id !== null) focusAfter.current = id;
           setNotice({ kind: "conflict", text: reloaded ? finalNotice(reloaded) : "This action is already completed or cancelled." });
         },
         () => {
@@ -879,6 +901,10 @@ export function StaffActionsTaken({
       return null;
     }
     if (e instanceof ApiError && e.code === "TICKET_NOT_WORKABLE") {
+      // Add Action, Edit, Complete, and Cancel all disappear with the workable status: focus goes to the
+      // Action that was being changed, or to the explanation when a new one was being added (review on #84).
+      const id = dialog?.id ?? editingId;
+      focusAfter.current = id ?? "notice";
       setCreating(false);
       setEditingId(null);
       setDialog(null);
@@ -958,6 +984,9 @@ export function StaffActionsTaken({
         const updated = kind === "complete" ? await completeAction(action.id, action.version, text, actionAt!) : await cancelAction(action.id, action.version, text);
         actions.replace(updated);
         setDialog(null);
+        // The button that opened the dialog is gone now the Action is final, so focus goes to its row
+        // (AC-49), as after create and save; the dialog's own return to its opener would land on the body.
+        focusAfter.current = updated.id;
         setNotice({ kind: "success", text: kind === "complete" ? "Action completed." : "Action cancelled." });
       } catch (e) {
         const p = refused(e, kind === "complete" ? "Unable to complete the action." : "Unable to cancel the action.");
@@ -1093,7 +1122,7 @@ export function StaffActionsTaken({
       {/* "Action added." and the other confirmations are announced politely (ui-spec.md section 13); a
           conflict is an alert. */}
       {notice && (
-        <p role={notice.kind === "success" ? "status" : "alert"} className={`small rounded p-2 mb-2 ${notice.kind === "success" ? "zg-banner-pale" : "zg-alert-warning"}`}>
+        <p ref={noticeRef} tabIndex={-1} role={notice.kind === "success" ? "status" : "alert"} className={`small rounded p-2 mb-2 ${notice.kind === "success" ? "zg-banner-pale" : "zg-alert-warning"}`}>
           {notice.text}
         </p>
       )}

@@ -275,6 +275,8 @@ describe("Add Action", () => {
     expect(screen.getByText("Discard the action you started? What you typed will be lost.")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Keep editing" }));
     expect(screen.getByLabelText(/Action Description/)).toHaveValue("Half typed");
+    // The confirmation and its button are gone, so focus goes back to the form's Cancel (review on #84 sweep).
+    await waitFor(() => expect(screen.getByRole("button", { name: "Cancel" })).toHaveFocus());
     await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
     await userEvent.click(screen.getByRole("button", { name: "Discard" }));
     expect(screen.queryByLabelText(/Action Description/)).not.toBeInTheDocument();
@@ -406,6 +408,23 @@ describe("Edit, conflicts, and finished Actions", () => {
     await userEvent.click(screen.getByRole("button", { name: "Save Changes" }));
     expect(await screen.findByRole("alert")).toHaveTextContent(/^This action is already completed or cancelled\. Completed by Wichai Charoen, /);
     expect(screen.queryByLabelText(/Action Description/)).not.toBeInTheDocument();
+    // The form and its Save button are gone, so focus goes to the Action's row (review on #84 sweep).
+    await waitFor(() => expect(within(within(panel()).getByRole("table")).getAllByRole("button")[0]).toHaveFocus());
+  });
+
+  // UI-14 / BR-13: a refused resend after Use my changes
+  it("keeps focus in the form when the resend after Use my changes is refused", async () => {
+    const a = action({ description: "Original description text." });
+    await openEdit(a);
+    await fill(/Action Description/, "My new description text.");
+    const stale = new ApiError("x", 409, "STALE_ACTION");
+    stale.action = { ...a, version: 2, description: "Their newer description." };
+    vi.spyOn(api, "updateAction").mockRejectedValueOnce(stale).mockRejectedValueOnce(new ApiError("Unable to save the action.", 500, "INTERNAL_ERROR"));
+    await userEvent.click(screen.getByRole("button", { name: "Save Changes" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Use my changes" }));
+    expect(await screen.findByText("Unable to save the action.")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Save Changes" })).toHaveFocus());
+    expect(screen.getByLabelText(/Action Description/)).toHaveValue("My new description text.");
   });
 });
 
@@ -453,6 +472,8 @@ describe("Complete and Cancel dialogs", () => {
     expect(complete).toHaveBeenCalledWith(a.id, 4, "Cable replaced.", expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/));
     expect(await screen.findByText("Action completed.")).toBeInTheDocument();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    // The Complete button is gone now the Action is final, so focus goes to the Action's row, never the body (review on #84).
+    await waitFor(() => expect(within(within(panel()).getByRole("table")).getAllByRole("button")[0]).toHaveFocus());
     const row = within(within(panel()).getByRole("table")).getAllByRole("button")[0];
     expect(within(row).getByText("Completed")).toBeInTheDocument();
   });
@@ -473,6 +494,8 @@ describe("Complete and Cancel dialogs", () => {
     expect(await screen.findByText("Action cancelled.")).toBeInTheDocument();
     const row = within(within(panel()).getByRole("table")).getByRole("button");
     expect(within(row).getByText("Cancelled")).toBeInTheDocument();
+    // Cancel Action is gone now, so focus goes to the row (review on #84).
+    await waitFor(() => expect(row).toHaveFocus());
   });
 
   // UI-15 / BR-13: a stale complete keeps the dialog and what was typed
@@ -502,6 +525,34 @@ describe("Complete and Cancel dialogs", () => {
     expect(await screen.findByText(/This ticket's status changed, so its actions can no longer be changed/)).toBeInTheDocument();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     await waitFor(() => expect(detail.mock.calls.length).toBeGreaterThan(before));
+    // Its Complete button is gone, so focus goes to the Action's row (review on #84 sweep).
+    await waitFor(() => expect(within(within(panel()).getByRole("table")).getAllByRole("button")[0]).toHaveFocus());
+  });
+
+  // UI-15 / AC-10: the Action was finished by someone else while the dialog was open
+  it("sends focus to the Action's row when Complete is answered ACTION_FINAL", async () => {
+    const a = action();
+    await openDialog(a, "Complete");
+    vi.spyOn(api, "completeAction").mockRejectedValueOnce(new ApiError("x", 409, "ACTION_FINAL"));
+    vi.mocked(api.getTicketActions).mockResolvedValue([{ ...a, status: "COMPLETED", version: 2, performedBy: { id: 20, name: "Wichai Charoen" }, completedAt: "2026-09-12T02:30:00.000Z", result: "Done." }]);
+    await userEvent.type(within(screen.getByRole("dialog")).getByLabelText(/Result/), "Cable replaced.");
+    await userEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Mark as Completed" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(/Completed by Wichai Charoen/);
+    const row = within(within(panel()).getByRole("table")).getAllByRole("button")[0];
+    await waitFor(() => expect(within(row).getByText("Completed")).toBeInTheDocument());
+    expect(row).toHaveFocus();
+  });
+
+  // BR-14: the create form, when the Ticket stopped being workable, has no row and no Add Action left
+  it("sends focus to the explanation when a create is answered TICKET_NOT_WORKABLE", async () => {
+    await openStaff();
+    vi.spyOn(api, "createAction").mockRejectedValueOnce(new ApiError("x", 409, "TICKET_NOT_WORKABLE"));
+    vi.mocked(api.getStaffTicketDetail).mockResolvedValue(staffDetail({ currentStatus: "RESOLVED" }));
+    await userEvent.click(within(panel()).getByRole("button", { name: "Add Action" }));
+    await fill(/Action Description/, "Replace the cable at desk 4B.");
+    await userEvent.click(screen.getByRole("button", { name: "Save Action" }));
+    const notice = await screen.findByText(/This ticket's status changed, so its actions can no longer be changed/);
+    await waitFor(() => expect(notice).toHaveFocus());
   });
 });
 
