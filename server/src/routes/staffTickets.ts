@@ -7,6 +7,7 @@ import { requireRole } from "../middleware/requireRole.js";
 import { isValidId } from "../ids.js";
 import { escapeLike } from "../searchText.js";
 import { parseStaffQueueQuery } from "../staffQueueQuery.js";
+import { RESOLVED_STATUSES, activeWhere, needsOwnerWhere } from "../dashboardWindow.js";
 import {
   isTicketStatus,
   isTransitionPermitted,
@@ -88,6 +89,8 @@ staffTicketsRouter.get(
         });
       }
       if (query.status) and.push({ currentStatus: query.status });
+      if (query.statusGroup === "active") and.push(activeWhere);
+      if (query.statusGroup === "resolved") and.push({ currentStatus: { in: RESOLVED_STATUSES } });
       if (query.itPriority) and.push({ itPriority: query.itPriority });
       if (query.categoryId !== null) and.push({ categoryId: query.categoryId });
 
@@ -104,11 +107,8 @@ staffTicketsRouter.get(
         case "needs-owner":
           // Open Tickets that are unassigned or whose owner is ineligible. A CLOSED or
           // CANCELLED Ticket keeps its marker but is excluded: nothing more is expected
-          // of it (BR-59).
-          and.push({ currentStatus: { notIn: ["CLOSED", "CANCELLED"] } });
-          and.push({
-            OR: [{ ownerId: null }, { owner: { is: { OR: [{ isActive: false }, { role: "REQUESTER" }] } } }],
-          });
+          // of it (BR-59). The Lab 4 dashboard's Unassigned figure counts the same rule.
+          and.push(...needsOwnerWhere);
           break;
       }
       const where: Prisma.TicketWhereInput = and.length > 0 ? { AND: and } : {};

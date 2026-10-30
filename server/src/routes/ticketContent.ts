@@ -49,7 +49,13 @@ const ordered = [{ createdAt: "asc" }, { id: "asc" }] as const;
 
 const commentStore: ContentStore = {
   list: (prisma, ticketId) => prisma.publicComment.findMany({ where: { ticketId }, include: withAuthor, orderBy: [...ordered] }),
-  create: (prisma, data) => prisma.publicComment.create({ data, include: withAuthor }),
+  // Lab 4 BR-38: a Public Comment is Ticket activity. An Internal Note is not, so a Requester cannot infer
+  // private staff work from their dashboard.
+  create: async (prisma, data) => {
+    const row = await prisma.publicComment.create({ data, include: withAuthor });
+    await prisma.ticket.update({ where: { id: data.ticketId }, data: { updatedAt: new Date() } });
+    return row;
+  },
 };
 
 const noteStore: ContentStore = {

@@ -29,6 +29,8 @@ import { requireAuth } from "./middleware/requireAuth.js";
 import { requireRole } from "./middleware/requireRole.js";
 import { resolutionGate } from "./actionValidation.js";
 import { statusHistoryRouter } from "./routes/statusHistory.js";
+import { dashboardsRouter } from "./routes/dashboards.js";
+import { RESOLVED_STATUSES, activeWhere, resolvedWithinWhere, windowStart } from "./dashboardWindow.js";
 
 const upload = multer({
   storage: multer.diskStorage({
@@ -52,6 +54,7 @@ app.use(ticketContentRouter); // Lab 3: /api/tickets/:id/comments and /notes
 app.use(adminUsersRouter); // Lab 3: /api/admin/users
 app.use(actionsRouter); // Lab 4: /api/tickets/:id/actions and /api/actions/:id
 app.use(statusHistoryRouter); // Lab 4: /api/tickets/:id/history
+app.use(dashboardsRouter); // Lab 4: /api/dashboard/staff and /api/dashboard/requester
 
 // ---------------------------------------------------------------------------
 // Issue 2 — API health check
@@ -315,6 +318,8 @@ app.post(
               sizeBytes: file.size,
             },
           });
+          // Lab 4 BR-38: an Attachment added is Ticket activity.
+          await tx.ticket.update({ where: { id: ticket.id }, data: { updatedAt: new Date() } });
           return { rejected: false, attachment };
         });
 
@@ -393,6 +398,13 @@ app.get("/api/tickets", ...requesterOnly, async (req: Request, res: Response) =>
     if (query.categoryId !== null) where.categoryId = query.categoryId;
     if (query.requestedPriority !== null) where.requestedPriority = query.requestedPriority;
     if (query.currentStatus !== null) where.currentStatus = query.currentStatus;
+    // Lab 4 api-spec section 11: the filters behind the Requester dashboard's drill-downs (BR-36).
+    const and: Record<string, unknown>[] = [];
+    if (query.statusGroup === "active") and.push(activeWhere);
+    if (query.statusGroup === "resolved") and.push({ currentStatus: { in: RESOLVED_STATUSES } });
+    if (query.updatedWithinDays !== null) and.push({ updatedAt: { gte: windowStart(query.updatedWithinDays) } });
+    if (query.resolvedWithinDays !== null) and.push(resolvedWithinWhere(windowStart(query.resolvedWithinDays)));
+    if (and.length > 0) where.AND = and;
 
     const { page, pageSize, sortField, sortDirection } = query;
 
@@ -668,6 +680,8 @@ app.delete("/api/attachments/:id", ...requesterOnly, async (req: Request, res: R
     }
 
     const updated = await getPrisma().attachment.findUniqueOrThrow({ where: { id: attachmentId } });
+    // Lab 4 BR-38: an Attachment removed is Ticket activity.
+    await getPrisma().ticket.update({ where: { id: updated.ticketId }, data: { updatedAt: new Date() } });
 
     res.status(200).json(serializeAttachment(updated));
   } catch {
