@@ -41,9 +41,11 @@ describe("seed on a fresh database", () => {
     expect(second.map((u) => u.passwordHash)).toEqual(first.map((u) => u.passwordHash));
 
     const count = (role: string, isActive: boolean) => second.filter((u) => u.role === role && u.isActive === isActive).length;
-    expect(count("REQUESTER", true)).toBe(4);
+    // Lab 4 BR-46 adds one active Requester and one active IT Staff member whose own dashboards are
+    // all zero, on top of the BR-50 fixtures (Lab 4 tests.md section 6, superseding change).
+    expect(count("REQUESTER", true)).toBe(5);
     expect(count("REQUESTER", false)).toBe(1);
-    expect(count("IT_STAFF", true)).toBe(3);
+    expect(count("IT_STAFF", true)).toBe(4);
     expect(count("IT_STAFF", false)).toBe(1);
     expect(count("ADMINISTRATOR", true)).toBe(1);
     expect(second).toHaveLength(SEED_USERS.length);

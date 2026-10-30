@@ -74,10 +74,10 @@ Type key: Unit, API (integration), Security (authorization), Workflow, Dashboard
 | DASH-08 | Dashboard | AC-35, BR-29 | With a fixed clock, activity at 00:00:00 Bangkok six days ago and 23:59:59 seven days ago, and resolutions at the same edges of the 30-day window | The 00:00:00 records counted, the 23:59:59 records not | `server/tests/lab-04/requester-dashboard.api.test.ts` | Planned |
 | DASH-09 | Dashboard | BR-38 | Last activity after an Action write, a Public Comment, an Attachment, and an Internal Note | The first three move `updatedAt`; the Internal Note does not | `server/tests/lab-04/requester-dashboard.api.test.ts` | Planned |
 | DASH-10 | Dashboard | AC-30 | Requester with no Tickets | Every count 0, lists empty | `server/tests/lab-04/requester-dashboard.api.test.ts` | Planned |
-| MIG-01 | Migration | AC-45, BR-44 | Apply the Lab 4 migration to a copy of a seeded Lab 3 database | Every Lab 3 table's row count unchanged; Status Change count equals Ticket count; `idempotencyKey` and `requestHash` present and null on every existing Ticket, Public Comment, and Internal Note | `server/tests/lab-04/migration.test.ts` | Planned |
-| MIG-02 | Migration | AC-45, BR-45 | Apply `server/prisma/rollback/lab-04-down.sql` after the migration | Lab 4 tables, enum, indexes, and the `idempotencyKey` and `requestHash` columns gone; every Lab 3 row identical to before | `server/tests/lab-04/migration.test.ts` | Planned |
+| MIG-01 | Migration | AC-45, BR-44 | Apply the Lab 4 migration to a copy of a seeded Lab 3 database | Every Lab 3 table's row count unchanged; Status Change count equals Ticket count; `idempotencyKey` and `requestHash` present and null on every existing Ticket, Public Comment, and Internal Note | `server/tests/lab-04/migration.test.ts` | Pass |
+| MIG-02 | Migration | AC-45, BR-45 | Apply `server/prisma/rollback/lab-04-down.sql` after the migration | Lab 4 tables, enum, indexes, and the `idempotencyKey` and `requestHash` columns gone; every Lab 3 row identical to before | `server/tests/lab-04/migration.test.ts` | Pass |
 | MIG-03 | Migration | AC-24, BR-25 | History of a migrated Ticket that is New and one that is In Progress, then the In Progress one moved to Waiting for Requester in Lab 4 | Both start with "Created as New"; the In Progress one has `earlierChangesUnrecorded: true`, still `true` after the Lab 4 move; the New one stays `false` after a Lab 4 move | `server/tests/lab-04/migration.test.ts` | Planned |
-| MIG-04 | Migration | AC-46, BR-46 | Run the seed twice | Second run changes nothing; data includes Tickets with 0, 1, and several Actions, every status and priority, and users whose dashboards are all zero | `server/tests/lab-04/seed.test.ts` | Planned |
+| MIG-04 | Migration | AC-46, BR-46 | Run the seed twice | Second run changes nothing; data includes Tickets with 0, 1, and several Actions, every status and priority, and users whose own dashboard figures are all zero | `server/tests/lab-04/seed.test.ts` | Pass |
 | REG-01 | Regression | AC-43, BR-47 | Full Lab 1, Lab 2, and Lab 3 server suites | All pass; any test changed for a superseding Lab 4 rule is listed in section 6 | `server/tests/lab-01`, `lab-02`, `lab-03` | Planned |
 | REG-02 | Regression | AC-43 | Full Lab 2 and Lab 3 client suites | All pass | `client/tests/lab-02`, `client/tests/lab-03` | Planned |
 | REG-03 | Regression | AC-43 | Full Lab 2 and Lab 3 Playwright suites | All pass | `e2e/lab-02`, `e2e/lab-03` | Planned |
@@ -187,7 +187,15 @@ Every AC from AC-01 to AC-52 maps to at least one test.
 
 ## 4. Migration and regression evidence
 
-Recorded when Issue 02 lands: row counts of every Lab 3 table before and after the migration, the Status Change count against the Ticket count, the down-script comparison, and the seed's second-run diff. Recorded at release: the full suite counts for Labs 1 to 4 on the final `main`.
+Recorded at release: the full suite counts for Labs 1 to 4 on the final `main`.
+
+**Issue 02 (2026-10-30).** Tests on a scratch database in the Lab 3 state holding Users of every role, Tickets in all eight statuses, Attachments (one removed), Public Comments, an Internal Note and a Session:
+
+- MIG-01: after the migration every Lab 3 row is identical except the two new key columns, which are nullable and null on every existing row; every Ticket has exactly one Status Change (none to New, at its creation time, by its Requester); keys are unique per creating user and keyless rows are unlimited.
+- MIG-02: after the down script (run with Lab 4 rows present) every Lab 3 row and the whole public schema (tables, columns, indexes, constraints, enum types) are identical to before, and the migration applies again.
+- MIG-04: a second seed run leaves every Action Taken, Status Change and Ticket identical; a migrated creation row is not duplicated; a seeded Ticket moved through the application gets no invented history or Actions.
+
+The shared development database was migrated the same day after a `pg_dump` backup (kept outside the repository). Row counts before: User 224, Ticket 1694, Attachment 565, PublicComment 50, InternalNote 56, Session 1466, Category 5, RelatedSystem 8. After: the same, plus StatusChange 1694 (equal to Ticket) and ActionTaken 0. The seed then added 13 Actions Taken on 9 Tickets and their Status History, and a second run added nothing.
 
 ## 5. Manual verification
 
@@ -200,3 +208,12 @@ Filled in per Issue as each one lands, with the exact counts copied from the tes
 ### Baseline before Lab 4
 
 Run on `main` at `5619594` on 2026-10-02 before any Lab 4 change: server 333 passed (30 files), client 265 passed, Playwright 22 passed.
+
+### Issue 02: migration, recovery and seed
+
+Run on `feature/lab4-02-migration-seed` on 2026-10-30: server 343 passed (32 files, 10 of the tests new in `tests/lab-04/`), client 265 passed, Playwright 22 passed.
+
+- Turned from Planned to Pass: MIG-01, MIG-02, MIG-04. MIG-03 stays Planned: its backfill half (a migrated Ticket starts with "Created as New" and nothing more) is checked in MIG-01, and the gap flag after a Lab 4 move needs the Status History endpoint of Issue 05.
+- Mutation checks, each restored afterwards: the backfill limited to no rows (2 tests red); one `DROP INDEX` removed from the down script (MIG-02 red); the seed's "no Actions yet" guard removed (2 red), its "status unchanged" guard removed (1 red), a Planned Action placed on a Closed Ticket (1 red), the creation row always inserted (3 red).
+- Superseding change: `server/tests/lab-03/seed.test.ts` now expects 5 active Requesters and 4 active IT Staff, because BR-46 adds one of each with zero figures of their own.
+- Contract wording fixed: BR-46 and AC-46 asked for an IT Staff user "for whom every dashboard figure is zero", but the BR-31 Unassigned, Urgent, By status and Recently updated figures count across every Requester and cannot be zero on a seeded database. They now ask for zero personal figures, with the all-zero case shown on an empty database (DASH-02).
