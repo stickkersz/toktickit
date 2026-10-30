@@ -159,6 +159,15 @@ describe("conflicts and success", () => {
     await waitFor(() => expect(historyCalls()).toBeGreaterThan(before));
   });
 
+  // UI-22 / BR-43: right after a move the old permitted list can still contain the new status
+  it("lists each status once, so no two options share a key", async () => {
+    const errors = vi.spyOn(console, "error");
+    await open(detail({ currentStatus: "OPEN", permittedNextStatuses: ["OPEN", "CANCELLED"] }));
+    const options = within(statusSelect()).getAllByRole("option").map((o) => o.textContent);
+    expect(options).toEqual(["Open", "Cancelled"]);
+    expect(errors.mock.calls.some((c) => String(c[0]).includes("same key"))).toBe(false);
+  });
+
   // UI-24 / AC-13, BR-15, BR-20
   it("offers Cancel from In Progress, Waiting for Requester, and Reopened, and says how many planned actions go with it", async () => {
     for (const [status, planned, sentence] of [

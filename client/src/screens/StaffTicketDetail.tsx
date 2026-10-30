@@ -373,7 +373,9 @@ function StaffTicketDetail() {
   // Options come from the last reload: while that is missing, offer nothing but the current status.
   // (A locked control is never one that looked terminal: a terminal Ticket has no move to make stale.)
   const terminal = ticket.permittedNextStatuses.length === 0;
-  const statusOptions = stale.status ? [ticket.currentStatus] : [ticket.currentStatus, ...ticket.permittedNextStatuses];
+  // Just after a move the status is the new one while the permitted list may still be the old one's, which
+  // can contain it: listed once, so no two options share a key (Lab 4 ui-spec section 11).
+  const statusOptions = stale.status ? [ticket.currentStatus] : [...new Set([ticket.currentStatus, ...ticket.permittedNextStatuses])];
   const locked = { owner: busy.owner || stale.owner, priority: busy.priority || stale.priority, status: busy.status || stale.status };
   const problemFor = (control: Control) => (problem && problem.control === control ? problem : null);
 
@@ -484,7 +486,7 @@ function StaffTicketDetail() {
 
       <h2 className="h6 text-muted text-uppercase mb-2">Handling</h2>
       <div className="row g-3 mb-4">
-        <div className="col-md-4">
+        <div className="col-md-6 col-lg-4">
           <label htmlFor="staff-owner" className="form-label fw-semibold">Ticket Owner</label>
           <div className="d-flex gap-2">
             <select
@@ -525,7 +527,7 @@ function StaffTicketDetail() {
           {problemNote("owner")}
         </div>
 
-        <div className="col-md-4">
+        <div className="col-md-6 col-lg-4">
           <label htmlFor="staff-it-priority" className="form-label fw-semibold">IT Priority</label>
           <select
             id="staff-it-priority"
@@ -544,7 +546,7 @@ function StaffTicketDetail() {
           {problemNote("priority")}
         </div>
 
-        <div className="col-md-4">
+        <div className="col-md-6 col-lg-4">
           <label htmlFor="staff-status" className="form-label fw-semibold">Current Status</label>
           <select
             id="staff-status"
