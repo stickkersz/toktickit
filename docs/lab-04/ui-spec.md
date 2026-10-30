@@ -110,14 +110,15 @@ Selecting an Action expands it into a detail panel:
 
 Each is a modal dialog with `role="dialog"`, `aria-modal="true"`, a heading that names the Action, focus moved to its first field, focus kept inside while open, Escape and the secondary button closing it, and focus returned to the button that opened it.
 
-- **Complete Action**: `Result *` (5 to 2000, counter), `Action Date/Time *` defaulting to the stored value or now if that is in the future, and buttons "Mark as Completed" and "Keep Planned". Helper text: "Once completed, this action cannot be changed."
-- **Cancel Action**: `Reason *` (5 to 500) and buttons "Cancel Action" and "Keep Action".
+- **Complete Action**: `Result *` (5 to 2000, counter), `Action Date/Time *` pre-filled with the stored value, or with now when the stored value is in the future, and always sent as `actionAt` with the loaded `version` so a Planned Action dated ahead completes without a 400 (BR-05), and buttons "Mark as Completed" and "Keep Planned". Helper text: "Once completed, this action cannot be changed."
+- **Cancel Action**: `Reason *` (5 to 500), sent with the loaded `version`, and buttons "Cancel Action" and "Keep Action".
 
 ### Conflicts
 
 - `STALE_ACTION`: a conflict callout inside the open form, "Someone else changed this action. The latest version is shown below; your changes are still in the form.", showing the server's current values beside the form's, with "Use my changes" (resends against the new version) and "Discard my changes".
 - `ACTION_FINAL`: the form closes, the Action reloads as final, and the callout says "This action is already completed or cancelled." with who did it and when, taken from the reloaded Action (a retried request after a lost response lands here too).
 - `TICKET_NOT_WORKABLE`: the callout says the Ticket's status changed, and the list and status reload.
+- `IDEMPOTENCY_KEY_REUSED` (any create form): the form keeps the typed text, shows the server's message above the submit control, and the next submit carries a new `Idempotency-Key`, so the same 409 never repeats on every retry.
 - `INVALID_RESPONSIBLE`: an error under Responsible Staff, "Choose an active IT Staff member.", and the staff list reloads.
 
 ## 8. Actions Taken on Requester Ticket Detail
@@ -135,6 +136,7 @@ Both Ticket Details gain a **History** section (IT Staff: a tab after Attachment
 - If the server still refuses with `ACTIONS_INCOMPLETE` or `NO_COMPLETED_ACTION`, the same message is shown from the server's counts and the Ticket reloads.
 - `STATUS_CHANGED`: a conflict callout "This ticket moved to In Progress while you were viewing it.", the reloaded status and moves, and any pending Resolve, Close, or Cancel confirmation dropped (`L3-BR-64`). When the current status is already the one the user asked for (a retry after a lost response), the screen shows "Status updated." instead of a conflict.
 - After a successful move the status badge in the page header, the summary field group, the History, and the permitted moves all refresh, and an inline "Status updated." confirmation appears next to the control.
+- Cancelled is offered from New, Open, In Progress, Waiting for Requester, and Reopened (BR-20), always with the Lab 3 confirmation.
 - Cancelling a Ticket with Planned Actions says in its confirmation: "Its 2 planned actions will be cancelled too."
 
 ## 11. Hardening across screens

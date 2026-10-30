@@ -17,11 +17,11 @@ Idempotency-Key: 6f1c2a7e-3b0d-4e55-9a51-2b8f0c1d7e44
 ```
 
 - The value must be a UUID (any version, case-insensitive). Anything else gets 400 `VALIDATION_ERROR` with message "Idempotency-Key must be a UUID." and nothing is created.
-- The key is stored on the created record, unique for (creating user, endpoint). It is checked after authentication and authorization, and after the Ticket is found and the body is valid, so a key never reveals anything a caller could not already see.
+- The key is stored on the created record, unique for (creating user, endpoint), next to `requestHash`, the SHA-256 (64 lower-case hex characters) of the request fingerprint (BR-39). The fingerprint is the path including its Ticket id, plus every body field the endpoint accepts, trimmed, keys sorted, absent optional fields left out; for `POST /api/tickets` with files it also lists each file's original name and size in bytes, in upload order. Fields the endpoint ignores are not part of it. It is checked after authentication and authorization, and after the Ticket is found and the body is valid, so a key never reveals anything a caller could not already see.
 - First request: the normal response (201) and the record is created.
-- Repeat with the same key and the same request: 200, the same body as the first response describes the record already created, header `Idempotent-Replayed: true`, nothing new is created. "The same request" means the same path and the same body fields after trimming; for Ticket create with files, the same field values and the same file names and sizes.
-- Repeat with the same key and a different request: 409 `IDEMPOTENCY_KEY_REUSED`, message "This request was already submitted with different content. Refresh and try again.", nothing is created.
-- Two requests with the same key arriving at the same moment: the database unique constraint lets exactly one insert succeed; the other is answered as a repeat.
+- Repeat with the same key and the same request (the fingerprint hashes to the stored `requestHash`): 200, the same body as the first response describes the record already created, header `Idempotent-Replayed: true`, nothing new is created. A body that differs only in surrounding whitespace is the same request.
+- Repeat with the same key and a different request (the hash differs: any accepted field, the Ticket in the path, or a file name or size): 409 `IDEMPOTENCY_KEY_REUSED`, message "This request was already submitted with different content. Refresh and try again.", nothing is created.
+- Two requests with the same key arriving at the same moment: the database unique constraint lets exactly one insert succeed; the other then compares its hash with the stored `requestHash` and is answered as a repeat when they match, or with 409 `IDEMPOTENCY_KEY_REUSED` when they differ.
 - No header: behaviour exactly as in Lab 3.
 
 ### Optimistic concurrency on Actions
@@ -188,13 +188,13 @@ Response 200:
 }
 ```
 
-Ordered by `changedAt`, then `id`, ascending (BR-26). `earlierChangesUnrecorded` is `true` when the Ticket's current status differs from the last entry's `toStatus`, which happens only for Tickets moved before Lab 4 (BR-25).
+Ordered by `changedAt`, then `id`, ascending (BR-26). `earlierChangesUnrecorded` is `true` when the entries do not chain: some entry's `fromStatus` differs from the previous entry's `toStatus`, or the Ticket's current status differs from the last entry's `toStatus`. This happens only for Tickets moved before Lab 4, and stays `true` after their later moves (BR-25).
 
 Errors: 401; 404 when the Ticket does not exist or, for a Requester, is not theirs; 500. No endpoint creates, edits, or deletes a Status Change directly (BR-24).
 
 ## 7. PATCH /api/staff/tickets/:id/status (changed)
 
-Purpose: move a Ticket (FR-07, FR-08, FR-09). Lab 3 endpoint 10, with three changes.
+Purpose: move a Ticket (FR-07, FR-08, FR-09). Lab 3 endpoint 10, with four changes.
 
 Request:
 
@@ -202,9 +202,10 @@ Request:
 { "fromStatus": "IN_PROGRESS", "currentStatus": "RESOLVED", "resolutionSummary": "Replaced the LAN cable; link stable." }
 ```
 
+- The matrix is BR-20: `WAITING_FOR_REQUESTER` to `CANCELLED` and `REOPENED` to `CANCELLED` are now permitted, and `permittedNextStatuses` on Ticket Detail lists them.
 - `fromStatus` is now **required**: the status the user saw. Missing or not a `TicketStatus` value: 400 (BR-23).
 - Checks run in this order: request (400); Ticket (404); `fromStatus` differs from the current status: 409 `STATUS_CHANGED`; move not permitted: 409 `INVALID_TRANSITION`; owner: 409 `OWNER_REQUIRED`; for `RESOLVED`, the gate: 409 `ACTIONS_INCOMPLETE`, then 409 `NO_COMPLETED_ACTION` (BR-21, BR-22).
-- The move, the gate check, the Status Change insert (BR-24), and for `CANCELLED` the cancellation of Planned Actions (BR-15) run in one transaction holding an update lock on the Ticket row.
+- The move, the gate check, the Status Change insert (BR-24), and for `CANCELLED` the cancellation of Planned Actions with each one's `version` incremented (BR-15) run in one transaction holding an update lock on the Ticket row.
 
 `STATUS_CHANGED` body: `{ "error": "STATUS_CHANGED", "message": "This Ticket moved to In Progress while you were viewing it. Check the current status and try again.", "currentStatus": "IN_PROGRESS", "permitted": ["WAITING_FOR_REQUESTER", "RESOLVED", "CANCELLED"] }`.
 
@@ -314,7 +315,7 @@ The single-status parameter is `status` on the queue and keeps its Lab 2 name `c
 
 ## 12. Create endpoints (changed)
 
-`POST /api/tickets`, `POST /api/tickets/:id/comments`, and `POST /api/tickets/:id/notes` keep their Lab 3 bodies and responses and add the `Idempotency-Key` behaviour above. `POST /api/tickets` also writes the creation Status Change (BR-24) in the same transaction as the Ticket.
+`POST /api/tickets`, `POST /api/tickets/:id/comments`, and `POST /api/tickets/:id/notes` keep their Lab 3 bodies and responses and add the `Idempotency-Key` behaviour above, storing `idempotencyKey` and `requestHash` on the created row. `POST /api/tickets` also writes the creation Status Change (BR-24) in the same transaction as the Ticket.
 
 ## 13. Endpoints unchanged from Lab 3
 

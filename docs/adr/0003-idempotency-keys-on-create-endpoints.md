@@ -1,6 +1,6 @@
 # Idempotency keys on the four create endpoints
 
-Lab 4 requires that duplicate actions caused by repeated clicking or a network retry are prevented or safely handled. Until now (Lab 2 BR-17) the only guard was the client disabling its Submit button, which cannot stop a request the browser or a proxy resends after a lost response. Ticket create, Public Comment create, Internal Note create, and Action Taken create therefore accept an `Idempotency-Key` header holding a client-generated UUID per form submission. The key is stored with the created row under a unique constraint scoped to the acting User, and a repeat of the same key returns the row that already exists instead of creating a second one.
+Lab 4 requires that duplicate actions caused by repeated clicking or a network retry are prevented or safely handled. Until now (Lab 2 BR-17) the only guard was the client disabling its Submit button, which cannot stop a request the browser or a proxy resends after a lost response. Ticket create, Public Comment create, Internal Note create, and Action Taken create therefore accept an `Idempotency-Key` header holding a client-generated UUID per form submission. The key is stored with the created row under a unique constraint scoped to the acting User, and a repeat of the same key returns the row that already exists instead of creating a second one. Next to the key the row stores `requestHash`, the SHA-256 of a fingerprint of the request (path with its Ticket id, accepted body fields trimmed with keys sorted, and for Ticket create each file's original name and size), so a repeat whose hash differs is refused with 409 `IDEMPOTENCY_KEY_REUSED` instead of silently returning a record the user did not ask for.
 
 ## Considered Options
 
@@ -8,6 +8,7 @@ Lab 4 requires that duplicate actions caused by repeated clicking or a network r
 - **Key on Action Taken create only**: covers the new feature but leaves Public Comments and Internal Notes, both append-only and visible, open to duplicates that can never be removed.
 - **Key on all four create endpoints** (chosen): one mechanism, one test pattern, and the labsheet's hardening rule holds application-wide.
 - **Deduplicate on identical payload**: rejected because two genuinely identical comments are legitimate.
+- **Compare a replay against the created row's columns instead of a stored hash**: rejected because Ticket create's file names and sizes are not reliably recoverable from the rows (Attachments can be added or removed later), and each endpoint would need its own comparison code.
 
 ## Consequences
 

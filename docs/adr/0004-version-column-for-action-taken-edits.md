@@ -1,6 +1,6 @@
 # A version column for stale Action Taken edits
 
-Several IT Staff users may edit the same Planned Action Taken, and the labsheet requires that nobody unknowingly overwrites another user's recent change. Each Action Taken carries an integer `version`; every edit, completion, or cancellation must send the version it read, and the server applies it with a conditional update that matches both the id and that version, incrementing it on success. A mismatch writes nothing and returns 409, and the client reloads the Action while keeping what the user typed.
+Several IT Staff users may edit the same Planned Action Taken, and the labsheet requires that nobody unknowingly overwrites another user's recent change. Each Action Taken carries an integer `version`; every edit, completion, or cancellation must send the version it read, and the server applies it with a conditional update that matches both the id and that version, incrementing it on success. The server-side cancellation of Planned Actions when their Ticket is cancelled (spec BR-15) sends no version but increments it in the same way, so a form still open on such an Action gets `ACTION_FINAL`. A mismatch writes nothing and returns 409, and the client reloads the Action while keeping what the user typed.
 
 ## Considered Options
 
