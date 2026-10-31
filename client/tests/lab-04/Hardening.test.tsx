@@ -144,6 +144,30 @@ describe("Lab 4 sources keep to the stylesheet", () => {
     for (const [file, text] of Object.entries(SOURCES)) expect(text, file).not.toMatch(/["'`]#[0-9a-fA-F]{3,8}["'`]/);
   });
 
+  // Carried Lab 2 rule (L-296): a button showing only a symbol (an ×, an icon) is named for screen readers
+  // with aria-label and for pointer users with a matching title tooltip. Found by the pre-release audit.
+  it("gives every symbol-only button both an aria-label and a title", () => {
+    const missing: string[] = [];
+    for (const [file, text] of Object.entries(SOURCES)) {
+      for (let at = text.indexOf("<button"); at !== -1; at = text.indexOf("<button", at + 1)) {
+        // The opening tag ends at the first ">" outside braces, so arrow functions in props do not end it.
+        let depth = 0;
+        let end = at;
+        for (; end < text.length; end++) {
+          const c = text[end];
+          if (c === "{") depth++;
+          else if (c === "}") depth--;
+          else if (c === ">" && depth === 0) break;
+        }
+        const tag = text.slice(at, end);
+        const content = text.slice(end + 1, text.indexOf("</button>", end)).trim();
+        const symbolOnly = content.length > 0 && !/[A-Za-z{]/.test(content);
+        if (symbolOnly && !(tag.includes("aria-label=") && tag.includes("title="))) missing.push(`${file}: ${content}`);
+      }
+    }
+    expect(missing).toEqual([]);
+  });
+
   // STYLE-03 / FR-19
   it("uses only zg- classes that the stylesheet defines", () => {
     for (const file of LAB4) {

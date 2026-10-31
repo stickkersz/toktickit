@@ -364,6 +364,7 @@ export default function TicketDetail() {
                 type="button"
                 className="btn btn-sm btn-outline-secondary"
                 aria-label={`Dismiss ${err.filename} error`}
+                title={`Dismiss ${err.filename} error`}
                 onClick={() => setPickerErrors((prev) => prev.filter((_, idx) => idx !== i))}
               >
                 ×

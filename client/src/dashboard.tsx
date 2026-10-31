@@ -20,7 +20,7 @@ export function FilterChip({ label, onRemove }: { label: string; onRemove: () =>
   return (
     <span className="zg-filter-chip">
       {label}
-      <button type="button" className="zg-filter-chip-remove" aria-label={`Remove filter: ${label}`} onClick={onRemove}>
+      <button type="button" className="zg-filter-chip-remove" aria-label={`Remove filter: ${label}`} title={`Remove filter: ${label}`} onClick={onRemove}>
         ×
       </button>
     </span>

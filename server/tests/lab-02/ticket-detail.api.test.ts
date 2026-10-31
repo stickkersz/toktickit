@@ -32,6 +32,7 @@ async function createTicket(as: Session) {
 }
 
 describe("GET /api/tickets/:id", () => {
+  // API-08 / FR-05 (tag added in the Lab 4 pre-release audit)
   it("returns full detail, including an empty attachments array, for the owning Requester", async () => {
     const ticket = await createTicket(a);
 

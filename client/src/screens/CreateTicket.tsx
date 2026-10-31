@@ -460,6 +460,7 @@ export default function CreateTicket() {
                   className="btn btn-sm btn-outline-secondary"
                   onClick={() => removeAttachment(i)}
                   aria-label={`Remove ${row.file.name}`}
+                  title={`Remove ${row.file.name}`}
                 >
                   ×
                 </button>
