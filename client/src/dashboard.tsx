@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { ReactNode, RefObject } from "react";
 import { Link } from "react-router-dom";
 import { ApiError } from "./api.js";
+import { useAuth } from "./authContext.js";
+import { landingPathFor } from "./roles.js";
 import { StatusBadge } from "./Badge.js";
 import { formatBangkok } from "./ActionsTaken.js";
 
@@ -64,10 +66,17 @@ export function DashboardHeader({ subheading, headingRef, children }: { subheadi
 }
 
 export function DashboardFailure({ forbidden, onRetry }: { forbidden: boolean; onRetry: () => void }) {
+  const { user } = useAuth();
+  // The same forbidden state as the route guard's (ui-spec section 3), for an API refusal mid-session.
   if (forbidden)
     return (
       <div className="zg-alert-warning rounded p-3" role="alert">
-        You do not have access to this dashboard.
+        <p className="mb-2">You do not have access to this dashboard.</p>
+        {user && (
+          <Link to={landingPathFor(user.role)} className="btn zg-btn-primary btn-sm zg-touch-target">
+            Go to your home screen
+          </Link>
+        )}
       </div>
     );
   return (

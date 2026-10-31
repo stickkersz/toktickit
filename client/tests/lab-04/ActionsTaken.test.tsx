@@ -592,6 +592,8 @@ describe("Complete and Cancel dialogs", () => {
     await userEvent.click(screen.getByRole("button", { name: "Save Action" }));
     const notice = await screen.findByText(/This ticket's status changed, so its actions can no longer be changed/);
     await waitFor(() => expect(notice).toHaveFocus());
+    // BR-41, AC-42: what was typed is still there to copy (pre-release review).
+    expect(screen.getByLabelText(/Action Description/)).toHaveValue("Replace the cable at desk 4B.");
   });
 });
 

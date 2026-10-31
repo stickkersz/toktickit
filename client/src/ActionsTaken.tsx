@@ -920,12 +920,10 @@ export function StaffActionsTaken({
       return null;
     }
     if (e instanceof ApiError && e.code === "TICKET_NOT_WORKABLE") {
-      // Add Action, Edit, Complete, and Cancel all disappear with the workable status: focus goes to the
-      // Action that was being changed, or to the explanation when a new one was being added (review on #84).
-      const id = dialog?.id ?? editingId;
-      focusAfter.current = id ?? "notice";
-      setCreating(false);
-      setEditingId(null);
+      // Add Action, Edit, Complete, and Cancel all disappear with the workable status. An open create or
+      // edit form stays, with what was typed, so it can be copied (BR-41, AC-42), and focus goes to the
+      // explanation; a dialog closes and focus goes to its Action (review on #84).
+      focusAfter.current = dialog?.id ?? "notice";
       setDialog(null);
       actions.reload();
       onTicketChanged();

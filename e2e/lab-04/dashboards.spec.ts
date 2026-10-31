@@ -158,17 +158,17 @@ test.describe("Dashboards", () => {
     // IT Staff: empty, loading, failure, then the queue drill-down at three sizes.
     await signIn(page, STAFF.email, LANDING.IT_STAFF);
     await page.route("**/api/dashboard/staff", (route) => route.fulfill({ json: zeroStaff }));
-    await page.reload();
+    await page.goto("/staff/dashboard");
     await expect(page.getByText("No tickets need an owner")).toBeVisible();
     await page.screenshot({ path: shot("staff-dashboard", "empty-desktop"), fullPage: true });
     await page.unroute("**/api/dashboard/staff");
     await page.route("**/api/dashboard/staff", () => {});
-    await page.reload();
+    await page.goto("/staff/dashboard");
     await expect(page.getByRole("status", { name: "Loading the dashboard" })).toBeVisible();
     await page.screenshot({ path: shot("staff-dashboard", "loading-desktop"), fullPage: true });
     await page.unroute("**/api/dashboard/staff");
     await page.route("**/api/dashboard/staff", (route) => route.fulfill({ status: 500, json: { error: "INTERNAL_ERROR", message: "Unable to load the dashboard." } }));
-    await page.reload();
+    await page.goto("/staff/dashboard");
     await expect(page.getByText("The dashboard could not be loaded.")).toBeVisible();
     await page.screenshot({ path: shot("staff-dashboard", "failure-desktop"), fullPage: true });
     await page.unroute("**/api/dashboard/staff");
@@ -196,12 +196,12 @@ test.describe("Dashboards", () => {
     // Requester: empty, failure, forbidden, then the My Tickets drill-down at three sizes.
     await signIn(page, REQUESTERS[1].email, LANDING.REQUESTER);
     await page.route("**/api/dashboard/requester", (route) => route.fulfill({ json: zeroRequester }));
-    await page.reload();
+    await page.goto("/dashboard");
     await expect(page.getByText("Nothing is waiting for you.")).toBeVisible();
     await page.screenshot({ path: shot("requester-dashboard", "empty-desktop"), fullPage: true });
     await page.unroute("**/api/dashboard/requester");
     await page.route("**/api/dashboard/requester", (route) => route.fulfill({ status: 500, json: { error: "INTERNAL_ERROR", message: "Unable to load the dashboard." } }));
-    await page.reload();
+    await page.goto("/dashboard");
     await expect(page.getByText("The dashboard could not be loaded.")).toBeVisible();
     await page.screenshot({ path: shot("requester-dashboard", "failure-desktop"), fullPage: true });
     await page.unroute("**/api/dashboard/requester");

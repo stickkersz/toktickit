@@ -119,6 +119,15 @@ describe("IT Staff Dashboard", () => {
     expect(api.getRequesterDashboard).not.toHaveBeenCalled();
   });
 
+  // UI-05 / AC-34, ui-spec section 3: the API itself refusing (a role changed during the session)
+  it("shows the forbidden sentence with a way home when the dashboard request answers 403", async () => {
+    vi.spyOn(api, "getStaffDashboard").mockRejectedValue(new ApiError("Forbidden.", 403, "FORBIDDEN"));
+    renderApp("/staff/dashboard", STAFF);
+    expect(await screen.findByText("You do not have access to this dashboard.")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Go to your home screen" })).toHaveAttribute("href", "/staff/dashboard");
+    expect(screen.queryByRole("button", { name: "Retry" })).not.toBeInTheDocument();
+  });
+
   // UI-06 / AC-33, BR-32
   it("shows the Accounts card with counts and a Users link to an Administrator only", async () => {
     const admin = open(ADMIN, { ...FULL, accounts: { active: { REQUESTER: 5, IT_STAFF: 3, ADMINISTRATOR: 1 }, inactive: 2, link: "/admin/users" } });
