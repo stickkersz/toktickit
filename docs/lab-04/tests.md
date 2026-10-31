@@ -191,6 +191,16 @@ Every AC from AC-01 to AC-52 maps to at least one test.
 
 Recorded at release: the full suite counts for Labs 1 to 4 on the final `main`.
 
+**Final `main` (2026-11-01).** After the release Pull Request #92 was approved at `68d4a2a` and merged, all three suites were run from `main` at `f40da3a` (Merge pull request #92 from stickkersz/lab4-staging), with the database migrated and seeded. The complete output is the Part 3 evidence in the submission PDF.
+
+| Suite | Labs 1 to 3 | Lab 4 | Total |
+|---|---|---|---|
+| Server (`cd server && npm test`) | 334 (30 files) | 111 (13 files) | 445 passed, 43 files |
+| Client (`cd client && npm test`) | 266 (16 files) | 75 (6 files) | 341 passed, 22 files |
+| Playwright (`npx playwright test`) | 22 | 11 | 33 passed |
+
+The totals are from the run on `main`. The split by lab comes from runs of each lab's folders at `874a224`, whose code is identical to `main`'s (the two differ only in one line of this file). `tests.md` has 109 of 109 planned tests Pass and none Planned.
+
 **Issue 02 (2026-10-30).** Tests on a scratch database in the Lab 3 state holding Users of every role, Tickets in all eight statuses, Attachments (one removed), Public Comments, an Internal Note and a Session:
 
 - MIG-01: after the migration every Lab 3 row is identical except the two new key columns, which are nullable and null on every existing row; every Ticket has exactly one Status Change (none to New, at its creation time, by its Requester); keys are unique per creating user and keyless rows are unlimited.
