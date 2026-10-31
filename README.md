@@ -1,6 +1,6 @@
 # TokTickIT
 
-IT service desk application. Lab 1 proved React/Vite/Bootstrap → Express → Prisma → PostgreSQL work together; Lab 2 built the Requester-facing ticketing MVP on top of that (see `docs/lab-02/specification.md`); Lab 3 adds real sign-in with server-side sessions, role-based authorization for Requesters, IT Staff and Administrators, the IT Staff Ticket Queue and Ticket Detail with Public Comments and Internal Notes, and Administrator User Management (see `docs/lab-03/specification.md`).
+IT service desk application. Lab 1 proved React/Vite/Bootstrap → Express → Prisma → PostgreSQL work together; Lab 2 built the Requester-facing ticketing MVP on top of that (see `docs/lab-02/specification.md`); Lab 3 adds real sign-in with server-side sessions, role-based authorization for Requesters, IT Staff and Administrators, the IT Staff Ticket Queue and Ticket Detail with Public Comments and Internal Notes, and Administrator User Management (see `docs/lab-03/specification.md`); Lab 4 adds Actions Taken, the Ticket workflow with a resolution gate and Status History, role-based dashboards with drill-downs, and Idempotency-Keys on every create (see `docs/lab-04/specification.md`).
 
 ## Stack
 
@@ -66,7 +66,9 @@ These accounts exist only in a local development database and are created by the
 | IT Staff | `pimchanok.somboon@toktickit.test`, `wichai.charoen@toktickit.test`, `anucha.prasert@toktickit.test`, `kittipong.saelim@toktickit.test` (active; Kittipong owns no Ticket and no Action), `sunisa.kaewmanee@toktickit.test` (inactive) | `ChangeMe!23` |
 | Administrator | `aekkarat.wongsa@toktickit.test` | `ChangeMe!23` |
 
-Sign in at `http://localhost:5173/login`. An account that still holds the initial password is taken straight to Change Password and can reach nothing else until it has chosen a new one. The seed also creates 14 example Tickets (numbers `TKT-2026-900001` to `TKT-2026-900014`) spread over every status, priority and Requester, with some unassigned and two owned by the inactive IT Staff account, so the IT Staff Ticket Queue has something to show and its "Needs new owner" markers have real rows. Twelve of them carry example Public Comments and Internal Notes (15 and 9, containing nothing sensitive). Nine of the Tickets carry 13 example Actions Taken (4 Planned, 7 Completed, 2 Cancelled), so there are Tickets with zero, one and several Actions, and every seeded Ticket has a Status History that leads from New to its current status. Malee and Kittipong exist so that a dashboard with only zero figures can be shown. Re-running the seed never changes a Ticket that already exists, never duplicates or overwrites a comment, note, Action or Status History entry, and adds nothing to a seeded Ticket that has since been moved or worked on through the application. IT Staff and Administrators land on the Ticket Queue; try the Owner filter's "Needs an owner" option, then open a Ticket to claim it, change its IT Priority and status, and read or download its attachments. As the Administrator, the Users screen lists, searches and filters accounts and creates, edits, deactivates and issues initial passwords for them; nobody is ever deleted, and you cannot deactivate yourself or the last active Administrator. On the Ticket Detail, Public Comments, Internal Notes and Attachments are tabs with counts: a Public Comment is visible to the Requester, an Internal Note never is (a Requester gets 403 on the notes endpoint even for their own Ticket), and both are append only. Resolving asks for a Resolution Summary, which the Requester can read; the Requester can answer "Problem appears resolved", which staff see as a banner and which never changes the status by itself.
+Sign in at `http://localhost:5173/login`. An account that still holds the initial password is taken straight to Change Password and can reach nothing else until it has chosen a new one. The seed also creates 14 example Tickets (numbers `TKT-2026-900001` to `TKT-2026-900014`) spread over every status, priority and Requester, with some unassigned and two owned by the inactive IT Staff account, so the IT Staff Ticket Queue has something to show and its "Needs new owner" markers have real rows. Twelve of them carry example Public Comments and Internal Notes (15 and 9, containing nothing sensitive). Nine of the Tickets carry 13 example Actions Taken (4 Planned, 7 Completed, 2 Cancelled), so there are Tickets with zero, one and several Actions, and every seeded Ticket has a Status History that leads from New to its current status. Malee and Kittipong exist so that a dashboard with only zero figures can be shown. Re-running the seed never changes a Ticket that already exists, never duplicates or overwrites a comment, note, Action or Status History entry, and adds nothing to a seeded Ticket that has since been moved or worked on through the application. Every role lands on its Dashboard: a Requester on `/dashboard`, IT Staff and Administrators on `/staff/dashboard`, and every card opens the list it counts. From the Ticket Queue, try the Owner filter's "Needs an owner" option, then open a Ticket to claim it, change its IT Priority and status, and read or download its attachments. As the Administrator, the Users screen lists, searches and filters accounts and creates, edits, deactivates and issues initial passwords for them; nobody is ever deleted, and you cannot deactivate yourself or the last active Administrator. On the Ticket Detail, Public Comments, Internal Notes and Attachments are tabs with counts: a Public Comment is visible to the Requester, an Internal Note never is (a Requester gets 403 on the notes endpoint even for their own Ticket), and both are append only. Resolving asks for a Resolution Summary, which the Requester can read; the Requester can answer "Problem appears resolved", which staff see as a banner and which never changes the status by itself.
+
+To see Lab 4 end to end: as Pimchanok (IT Staff), open a Ticket from "My Planned Actions" on the Dashboard, add an Action on its Actions Taken tab, then complete or cancel it. Try to resolve a Ticket that still has a Planned Action: the status control explains why it cannot, and links to Actions Taken. Once every Action is Completed or Cancelled, resolve it and read the new entry in its Status History. As the Requester of that Ticket, the same Actions and History appear read-only. Malee (Requester) and Kittipong (IT Staff) show every dashboard figure at zero.
 
 The Lab 2 Development Requester selector no longer exists: you are always the account you signed in as. Each role sees only its own navigation, and a screen its role may not use shows an "Access denied" state even by direct URL. Once an account has chosen its own password the seed never resets it, so to sign in with `ChangeMe!23` again use an account you have not touched yet.
 
@@ -88,8 +90,8 @@ After signing in as a Requester the Lab 2 workflow is complete: create a Ticket 
 ## Tests
 
 ```bash
-cd server && npm test      # Vitest/Supertest: unit validators + every Lab 2 and Lab 3 API endpoint, plus migration and seed tests
-cd client && npm test      # Vitest + Testing Library: every Lab 2 and Lab 3 screen and its states
+cd server && npm test      # Vitest/Supertest: unit validators + every Lab 2, 3 and 4 API endpoint, plus migration, seed, and Idempotency-Key tests
+cd client && npm test      # Vitest + Testing Library: every Lab 2, 3 and 4 screen and its states; any console error or warning fails the test
 ```
 
 ### End-to-end, responsive, and visual
@@ -100,21 +102,22 @@ servers itself, so only the database has to be up, migrated, and seeded first.
 ```bash
 npm install                       # once, at the repo root
 npx playwright install chromium   # once, downloads the browser
-npx playwright test               # Lab 2 and Lab 3 E2E flows + responsive checks at 375/768/1280
+npx playwright test               # Lab 2, 3 and 4 E2E flows + responsive checks at 375/768/1280
 ```
 
-This also regenerates the screenshots under `artifacts/lab-02/screenshots/` and `artifacts/lab-03/screenshots/`.
+This also regenerates the screenshots under `artifacts/lab-02/screenshots/`, `artifacts/lab-03/screenshots/` and `artifacts/lab-04/screenshots/`.
 
-See `docs/lab-03/tests.md` for the full Lab 3 test plan, the acceptance-criterion
-traceability matrix, and the final results from `main` (`docs/lab-02/tests.md` for Lab 2,
-`docs/lab-01/tests.md` for Lab 1).
+See `docs/lab-04/tests.md` for the full Lab 4 test plan, the acceptance-criterion
+traceability matrix, and the results of each Issue (`docs/lab-03/tests.md` for Lab 3,
+`docs/lab-02/tests.md` for Lab 2, `docs/lab-01/tests.md` for Lab 1).
 
 ## Project docs
 
+- `docs/lab-04/specification.md`, `api-spec.md`, `ui-spec.md`, `tests.md`: Lab 4 engineering contract, test plan and results
 - `docs/lab-03/specification.md`, `api-spec.md`, `ui-spec.md`, `tests.md`: Lab 3 engineering contract, test plan and final results
 - `docs/lab-03/reviewer.md`: Lab 3 peer review record, both directions
 - `docs/lab-03/ai-use.md`: Lab 3 AI tool usage and reflection
-- `docs/adr/`: architecture decisions (session cookie authentication, renaming `RequesterUser` to `User` in place)
+- `docs/adr/`: architecture decisions (session cookie authentication, renaming `RequesterUser` to `User` in place, Idempotency-Keys on create endpoints, a version column for Action edits)
 - `CONTEXT.md`: glossary of the domain terms used across the docs and code
 - `docs/lab-02/specification.md`, `api-spec.md`, `ui-spec.md`, `tests.md`: Lab 2 engineering contract
 - `docs/lab-02/reviewer.md`: Lab 2 peer review record, both directions

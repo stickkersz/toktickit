@@ -1,12 +1,15 @@
 import "@testing-library/jest-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, useNavigate } from "react-router-dom";
 import App from "../../src/App.js";
 import * as api from "../../src/api.js";
 import { ApiError, type ContentItem, type StaffOwner, type StaffTicketDetail, type StaffTicketItem } from "../../src/api.js";
 import { ADMIN, REQUESTER, STAFF, renderApp } from "./support.js";
+import { ROUTER_FUTURE } from "../../src/routerFuture.js";
+
+const UUID = expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -183,14 +186,16 @@ describe("Staff Ticket Detail: Ticket Owner", () => {
   it("marks only the owner control busy while it saves, leaving the others usable", async () => {
     const fake = await openDetail();
     let release: () => void = () => {};
-    fake.setOwner.mockImplementation(() => new Promise((resolve) => (release = () => resolve({} as StaffTicketItem))));
+    // A whole Ticket, as the real endpoint answers; an empty object rendered the status options with no key.
+    fake.setOwner.mockImplementation(() => new Promise((resolve) => (release = () => resolve(detail({ ownerId: STAFF.id, ownerName: STAFF.name, ownerIsActive: true, ownerEligible: true }) as StaffTicketItem))));
     await userEvent.click(screen.getByRole("button", { name: "Claim" }));
     await waitFor(() => expect(screen.getByLabelText("Ticket Owner")).toBeDisabled());
     expect(screen.getByLabelText("Ticket Owner")).toHaveAttribute("aria-busy", "true");
     expect(screen.getByText("Saving…")).toBeInTheDocument();
     expect(screen.getByLabelText("IT Priority")).toBeEnabled();
     expect(screen.getByLabelText("Current Status")).toBeEnabled();
-    release();
+    // Settle the save inside act, so its update is not left running after the test (UI-26).
+    await act(async () => release());
   });
 
   it("tells the user when someone else claimed the Ticket first, and shows who owns it now", async () => {
@@ -272,20 +277,21 @@ describe("Staff Ticket Detail: IT Priority", () => {
   it("marks only the IT Priority and status controls busy while they save, leaving the owner usable", async () => {
     const fake = await openDetail(detail({ ownerId: 20, ownerName: "Wichai Charoen", ownerIsActive: true, ownerEligible: true }));
     let release: () => void = () => {};
-    fake.setPriority.mockImplementation(() => new Promise((resolve) => (release = () => resolve({} as StaffTicketItem))));
+    fake.setPriority.mockImplementation(() => new Promise((resolve) => (release = () => resolve(detail({ ownerId: 20, ownerName: "Wichai Charoen", ownerIsActive: true, ownerEligible: true, itPriority: "LOW" }) as StaffTicketItem))));
     await userEvent.selectOptions(screen.getByLabelText("IT Priority"), "Low");
     await waitFor(() => expect(screen.getByLabelText("IT Priority")).toBeDisabled());
     expect(screen.getByLabelText("Ticket Owner")).toBeEnabled();
     expect(screen.getByLabelText("Current Status")).toBeEnabled();
-    release();
+    // Settle the save inside act, so its update is not left running after the test (UI-26).
+    await act(async () => release());
 
     let releaseStatus: () => void = () => {};
-    fake.setStatus.mockImplementation(() => new Promise((resolve) => (releaseStatus = () => resolve({} as StaffTicketItem))));
+    fake.setStatus.mockImplementation(() => new Promise((resolve) => (releaseStatus = () => resolve(detail({ ownerId: 20, ownerName: "Wichai Charoen", ownerIsActive: true, ownerEligible: true, itPriority: "LOW", currentStatus: "IN_PROGRESS" }) as StaffTicketItem))));
     await userEvent.selectOptions(screen.getByLabelText("Current Status"), "In Progress");
     await waitFor(() => expect(screen.getByLabelText("Current Status")).toBeDisabled());
     expect(screen.getByLabelText("Ticket Owner")).toBeEnabled();
     expect(screen.getByLabelText("IT Priority")).toBeEnabled();
-    releaseStatus();
+    await act(async () => releaseStatus());
   });
 
   it("restores the previous IT Priority and says nothing changed when the request fails", async () => {
@@ -328,6 +334,20 @@ describe("Staff Ticket Detail: status", () => {
     await waitFor(() => expect(screen.getByLabelText("Current Status")).toHaveValue("IN_PROGRESS"));
     expect(optionsOf("Current Status")).toEqual(["In Progress", "Waiting for Requester", "Resolved", "Cancelled"]);
     expect(within(screen.getByRole("heading", { name: "TKT-2026-000042" }).parentElement!).getByText("In Progress")).toHaveClass("zg-badge-in-progress");
+  });
+
+  // Lab 4 FR-17 (the #84 sweep): a control that removes itself returns focus to what it acted on
+  it("returns focus to the Ticket Owner select after Claim, and to Current Status after Keep current status", async () => {
+    const fake = await openDetail(detail({ ownerId: null, ownerName: null, ownerIsActive: null, ownerEligible: null }));
+    fake.setOwner.mockResolvedValue(detail({ ownerId: STAFF.id, ownerName: STAFF.name, ownerIsActive: true, ownerEligible: true }) as StaffTicketItem);
+    fake.set({ ownerId: STAFF.id, ownerName: STAFF.name, ownerIsActive: true, ownerEligible: true });
+    await userEvent.click(screen.getByRole("button", { name: "Claim" }));
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Claim" })).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.getByLabelText("Ticket Owner")).toHaveFocus());
+
+    await userEvent.selectOptions(screen.getByLabelText("Current Status"), "Cancelled");
+    await userEvent.click(within(screen.getByRole("group", { name: "Confirm the status change" })).getByRole("button", { name: "Keep current status" }));
+    await waitFor(() => expect(screen.getByLabelText("Current Status")).toHaveFocus());
   });
 
   // UI-36 / AC-53, BR-64
@@ -809,7 +829,7 @@ describe("Staff Ticket Detail: moving between Tickets", () => {
     const slow = { resolve: (_: StaffTicketItem) => {} };
     vi.spyOn(api, "setTicketPriority").mockImplementation(() => new Promise((resolve) => (slow.resolve = resolve)));
     render(
-      <MemoryRouter initialEntries={["/staff/tickets/42"]}>
+      <MemoryRouter future={ROUTER_FUTURE} initialEntries={["/staff/tickets/42"]}>
         <App />
         <Jump to="/staff/tickets/43" />
       </MemoryRouter>,
@@ -939,7 +959,7 @@ describe("Staff Ticket Detail: Public Comments and Internal Notes", () => {
     await user.type(screen.getByLabelText("Add Public Comment"), "  Thanks, restarting now.  ");
     await user.click(screen.getByRole("button", { name: "Post Comment" }));
 
-    expect(post).toHaveBeenCalledWith(42, "Thanks, restarting now.");
+    expect(post).toHaveBeenCalledWith(42, "Thanks, restarting now.", UUID); // Lab 4 BR-39: with its Idempotency-Key
     expect(await within(panel()).findByText("Thanks, restarting now.")).toBeInTheDocument();
     expect(screen.getByLabelText("Add Public Comment")).toHaveValue("");
     expect(tab(/^Public Comments/)).toHaveTextContent("Public Comments (2)");
@@ -957,7 +977,7 @@ describe("Staff Ticket Detail: Public Comments and Internal Notes", () => {
     await user.type(screen.getByLabelText("Add Internal Note"), "Switch port looks fine.");
     await user.click(screen.getByRole("button", { name: "Add Note" }));
 
-    expect(postNote).toHaveBeenCalledWith(42, "Switch port looks fine.");
+    expect(postNote).toHaveBeenCalledWith(42, "Switch port looks fine.", UUID);
     expect(postComment).not.toHaveBeenCalled();
     expect(await within(panel()).findByText("Switch port looks fine.")).toBeInTheDocument();
     expect(tab(/^Internal Notes/)).toHaveTextContent("Internal Notes (1)");
@@ -1156,7 +1176,7 @@ describe("Staff Ticket Detail: Public Comments and Internal Notes", () => {
     vi.spyOn(api, "getTicketActions").mockResolvedValue([]);
     vi.spyOn(api, "postTicketNote").mockReturnValue(slowPost.promise);
     render(
-      <MemoryRouter initialEntries={["/staff/tickets/42"]}>
+      <MemoryRouter future={ROUTER_FUTURE} initialEntries={["/staff/tickets/42"]}>
         <App />
         <Jump to="/staff/tickets/43" />
       </MemoryRouter>,

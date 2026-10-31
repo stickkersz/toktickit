@@ -7,6 +7,7 @@ import { requireRole } from "../middleware/requireRole.js";
 import { isValidId } from "../ids.js";
 import { validateContentBody } from "../contentValidation.js";
 import { TERMINAL_STATUSES } from "../ticketStatus.js";
+import { IDEMPOTENCY_KEY_REUSED_MESSAGE, keyedCreate, readKey } from "../idempotency.js";
 
 // Public Comments and Internal Notes (api-spec.md endpoints 11 and 12).
 //
@@ -26,7 +27,11 @@ interface ContentRow {
   authorRole: UserRole;
   createdAt: Date;
   author: { name: string };
+  requestHash: string | null;
 }
+
+// Lab 4 BR-39: the key and fingerprint hash are stored with the row.
+type CreateData = { ticketId: number; authorId: number; authorRole: UserRole; body: string; idempotencyKey: string | null; requestHash: string | null };
 
 // The one shape for both kinds. The author's email and id are never sent (endpoint 11). The role
 // is the one stored on the row when it was written, so a later role change does not relabel it (BR-61).
@@ -39,10 +44,8 @@ const withAuthor = { author: { select: { name: true } } } as const;
 // The only thing that differs between a comment and a note is the table.
 interface ContentStore {
   list(prisma: PrismaClient, ticketId: number): Promise<ContentRow[]>;
-  create(
-    prisma: Prisma.TransactionClient | PrismaClient,
-    data: { ticketId: number; authorId: number; authorRole: UserRole; body: string },
-  ): Promise<ContentRow>;
+  create(prisma: Prisma.TransactionClient | PrismaClient, data: CreateData): Promise<ContentRow>;
+  findKeyed(prisma: PrismaClient, authorId: number, idempotencyKey: string): Promise<ContentRow | null>;
 }
 
 const ordered = [{ createdAt: "asc" }, { id: "asc" }] as const;
@@ -56,11 +59,15 @@ const commentStore: ContentStore = {
     await prisma.ticket.update({ where: { id: data.ticketId }, data: { updatedAt: new Date() } });
     return row;
   },
+  findKeyed: (prisma, authorId, idempotencyKey) =>
+    prisma.publicComment.findUnique({ where: { authorId_idempotencyKey: { authorId, idempotencyKey } }, include: withAuthor }),
 };
 
 const noteStore: ContentStore = {
   list: (prisma, ticketId) => prisma.internalNote.findMany({ where: { ticketId }, include: withAuthor, orderBy: [...ordered] }),
   create: (prisma, data) => prisma.internalNote.create({ data, include: withAuthor }),
+  findKeyed: (prisma, authorId, idempotencyKey) =>
+    prisma.internalNote.findUnique({ where: { authorId_idempotencyKey: { authorId, idempotencyKey } }, include: withAuthor }),
 };
 
 const notFound = (res: Response) => sendError(res, 404, "NOT_FOUND", "Ticket not found.");
@@ -99,39 +106,52 @@ function mount(path: "comments" | "notes", guards: typeof anyRole, store: Conten
       // input is wrong before anything about the Ticket. Author and time are never read from the
       // body: they come from the session and the server clock (BR-32).
       const checked = validateContentBody(req.body?.body);
-      if (checked.error) return sendError(res, 400, "VALIDATION_ERROR", checked.error, { body: checked.error });
+      const { key, hash, error: keyError } = readKey(req, `/api/tickets/${ticketId}/${path}`, ["body"]);
+      const fields: Record<string, string> = {};
+      if (checked.error) fields.body = checked.error;
+      if (keyError) fields.idempotencyKey = keyError;
+      if (Object.keys(fields).length > 0) return sendError(res, 400, "VALIDATION_ERROR", Object.values(fields)[0], fields);
 
       const prisma = getPrisma();
       if (!(await prisma.ticket.findFirst({ where: reachable(req, ticketId), select: { id: true } }))) return notFound(res);
 
-      const data = { ticketId, authorId: req.user!.id, authorRole: req.user!.role, body: checked.value! };
-
-      // BR-34: a Requester may not comment on a CLOSED or CANCELLED Ticket. The check and the
-      // insert are one transaction holding a lock on the Ticket row, so a close that lands in between
-      // waits for the comment, or the comment waits for it and then sees the new status. Without the
-      // lock a comment could be written just after the Ticket was closed. The lock is FOR NO KEY UPDATE,
-      // not FOR SHARE: the same transaction updates the row's last activity (Lab 4 BR-38), and two
-      // share holders upgrading would deadlock (review on Lab 4 #86; the Lab 4 #83 lesson).
-      if (path === "comments" && req.user!.role === "REQUESTER") {
-        const created = await prisma.$transaction(async (tx) => {
-          const open = await tx.$queryRaw<{ id: number }[]>(Prisma.sql`
-            SELECT "id" FROM "Ticket"
-            WHERE "id" = ${ticketId} AND "currentStatus"::text NOT IN (${Prisma.join([...TERMINAL_STATUSES])})
-            FOR NO KEY UPDATE`);
-          return open.length === 0 ? null : store.create(tx, data);
-        });
-        if (!created) return sendError(res, 409, "TICKET_TERMINAL", "This Ticket is closed, so comments can no longer be added.");
-        return res.status(201).json(serialize(created));
-      }
-
-      // One transaction for every role: a Public Comment and its last-activity touch are stored together or
-      // not at all (sweep on Lab 4 #86). No lock is needed here; the insert's foreign key takes only a key
-      // share on the Ticket, which never deadlocks with the touch.
-      res.status(201).json(serialize(await prisma.$transaction((tx) => store.create(tx, data))));
+      const authorId = req.user!.id;
+      const data: CreateData = { ticketId, authorId, authorRole: req.user!.role, body: checked.value!, idempotencyKey: key, requestHash: hash };
+      // Lab 4 BR-39: a repeat of a keyed request answers from the row already stored, before the closed
+      // check, so a comment created and then lost in transit is still found.
+      const outcome = await keyedCreate(key, hash, () => store.findKeyed(prisma, authorId, key!), () => write(prisma, data));
+      if (outcome.kind === "replay") return res.status(200).set("Idempotent-Replayed", "true").json(serialize(outcome.row));
+      if (outcome.kind === "reused") return sendError(res, 409, "IDEMPOTENCY_KEY_REUSED", IDEMPOTENCY_KEY_REUSED_MESSAGE);
+      if (!outcome.value) return sendError(res, 409, "TICKET_TERMINAL", "This Ticket is closed, so comments can no longer be added.");
+      res.status(201).json(serialize(outcome.value));
     } catch {
       sendError(res, 500, "INTERNAL_ERROR", `Unable to add the ${label}.`);
     }
   });
+
+  // The write itself; null is a Requester's comment on a closed Ticket.
+  async function write(prisma: PrismaClient, data: CreateData): Promise<ContentRow | null> {
+    // BR-34: a Requester may not comment on a CLOSED or CANCELLED Ticket. The check and the
+    // insert are one transaction holding a lock on the Ticket row, so a close that lands in between
+    // waits for the comment, or the comment waits for it and then sees the new status. Without the
+    // lock a comment could be written just after the Ticket was closed. The lock is FOR NO KEY UPDATE,
+    // not FOR SHARE: the same transaction updates the row's last activity (Lab 4 BR-38), and two
+    // share holders upgrading would deadlock (review on Lab 4 #86; the Lab 4 #83 lesson).
+    if (path === "comments" && data.authorRole === "REQUESTER") {
+      return prisma.$transaction(async (tx) => {
+        const open = await tx.$queryRaw<{ id: number }[]>(Prisma.sql`
+          SELECT "id" FROM "Ticket"
+          WHERE "id" = ${data.ticketId} AND "currentStatus"::text NOT IN (${Prisma.join([...TERMINAL_STATUSES])})
+          FOR NO KEY UPDATE`);
+        return open.length === 0 ? null : store.create(tx, data);
+      });
+    }
+
+    // One transaction for every role: a Public Comment and its last-activity touch are stored together or
+    // not at all (sweep on Lab 4 #86). No lock is needed here; the insert's foreign key takes only a key
+    // share on the Ticket, which never deadlocks with the touch.
+    return prisma.$transaction((tx) => store.create(tx, data));
+  }
 }
 
 // Endpoint 11: a Requester for their own Ticket, IT Staff and Administrators for any Ticket.

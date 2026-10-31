@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { useFocusNet } from "./focusNet.js";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { RoleBadge } from "./Badge.js";
 import { useAuth } from "./authContext.js";
@@ -46,6 +47,8 @@ export const NAV_BY_ROLE: Record<UserRole, NavItem[]> = {
 // toggle is not worth it. Identity and Logout sit inside that panel on mobile.
 export default function Shell() {
   const { user, signOut } = useAuth();
+  const mainRef = useRef<HTMLElement>(null);
+  useFocusNet(mainRef);
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -105,7 +108,7 @@ export default function Shell() {
             </div>
 
             <div className="d-flex flex-column flex-md-row align-items-md-center gap-2 gap-md-3 py-2 py-md-0">
-              <span className="text-white d-flex align-items-center gap-2">
+              <span className="text-white d-flex align-items-center gap-2 zg-header-user">
                 {user.name} <RoleBadge role={user.role} />
               </span>
               <Link
@@ -123,7 +126,7 @@ export default function Shell() {
         </div>
       </nav>
 
-      <main className="container py-4">
+      <main className="container py-4" ref={mainRef}>
         <Outlet />
       </main>
     </div>

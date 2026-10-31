@@ -169,6 +169,43 @@ describe("Add Action", () => {
     expect([...responsible.options].map((o) => o.textContent)).toEqual(OWNERS.map((o) => o.name));
   });
 
+  // STYLE-02 / AC-50: every required label on the Lab 4 form and both dialogs ends with the red asterisk
+  it("ends every required label on the Action form and the Complete and Cancel dialogs with the red asterisk", async () => {
+    const endsMarked = (field: HTMLElement) => {
+      const label = (field as HTMLInputElement).labels![0];
+      expect(label.lastElementChild, label.textContent!).toHaveClass("zg-required");
+    };
+    await openStaff([action()]);
+    await userEvent.click(within(panel()).getByRole("button", { name: "Add Action" }));
+    for (const name of [/Action Date\/Time/, /Action Description/, /Responsible Staff/]) endsMarked(screen.getByLabelText(name));
+    // Optional fields carry no mark.
+    expect((screen.getByLabelText(/Attachment Notes/) as HTMLInputElement).labels![0].querySelector(".zg-required")).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    await userEvent.click(within(panel()).getAllByRole("button", { name: /Replace the LAN cable/ })[0]);
+    for (const [opener, fields] of [["Complete", [/Result/, /Action Date\/Time/]], ["Cancel Action", [/Reason/]]] as const) {
+      await userEvent.click(within(panel()).getByRole("button", { name: opener }));
+      const dialog = screen.getByRole("dialog");
+      for (const name of fields) endsMarked(within(dialog).getByLabelText(name));
+      await userEvent.keyboard("{Escape}");
+    }
+  });
+
+  // UI-27 / AC-40, BR-39 (Add Action; the comment half is in Hardening.test.tsx)
+  it("on IDEMPOTENCY_KEY_REUSED keeps the typed text, shows the server's message, and sends the next save with a new key", async () => {
+    await openStaff();
+    const message = "This request was already submitted with different content. Refresh and try again.";
+    const create = vi.spyOn(api, "createAction").mockRejectedValueOnce(new ApiError(message, 409, "IDEMPOTENCY_KEY_REUSED")).mockResolvedValueOnce(action());
+    await userEvent.click(within(panel()).getByRole("button", { name: "Add Action" }));
+    await fill(/Action Description/, "Replace the cable at desk 4B.");
+    await userEvent.click(screen.getByRole("button", { name: "Save Action" }));
+    expect(await screen.findByText(message)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Action Description/)).toHaveValue("Replace the cable at desk 4B.");
+    await userEvent.click(screen.getByRole("button", { name: "Save Action" }));
+    expect(await screen.findByText("Action added.")).toBeInTheDocument();
+    expect(create.mock.calls[1][2]).not.toBe(create.mock.calls[0][2]);
+  });
+
   // UI-12 / AC-39, AC-41
   it("sends one request for a double click, and retries a lost response with the same Idempotency-Key", async () => {
     await openStaff();
@@ -453,7 +490,8 @@ describe("Complete and Cancel dialogs", () => {
     expect(Math.abs(new Date(`${at.value}:00+07:00`).getTime() - Date.now())).toBeLessThan(2 * 60 * 1000);
 
     // Tab from the last control wraps to the first, Shift+Tab from the first to the last.
-    within(dialog).getByRole("button", { name: "Mark as Completed" }).focus();
+    // Moving focus blurs Result, whose blur handler sets state, so it runs inside act (UI-26).
+    act(() => within(dialog).getByRole("button", { name: "Mark as Completed" }).focus());
     await userEvent.tab();
     expect(within(dialog).getByLabelText(/Result/)).toHaveFocus();
     await userEvent.tab({ shift: true });

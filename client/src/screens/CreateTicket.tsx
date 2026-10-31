@@ -1,7 +1,8 @@
 import { RequiredMark } from "../RequiredMark.js";
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
+  ApiError,
   Category,
   RelatedSystem,
   Ticket,
@@ -157,6 +158,10 @@ export default function CreateTicket() {
     relatedSystemId !== "" &&
     requestedPriority !== "";
 
+  // Lab 4 BR-39: one Idempotency-Key per submission. Resubmitting the same content after a failure reuses
+  // it, so a Ticket whose response was lost is not created twice; changed content gets a new key.
+  const submission = useRef<{ key: string; content: string } | null>(null);
+
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
     if (!user) return;
@@ -172,13 +177,17 @@ export default function CreateTicket() {
     setSubmitting(true);
 
     try {
-      const ticket = await createTicket({
+      const input = {
         categoryId: Number(categoryId),
         relatedSystemId: Number(relatedSystemId),
         summary: summary.trim(),
         description: description.trim(),
         requestedPriority: requestedPriority as TicketPriority,
-      });
+      };
+      const content = JSON.stringify(input);
+      if (submission.current?.content !== content) submission.current = { key: crypto.randomUUID(), content };
+      const ticket = await createTicket(input, submission.current.key);
+      submission.current = null;
 
       setCreatedTicket(ticket);
 
@@ -214,6 +223,10 @@ export default function CreateTicket() {
     } catch (error) {
       if (error instanceof ValidationError) {
         setFieldErrors(error.fields);
+      } else if (error instanceof ApiError && error.code === "IDEMPOTENCY_KEY_REUSED") {
+        // What was typed stays; the next submission is a new request.
+        submission.current = null;
+        setApiError(error.message);
       } else {
         setApiError(error instanceof Error ? error.message : "Unable to create the Ticket.");
       }

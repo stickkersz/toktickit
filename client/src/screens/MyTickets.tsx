@@ -128,10 +128,13 @@ export default function MyTickets() {
     setParams(next, { replace: true });
   }
 
+  // Clear filters hides itself, so focus goes to Search, the first filter (Lab 4 FR-17, the #84 sweep).
+  const searchRef = useRef<HTMLInputElement>(null);
   function clearFilters() {
     const next = new URLSearchParams();
     if (sort !== DEFAULT_SORT) next.set("sort", sort);
     setParams(next, { replace: true });
+    searchRef.current?.focus();
   }
 
   function toggleSort(field: SortableField) {
@@ -183,6 +186,7 @@ export default function MyTickets() {
             <div className="row g-2 mb-3">
               <div className="col-md-4">
                 <input
+                  ref={searchRef}
                   type="search"
                   className="form-control"
                   placeholder="Search by ticket number or summary…"

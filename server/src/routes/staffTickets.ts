@@ -181,13 +181,12 @@ staffTicketsRouter.patch("/api/staff/tickets/:id/owner", ...staffOnly, async (re
     const existing = await prisma.ticket.findUnique({ where: { id: ticketId }, select: { id: true } });
     if (!existing) return sendError(res, 404, "NOT_FOUND", "Ticket not found.");
 
+    // Lab 4 BR-38: last activity moves only when a field changes, so each write below matches only a
+    // Ticket whose owner is different, and a request that changes nothing writes nothing.
     if (ownerId === null) {
       // BR-20: unassigning is always permitted.
-      const updated = await prisma.ticket.update({
-        where: { id: ticketId },
-        data: { ownerId: null },
-        include: staffTicketInclude,
-      });
+      await prisma.ticket.updateMany({ where: { id: ticketId, ownerId: { not: null } }, data: { ownerId: null } });
+      const updated = await prisma.ticket.findUniqueOrThrow({ where: { id: ticketId }, include: staffTicketInclude });
       return res.status(200).json(serializeStaffTicket(updated));
     }
 
@@ -197,23 +196,23 @@ staffTicketsRouter.patch("/api/staff/tickets/:id/owner", ...staffOnly, async (re
       if (!(await isEligibleStaffLocked(tx, ownerId))) return "INVALID_OWNER" as const;
       if (ownerId === req.user!.id) {
         // A claim (BR-19, BR-58). The condition is part of the write itself, so two people
-        // claiming at once cannot both win: it succeeds while the Ticket has no owner, is
-        // already yours, or its owner is ineligible, and the loser gets ALREADY_ASSIGNED.
+        // claiming at once cannot both win: it succeeds while the Ticket has no owner or its owner
+        // is ineligible, and the loser gets ALREADY_ASSIGNED. A Ticket already yours is a success
+        // with no write (BR-38).
         const claimed = await tx.ticket.updateMany({
           where: {
             id: ticketId,
-            OR: [
-              { ownerId: null },
-              { ownerId: req.user!.id },
-              { owner: { is: { OR: [{ isActive: false }, { role: "REQUESTER" }] } } },
-            ],
+            OR: [{ ownerId: null }, { owner: { is: { OR: [{ isActive: false }, { role: "REQUESTER" }] } } }],
           },
           data: { ownerId: req.user!.id },
         });
-        if (claimed.count === 0) return "ALREADY_ASSIGNED" as const;
+        if (claimed.count === 0) {
+          const current = await tx.ticket.findUnique({ where: { id: ticketId }, select: { ownerId: true } });
+          if (current?.ownerId !== req.user!.id) return "ALREADY_ASSIGNED" as const;
+        }
       } else {
         // Assigning or reassigning to someone else, whether or not it is currently assigned (BR-20).
-        await tx.ticket.update({ where: { id: ticketId }, data: { ownerId } });
+        await tx.ticket.updateMany({ where: { id: ticketId, OR: [{ ownerId: null }, { ownerId: { not: ownerId } }] }, data: { ownerId } });
       }
       return "OK" as const;
     });
@@ -247,12 +246,11 @@ staffTicketsRouter.patch("/api/staff/tickets/:id/priority", ...staffOnly, async 
     if (!(await prisma.ticket.findUnique({ where: { id: ticketId }, select: { id: true } }))) {
       return sendError(res, 404, "NOT_FOUND", "Ticket not found.");
     }
-    // Only itPriority is written: Requested Priority is immutable (BR-21).
-    const updated = await prisma.ticket.update({
-      where: { id: ticketId },
-      data: { itPriority: value as (typeof PRIORITIES)[number] },
-      include: staffTicketInclude,
-    });
+    // Only itPriority is written: Requested Priority is immutable (BR-21). The same value writes nothing,
+    // so last activity does not move (Lab 4 BR-38).
+    const itPriority = value as (typeof PRIORITIES)[number];
+    await prisma.ticket.updateMany({ where: { id: ticketId, itPriority: { not: itPriority } }, data: { itPriority } });
+    const updated = await prisma.ticket.findUniqueOrThrow({ where: { id: ticketId }, include: staffTicketInclude });
     res.status(200).json(serializeStaffTicket(updated));
   } catch {
     sendError(res, 500, "INTERNAL_ERROR", "Unable to change the IT Priority.");

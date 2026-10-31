@@ -210,12 +210,13 @@ export async function getRelatedSystems(): Promise<RelatedSystem[]> {
 // say. BR-34 asks for a safe failure state; "Failed to fetch" is the raw
 // TypeError text from fetch and means nothing to a Requester, so the technical
 // detail goes to the console and the UI gets a stable, documented message.
-export async function createTicket(input: CreateTicketInput): Promise<Ticket> {
+// Lab 4 BR-39: the form sends one Idempotency-Key per submission and keeps it for a retry.
+export async function createTicket(input: CreateTicketInput, idempotencyKey?: string): Promise<Ticket> {
   let res: Response;
   try {
     res = await apiFetch(`/api/tickets`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}) },
       body: JSON.stringify(input),
     });
   } catch (cause) {
@@ -577,10 +578,12 @@ async function getContent(ticketId: number, path: "comments" | "notes", fallback
   return body as ContentItem[];
 }
 
-async function postContent(ticketId: number, path: "comments" | "notes", text: string, fallback: string): Promise<ContentItem> {
+// Lab 4 BR-39: one Idempotency-Key per submission, kept by the composer for a retry. A 200 replay is the
+// record already created, so it is treated like the 201.
+async function postContent(ticketId: number, path: "comments" | "notes", text: string, fallback: string, idempotencyKey: string): Promise<ContentItem> {
   const { res, body } = await authRequest(`/api/tickets/${ticketId}/${path}`, {
     method: "POST",
-    headers: JSON_HEADERS,
+    headers: { ...JSON_HEADERS, "Idempotency-Key": idempotencyKey },
     body: JSON.stringify({ body: text }),
   });
   if (!res.ok) throw errorFromResponse(res.status, body, fallback);
@@ -588,10 +591,12 @@ async function postContent(ticketId: number, path: "comments" | "notes", text: s
 }
 
 export const getTicketComments = (ticketId: number) => getContent(ticketId, "comments", "Unable to load the comments.");
-export const postTicketComment = (ticketId: number, body: string) => postContent(ticketId, "comments", body, "Unable to add the comment.");
+export const postTicketComment = (ticketId: number, body: string, idempotencyKey: string) =>
+  postContent(ticketId, "comments", body, "Unable to add the comment.", idempotencyKey);
 // IT Staff and Administrators only: a Requester never calls these (BR-35).
 export const getTicketNotes = (ticketId: number) => getContent(ticketId, "notes", "Unable to load the notes.");
-export const postTicketNote = (ticketId: number, body: string) => postContent(ticketId, "notes", body, "Unable to add the note.");
+export const postTicketNote = (ticketId: number, body: string, idempotencyKey: string) =>
+  postContent(ticketId, "notes", body, "Unable to add the note.", idempotencyKey);
 
 // Administrator user management (api-spec.md endpoints 13 to 16). No password hash ever comes back.
 export interface AdminUser {

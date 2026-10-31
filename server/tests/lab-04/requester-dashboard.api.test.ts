@@ -198,6 +198,29 @@ describe("concurrent writes that touch last activity (review on #86)", () => {
   });
 });
 
+describe("a save that changes nothing (BR-38)", () => {
+  // DASH-09 / BR-38: last activity moves when a Ticket field changes, not when a save repeats its value
+  it("leaves last activity alone for the same IT Priority, a re-claim, and a second unassign, and moves it on a real change", async () => {
+    const t = await ticket(aliceId, "IN_PROGRESS");
+    const at = async () => (await iso.db.client.ticket.findUniqueOrThrow({ where: { id: t.id } })).updatedAt.getTime();
+    const before = await at();
+
+    expect((await staff.patch(`/api/staff/tickets/${t.id}/priority`).send({ itPriority: "MEDIUM" })).status).toBe(200);
+    expect((await staff.patch(`/api/staff/tickets/${t.id}/owner`).send({ ownerId: staffId })).status).toBe(200);
+    expect(await at()).toBe(before);
+
+    expect((await staff.patch(`/api/staff/tickets/${t.id}/owner`).send({ ownerId: null })).status).toBe(200);
+    const unassigned = await at();
+    expect(unassigned).toBeGreaterThan(before);
+    expect((await staff.patch(`/api/staff/tickets/${t.id}/owner`).send({ ownerId: null })).status).toBe(200);
+    expect(await at()).toBe(unassigned);
+
+    const raised = await staff.patch(`/api/staff/tickets/${t.id}/priority`).send({ itPriority: "HIGH" });
+    expect(raised.body.itPriority).toBe("HIGH");
+    expect(await at()).toBeGreaterThan(unassigned);
+  });
+});
+
 describe("a write and its last-activity touch are one (sweep on #86)", () => {
   // Makes every UPDATE of one Ticket fail inside the database, as a lost connection or a constraint would.
   async function failTicketUpdates(ticketId: number) {

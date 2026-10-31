@@ -8,7 +8,7 @@ Lab 4 requires that duplicate actions caused by repeated clicking or a network r
 - **Key on Action Taken create only**: covers the new feature but leaves Public Comments and Internal Notes, both append-only and visible, open to duplicates that can never be removed.
 - **Key on all four create endpoints** (chosen): one mechanism, one test pattern, and the labsheet's hardening rule holds application-wide.
 - **Deduplicate on identical payload**: rejected because two genuinely identical comments are legitimate.
-- **Compare a replay against the created row's columns instead of a stored hash**: rejected because Ticket create's file names and sizes are not reliably recoverable from the rows (Attachments can be added or removed later), and each endpoint would need its own comparison code.
+- **Compare a replay against the created row's columns instead of a stored hash**: rejected because each endpoint would need its own comparison code, and rows can change after creation (a Ticket's Attachments can be added or removed later), while a stored hash compares the request itself. (Corrected in Issue 08: Ticket create never carried files; they are uploaded afterwards, as in Lab 2.)
 
 ## Consequences
 

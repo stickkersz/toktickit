@@ -150,10 +150,13 @@ export default function StaffTicketQueue() {
     setParams(next, { replace: true });
   }
 
+  // Clear filters hides itself, so focus goes to Search, the first filter (Lab 4 FR-17, the #84 sweep).
+  const searchRef = useRef<HTMLInputElement>(null);
   function clearFilters() {
     const next = new URLSearchParams();
     if (sort !== DEFAULT_SORT) next.set("sort", sort);
     setParams(next, { replace: true });
+    searchRef.current?.focus();
   }
 
   function toggleSort(field: SortableField) {
@@ -218,6 +221,7 @@ export default function StaffTicketQueue() {
           <div className="row g-2 mb-3" role="search">
             <div className="col-12 col-lg-4">
               <input
+                ref={searchRef}
                 type="search"
                 className="form-control"
                 aria-label="Search tickets"
