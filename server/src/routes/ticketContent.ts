@@ -131,13 +131,12 @@ function mount(path: "comments" | "notes", guards: typeof anyRole, store: Conten
 
   // The write itself; null is a Requester's comment on a closed Ticket.
   async function write(prisma: PrismaClient, data: CreateData): Promise<ContentRow | null> {
-
-      // BR-34: a Requester may not comment on a CLOSED or CANCELLED Ticket. The check and the
-      // insert are one transaction holding a lock on the Ticket row, so a close that lands in between
-      // waits for the comment, or the comment waits for it and then sees the new status. Without the
-      // lock a comment could be written just after the Ticket was closed. The lock is FOR NO KEY UPDATE,
-      // not FOR SHARE: the same transaction updates the row's last activity (Lab 4 BR-38), and two
-      // share holders upgrading would deadlock (review on Lab 4 #86; the Lab 4 #83 lesson).
+    // BR-34: a Requester may not comment on a CLOSED or CANCELLED Ticket. The check and the
+    // insert are one transaction holding a lock on the Ticket row, so a close that lands in between
+    // waits for the comment, or the comment waits for it and then sees the new status. Without the
+    // lock a comment could be written just after the Ticket was closed. The lock is FOR NO KEY UPDATE,
+    // not FOR SHARE: the same transaction updates the row's last activity (Lab 4 BR-38), and two
+    // share holders upgrading would deadlock (review on Lab 4 #86; the Lab 4 #83 lesson).
     if (path === "comments" && data.authorRole === "REQUESTER") {
       return prisma.$transaction(async (tx) => {
         const open = await tx.$queryRaw<{ id: number }[]>(Prisma.sql`
