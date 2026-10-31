@@ -582,7 +582,7 @@ describe("Complete and Cancel dialogs", () => {
     expect(row).toHaveFocus();
   });
 
-  // BR-14: the create form, when the Ticket stopped being workable, has no row and no Add Action left
+  // UI-13 (the 409 case) / BR-14, BR-41: the create form, when the Ticket stopped being workable, has no row and no Add Action left
   it("sends focus to the explanation when a create is answered TICKET_NOT_WORKABLE", async () => {
     await openStaff();
     vi.spyOn(api, "createAction").mockRejectedValueOnce(new ApiError("x", 409, "TICKET_NOT_WORKABLE"));
