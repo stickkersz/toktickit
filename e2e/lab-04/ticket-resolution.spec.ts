@@ -1,4 +1,5 @@
-import { expect, Page, test } from "@playwright/test";
+import type { Page } from "@playwright/test";
+import { expect, test, watchConsole } from "./console.js";
 import {
   createTicketAsRequester,
   hasNoHorizontalScroll,
@@ -91,7 +92,7 @@ test.describe("Ticket resolution", () => {
     await page.setViewportSize(VIEWPORTS.desktop);
 
     // The link opens Actions Taken, where the Action is completed.
-    await page.getByRole("button", { name: "Go to Actions Taken" }).click();
+    await page.getByRole("link", { name: "Go to Actions Taken" }).click();
     await expect(page.getByRole("tab", { name: /^Actions Taken/ })).toBeFocused();
     await completeOpenAction(page, "Replace the LAN cable at desk 4B.");
     // The gate opened on this screen: the blocked sentence is gone without a reload (review on #85).
@@ -139,10 +140,13 @@ test.describe("Ticket resolution", () => {
   });
 
   // E2E-04 (AC-22, BR-23)
-  test("refuses a move made from a status another staff member has already changed, and shows the current one", async ({ browser }) => {
+  test("refuses a move made from a status another staff member has already changed, and shows the current one", async ({ browser, consoleMessages }) => {
     const ticket = await createTicketAsRequester(`E2E stale move ${short()}`);
     const first = await browser.newPage();
     const second = await browser.newPage();
+    // Two pages of their own, outside the test's context, so they are watched here (E2E-09).
+    watchConsole(first.context(), consoleMessages);
+    watchConsole(second.context(), consoleMessages);
     await signIn(first, STAFF.email, LANDING.IT_STAFF);
     await signIn(second, OTHER_STAFF.email, LANDING.IT_STAFF);
     await first.goto(`/staff/tickets/${ticket.id}`);

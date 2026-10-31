@@ -164,21 +164,21 @@ As Lab 2 and Lab 3, plus:
 
 Completed against the running app and the captured screenshots before release; each item is ticked only with its evidence recorded in `docs/lab-04/tests.md` section 6.
 
-- [ ] Colors match the Zen Green tokens; no ad-hoc hex in any Lab 4 component; every token used is applied (verified by grep).
-- [ ] Dashboard is first in navigation for each role and marked as the current page on its route.
-- [ ] Every metric card shows a label, a value, and works as a link by mouse and keyboard; zero values show their empty sentence.
-- [ ] Dashboard figures match the drilled-down lists (spot-checked for every card).
-- [ ] Actions Taken: Planned, Completed, and Cancelled are distinguishable by badge text; editable and read-only fields are distinguishable at a glance.
-- [ ] The Follow-Up Note and its red asterisk appear only when Follow-Up Required is checked.
-- [ ] Validation messages sit directly under their fields without overlapping the next field.
-- [ ] Complete and Cancel dialogs trap focus, close on Escape, and return focus.
-- [ ] Requester Ticket Detail shows Actions Taken and History with no editing control.
-- [ ] Shared content (Actions Taken, Public Comments) and private content (Internal Notes) are visually distinct and labelled.
-- [ ] The status control offers only permitted moves and explains a blocked Resolve.
-- [ ] Keyboard focus is visible everywhere: Zen Green ring, white ring on the green header, Zen Green outline on table rows.
-- [ ] No clipped content, overlapping controls, or horizontal scrolling at 375px, 768px, and 1280px.
-- [ ] Loading, empty, forbidden, conflict, not-found, and failure states are visually distinct.
-- [ ] No console errors or warnings on any screen; no placeholder text, dead link, or control without behaviour.
+- [x] Colors match the Zen Green tokens; no ad-hoc hex in any Lab 4 component; every token used is applied (verified by grep).
+- [x] Dashboard is first in navigation for each role and marked as the current page on its route.
+- [x] Every metric card shows a label, a value, and works as a link by mouse and keyboard; zero values show their empty sentence.
+- [x] Dashboard figures match the drilled-down lists (spot-checked for every card).
+- [x] Actions Taken: Planned, Completed, and Cancelled are distinguishable by badge text; editable and read-only fields are distinguishable at a glance.
+- [x] The Follow-Up Note and its red asterisk appear only when Follow-Up Required is checked.
+- [x] Validation messages sit directly under their fields without overlapping the next field.
+- [x] Complete and Cancel dialogs trap focus, close on Escape, and return focus.
+- [x] Requester Ticket Detail shows Actions Taken and History with no editing control.
+- [x] Shared content (Actions Taken, Public Comments) and private content (Internal Notes) are visually distinct and labelled.
+- [x] The status control offers only permitted moves and explains a blocked Resolve.
+- [x] Keyboard focus is visible everywhere: Zen Green ring, white ring on the green header, Zen Green outline on table rows.
+- [x] No clipped content, overlapping controls, or horizontal scrolling at 375px, 768px, and 1280px.
+- [x] Loading, empty, forbidden, conflict, not-found, and failure states are visually distinct.
+- [x] No console errors or warnings on any screen; no placeholder text, dead link, or control without behaviour.
 
 ## 15. Screenshot paths
 

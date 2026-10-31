@@ -346,6 +346,15 @@ export interface ChangePasswordInput {
   confirmPassword: string;
 }
 
+// A request the browser cancels because the page itself is being left (a link to a full page load, a
+// reload, closing the tab) is not a failure worth a console error (Lab 4 BR-43). pageshow clears the flag
+// when the browser brings the page back from its cache.
+let leavingPage = false;
+if (typeof window !== "undefined") {
+  window.addEventListener("pagehide", () => (leavingPage = true));
+  window.addEventListener("pageshow", () => (leavingPage = false));
+}
+
 async function authRequest(path: string, init?: RequestInit): Promise<{ res: Response; body: unknown }> {
   let res: Response;
   try {
@@ -353,7 +362,7 @@ async function authRequest(path: string, init?: RequestInit): Promise<{ res: Res
   } catch (cause) {
     // The raw TypeError text means nothing to a user; the technical detail goes
     // to the console and the screen gets a stable message.
-    console.error(`${path}: request did not reach the API`, cause);
+    if (!leavingPage) console.error(`${path}: request did not reach the API`, cause);
     throw new ApiError("Unable to reach the TokTickIT API. Check your connection and try again.", 0, "NETWORK_ERROR");
   }
   let body: unknown = null;

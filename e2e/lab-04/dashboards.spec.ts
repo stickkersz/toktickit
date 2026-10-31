@@ -1,4 +1,5 @@
-import { expect, Page, test } from "@playwright/test";
+import type { Page } from "@playwright/test";
+import { expect, test } from "./console.js";
 import { ADMIN, apiSignedIn, hasNoHorizontalScroll, LANDING, logout, REQUESTERS, signIn, STAFF, VIEWPORTS } from "../lab-03/helpers.js";
 
 // E2E-05, E2E-06, E2E-07 and RESP-01 from docs/lab-04/tests.md: both dashboards against the seeded
@@ -127,7 +128,7 @@ test.describe("Dashboards", () => {
 
   // RESP-01 and ui-spec section 15: the remaining states. Empty, loading and failure answer the dashboard
   // request in the browser, since the seeded database always has Tickets; the screens are the real ones.
-  test("captures the empty, loading, failure, forbidden, Administrator and drill-down states", async ({ page }) => {
+  test("captures the empty, loading, failure, forbidden, Administrator and drill-down states", async ({ page, consoleMessages }) => {
     const zeroStaff = {
       generatedAt: new Date().toISOString(),
       timeZone: "Asia/Bangkok",
@@ -215,5 +216,11 @@ test.describe("Dashboards", () => {
       expect(await hasNoHorizontalScroll(page), name).toBe(true);
       await page.screenshot({ path: shot("requester-dashboard", `drill-down-my-tickets-${name}`), fullPage: true });
     }
+    // E2E-09: the 500s this test answered on purpose (one per request; the development server's StrictMode
+    // loads twice) are the browser reporting them, not a fault. Drop exactly those and keep everything else
+    // for the check at the end of the test.
+    const provoked = /status of 500 .*\/api\/dashboard\/(staff|requester)\)$/;
+    expect(consoleMessages.filter((m) => provoked.test(m)).length).toBeGreaterThan(0);
+    consoleMessages.splice(0, consoleMessages.length, ...consoleMessages.filter((m) => !provoked.test(m)));
   });
 });
