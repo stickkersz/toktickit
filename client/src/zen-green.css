@@ -727,9 +727,11 @@ a.zg-metric-card-attention:hover {
   --bs-btn-hover-color: var(--color-secondary);
   --bs-btn-active-color: var(--color-secondary);
 }
-/* A date field's own calendar button: the browser draws its default blue ring otherwise. */
-input::-webkit-calendar-picker-indicator:focus-visible {
-  outline: 2px solid var(--color-secondary);
+/* A date field's own calendar button: the browser draws its default blue ring otherwise. Chromium ignores
+   a :focus or :focus-visible written after this pseudo-element, so only the colour is set here and the
+   browser's own focus outline takes it; nothing is drawn while the button is not focused. */
+input::-webkit-calendar-picker-indicator {
+  outline-color: var(--color-secondary);
   outline-offset: 1px;
   border-radius: 2px;
 }
