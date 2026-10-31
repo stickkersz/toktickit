@@ -114,6 +114,8 @@ traceability matrix, and the results of each Issue (`docs/lab-03/tests.md` for L
 ## Project docs
 
 - `docs/lab-04/specification.md`, `api-spec.md`, `ui-spec.md`, `tests.md`: Lab 4 engineering contract, test plan and results
+- `docs/lab-04/reviewer.md`: Lab 4 peer review record, both directions
+- `docs/lab-04/ai-use.md`: Lab 4 AI tool usage and reflection
 - `docs/lab-03/specification.md`, `api-spec.md`, `ui-spec.md`, `tests.md`: Lab 3 engineering contract, test plan and final results
 - `docs/lab-03/reviewer.md`: Lab 3 peer review record, both directions
 - `docs/lab-03/ai-use.md`: Lab 3 AI tool usage and reflection
