@@ -30,7 +30,7 @@ Quoted prompts are my words as typed; a few are lightly trimmed.
 ## My Reflection
 
 **The specification agent.**
-- **What worked:** settling the design first. Only one decision was reopened during the 12 Issues (the status matrix, in #81, below), and the traceability table gave each of the 109 planned tests a reason to exist.
+- **What worked:** settling the design first. Two decisions were reopened during the 12 Issues, both below: the status matrix (#81) and the "files" clause of the request fingerprint (#88). And the traceability table gave each of the 109 planned tests a reason to exist.
 - **What it missed, which my partner and the tools found:**
   - My partner's first review (#81) found two real gaps. The contract asked for a 409 on a reused key "with different content", but stored nothing to compare. The status matrix also left a Ticket waiting on its Requester with no way to be cancelled.
   - The contract claimed that Ticket create sends files, which it has never done, and I approved it without checking against the Lab 2 code. That was only found in Issue 8, when the tests for it could not be written. It was corrected in the contract and recorded as a decision (#88).
