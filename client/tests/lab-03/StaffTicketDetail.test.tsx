@@ -1,12 +1,15 @@
 import "@testing-library/jest-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, useNavigate } from "react-router-dom";
 import App from "../../src/App.js";
 import * as api from "../../src/api.js";
 import { ApiError, type ContentItem, type StaffOwner, type StaffTicketDetail, type StaffTicketItem } from "../../src/api.js";
 import { ADMIN, REQUESTER, STAFF, renderApp } from "./support.js";
+import { ROUTER_FUTURE } from "../../src/routerFuture.js";
+
+const UUID = expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -56,6 +59,8 @@ function detail(overrides: Partial<StaffTicketDetail> = {}): StaffTicketDetail {
     ownerEligible: null,
     requesterIsActive: true,
     permittedNextStatuses: [],
+    // Lab 4 BR-21: an open gate, so the Lab 3 resolve flows still test what they were written for.
+    resolutionGate: { plannedActions: 0, completedActions: 1, canResolve: true },
     ...overrides,
   };
   return { ...base, permittedNextStatuses: overrides.permittedNextStatuses ?? PERMITTED[base.currentStatus] };
@@ -181,14 +186,16 @@ describe("Staff Ticket Detail: Ticket Owner", () => {
   it("marks only the owner control busy while it saves, leaving the others usable", async () => {
     const fake = await openDetail();
     let release: () => void = () => {};
-    fake.setOwner.mockImplementation(() => new Promise((resolve) => (release = () => resolve({} as StaffTicketItem))));
+    // A whole Ticket, as the real endpoint answers; an empty object rendered the status options with no key.
+    fake.setOwner.mockImplementation(() => new Promise((resolve) => (release = () => resolve(detail({ ownerId: STAFF.id, ownerName: STAFF.name, ownerIsActive: true, ownerEligible: true }) as StaffTicketItem))));
     await userEvent.click(screen.getByRole("button", { name: "Claim" }));
     await waitFor(() => expect(screen.getByLabelText("Ticket Owner")).toBeDisabled());
     expect(screen.getByLabelText("Ticket Owner")).toHaveAttribute("aria-busy", "true");
     expect(screen.getByText("Saving…")).toBeInTheDocument();
     expect(screen.getByLabelText("IT Priority")).toBeEnabled();
     expect(screen.getByLabelText("Current Status")).toBeEnabled();
-    release();
+    // Settle the save inside act, so its update is not left running after the test (UI-26).
+    await act(async () => release());
   });
 
   it("tells the user when someone else claimed the Ticket first, and shows who owns it now", async () => {
@@ -270,20 +277,21 @@ describe("Staff Ticket Detail: IT Priority", () => {
   it("marks only the IT Priority and status controls busy while they save, leaving the owner usable", async () => {
     const fake = await openDetail(detail({ ownerId: 20, ownerName: "Wichai Charoen", ownerIsActive: true, ownerEligible: true }));
     let release: () => void = () => {};
-    fake.setPriority.mockImplementation(() => new Promise((resolve) => (release = () => resolve({} as StaffTicketItem))));
+    fake.setPriority.mockImplementation(() => new Promise((resolve) => (release = () => resolve(detail({ ownerId: 20, ownerName: "Wichai Charoen", ownerIsActive: true, ownerEligible: true, itPriority: "LOW" }) as StaffTicketItem))));
     await userEvent.selectOptions(screen.getByLabelText("IT Priority"), "Low");
     await waitFor(() => expect(screen.getByLabelText("IT Priority")).toBeDisabled());
     expect(screen.getByLabelText("Ticket Owner")).toBeEnabled();
     expect(screen.getByLabelText("Current Status")).toBeEnabled();
-    release();
+    // Settle the save inside act, so its update is not left running after the test (UI-26).
+    await act(async () => release());
 
     let releaseStatus: () => void = () => {};
-    fake.setStatus.mockImplementation(() => new Promise((resolve) => (releaseStatus = () => resolve({} as StaffTicketItem))));
+    fake.setStatus.mockImplementation(() => new Promise((resolve) => (releaseStatus = () => resolve(detail({ ownerId: 20, ownerName: "Wichai Charoen", ownerIsActive: true, ownerEligible: true, itPriority: "LOW", currentStatus: "IN_PROGRESS" }) as StaffTicketItem))));
     await userEvent.selectOptions(screen.getByLabelText("Current Status"), "In Progress");
     await waitFor(() => expect(screen.getByLabelText("Current Status")).toBeDisabled());
     expect(screen.getByLabelText("Ticket Owner")).toBeEnabled();
     expect(screen.getByLabelText("IT Priority")).toBeEnabled();
-    releaseStatus();
+    await act(async () => releaseStatus());
   });
 
   it("restores the previous IT Priority and says nothing changed when the request fails", async () => {
@@ -322,10 +330,24 @@ describe("Staff Ticket Detail: status", () => {
   it("saves an ordinary move straight away and then offers the moves from the new status", async () => {
     const fake = await openDetail(detail({ currentStatus: "OPEN", ownerId: 20, ownerName: "Wichai Charoen", ownerIsActive: true, ownerEligible: true }));
     await userEvent.selectOptions(screen.getByLabelText("Current Status"), "In Progress");
-    await waitFor(() => expect(fake.setStatus).toHaveBeenCalledWith(42, "IN_PROGRESS"));
+    await waitFor(() => expect(fake.setStatus).toHaveBeenCalledWith(42, "IN_PROGRESS", undefined, expect.any(String)));
     await waitFor(() => expect(screen.getByLabelText("Current Status")).toHaveValue("IN_PROGRESS"));
     expect(optionsOf("Current Status")).toEqual(["In Progress", "Waiting for Requester", "Resolved", "Cancelled"]);
     expect(within(screen.getByRole("heading", { name: "TKT-2026-000042" }).parentElement!).getByText("In Progress")).toHaveClass("zg-badge-in-progress");
+  });
+
+  // Lab 4 FR-17 (the #84 sweep): a control that removes itself returns focus to what it acted on
+  it("returns focus to the Ticket Owner select after Claim, and to Current Status after Keep current status", async () => {
+    const fake = await openDetail(detail({ ownerId: null, ownerName: null, ownerIsActive: null, ownerEligible: null }));
+    fake.setOwner.mockResolvedValue(detail({ ownerId: STAFF.id, ownerName: STAFF.name, ownerIsActive: true, ownerEligible: true }) as StaffTicketItem);
+    fake.set({ ownerId: STAFF.id, ownerName: STAFF.name, ownerIsActive: true, ownerEligible: true });
+    await userEvent.click(screen.getByRole("button", { name: "Claim" }));
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Claim" })).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.getByLabelText("Ticket Owner")).toHaveFocus());
+
+    await userEvent.selectOptions(screen.getByLabelText("Current Status"), "Cancelled");
+    await userEvent.click(within(screen.getByRole("group", { name: "Confirm the status change" })).getByRole("button", { name: "Keep current status" }));
+    await waitFor(() => expect(screen.getByLabelText("Current Status")).toHaveFocus());
   });
 
   // UI-36 / AC-53, BR-64
@@ -343,7 +365,7 @@ describe("Staff Ticket Detail: status", () => {
 
     await userEvent.selectOptions(screen.getByLabelText("Current Status"), "Closed");
     await userEvent.click(screen.getByRole("button", { name: "Confirm and close" }));
-    await waitFor(() => expect(fake.setStatus).toHaveBeenCalledWith(42, "CLOSED"));
+    await waitFor(() => expect(fake.setStatus).toHaveBeenCalledWith(42, "CLOSED", undefined, expect.any(String)));
     await waitFor(() => expect(screen.queryByRole("group", { name: "Confirm the status change" })).not.toBeInTheDocument());
   });
 
@@ -401,7 +423,7 @@ describe("Staff Ticket Detail: status", () => {
     expect(screen.getByRole("group", { name: "Confirm the status change" })).toHaveTextContent("Cancel this Ticket?");
     expect(fake.setStatus).not.toHaveBeenCalled();
     await userEvent.click(screen.getByRole("button", { name: "Confirm and cancel" }));
-    await waitFor(() => expect(fake.setStatus).toHaveBeenCalledWith(42, "CANCELLED"));
+    await waitFor(() => expect(fake.setStatus).toHaveBeenCalledWith(42, "CANCELLED", undefined, expect.any(String)));
   });
 
   // UI-17 / AC-24, BR-27
@@ -429,7 +451,7 @@ describe("Staff Ticket Detail: status", () => {
     await user.type(box, "  Replaced the faulty access point.  ");
     expect(within(screen.getByLabelText("Resolution Summary *").parentElement!).getByText(/^\d+\/2000$/)).toHaveTextContent("33/2000");
     await user.click(screen.getByRole("button", { name: "Confirm and resolve" }));
-    await waitFor(() => expect(fake.setStatus).toHaveBeenCalledWith(42, "RESOLVED", "Replaced the faulty access point."));
+    await waitFor(() => expect(fake.setStatus).toHaveBeenCalledWith(42, "RESOLVED", "Replaced the faulty access point.", expect.any(String)));
     await waitFor(() => expect(screen.queryByLabelText("Resolution Summary *")).not.toBeInTheDocument());
     expect(screen.getByLabelText("Current Status")).toHaveValue("RESOLVED");
     // The stored summary is now shown, read only.
@@ -501,7 +523,7 @@ describe("Staff Ticket Detail: status", () => {
     await user.click(screen.getByRole("button", { name: "Claim" }));
     await waitFor(() => expect(fake.setOwner).toHaveBeenCalledWith(42, STAFF.id));
     await user.click(await screen.findByRole("button", { name: "Confirm and resolve" }));
-    await waitFor(() => expect(fake.setStatus).toHaveBeenLastCalledWith(42, "RESOLVED", "Replaced the access point and tested."));
+    await waitFor(() => expect(fake.setStatus).toHaveBeenLastCalledWith(42, "RESOLVED", "Replaced the access point and tested.", expect.any(String)));
   });
 
   it("restores the status and says nothing was changed when the request fails outright", async () => {
@@ -584,7 +606,7 @@ describe("Staff Ticket Detail: concurrent saves", () => {
     fake.setPriority.mockReturnValue(prioritySave.promise);
 
     await user.selectOptions(screen.getByLabelText("Current Status"), "In Progress");
-    await waitFor(() => expect(fake.setStatus).toHaveBeenCalledWith(42, "IN_PROGRESS"));
+    await waitFor(() => expect(fake.setStatus).toHaveBeenCalledWith(42, "IN_PROGRESS", undefined, expect.any(String)));
     await user.selectOptions(screen.getByLabelText("Ticket Owner"), `${STAFF.name} (you)`);
     await user.selectOptions(screen.getByLabelText("IT Priority"), "Low");
     ownerSave.resolve(snapshot({ ...ME, currentStatus: "IN_PROGRESS", itPriority: "HIGH" }));
@@ -781,7 +803,8 @@ describe("Staff Ticket Detail: a reload that fails", () => {
     const fake = await openDetail(detail({ currentStatus: "OPEN", ...WICHAI }));
     await userEvent.selectOptions(screen.getByLabelText("Current Status"), "In Progress");
     await waitFor(() => expect(fake.setStatus).toHaveBeenCalledTimes(1));
-    expect(await screen.findByText("Saved")).toBeInTheDocument();
+    // Lab 4 ui-spec section 10: the status control confirms with "Status updated." (superseding change).
+    expect(await screen.findByText("Status updated.")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Reload" })).not.toBeInTheDocument();
   });
 });
@@ -806,7 +829,7 @@ describe("Staff Ticket Detail: moving between Tickets", () => {
     const slow = { resolve: (_: StaffTicketItem) => {} };
     vi.spyOn(api, "setTicketPriority").mockImplementation(() => new Promise((resolve) => (slow.resolve = resolve)));
     render(
-      <MemoryRouter initialEntries={["/staff/tickets/42"]}>
+      <MemoryRouter future={ROUTER_FUTURE} initialEntries={["/staff/tickets/42"]}>
         <App />
         <Jump to="/staff/tickets/43" />
       </MemoryRouter>,
@@ -852,7 +875,9 @@ describe("Staff Ticket Detail: Public Comments and Internal Notes", () => {
     vi.mocked(api.getTicketComments).mockResolvedValue(content.comments ?? []);
     vi.mocked(api.getTicketNotes).mockResolvedValue(content.notes ?? []);
     await screen.findByRole("heading", { name: ticket.ticketNumber });
-    await screen.findByRole("tab", { name: /^Public Comments/ });
+    // Lab 4 ui-spec.md section 7 puts Actions Taken first and selected, so these Lab 3 tests open the
+    // Public Comments tab first (superseding change, Lab 4 tests.md section 6).
+    await userEvent.setup().click(await screen.findByRole("tab", { name: /^Public Comments/ }));
   }
   const tab = (name: RegExp | string) => screen.getByRole("tab", { name });
   const panel = () => screen.getByRole("tabpanel");
@@ -861,7 +886,8 @@ describe("Staff Ticket Detail: Public Comments and Internal Notes", () => {
   it("shows Public Comments, Internal Notes and Attachments as tabs with a count each, Public Comments first and selected", async () => {
     await openWith({ comments: [item({ id: 1 }), item({ id: 2 })], notes: [item({ id: 3 })] }, detail({ attachments: [{ id: 7, originalFilename: "a.png", mimeType: "image/png", sizeBytes: 10, uploadedAt: "2026-09-10T10:00:00.000Z", isRemoved: false }] }));
     const tabs = screen.getAllByRole("tab").map((t) => t.textContent?.replace(/\s+/g, " ").trim());
-    expect(tabs).toEqual(["Public Comments (2)", "Internal Notes (1)", "Attachments (1)"]);
+    // Lab 4 adds Actions Taken as the first tab and History as the last (superseding change).
+    expect(tabs).toEqual(["Actions Taken (0)", "Public Comments (2)", "Internal Notes (1)", "Attachments (1)", "History"]);
     expect(screen.getByRole("tablist", { name: "Ticket activity" })).toBeInTheDocument();
     expect(tab(/^Public Comments/)).toHaveAttribute("aria-selected", "true");
     expect(tab(/^Internal Notes/)).toHaveAttribute("aria-selected", "false");
@@ -933,7 +959,7 @@ describe("Staff Ticket Detail: Public Comments and Internal Notes", () => {
     await user.type(screen.getByLabelText("Add Public Comment"), "  Thanks, restarting now.  ");
     await user.click(screen.getByRole("button", { name: "Post Comment" }));
 
-    expect(post).toHaveBeenCalledWith(42, "Thanks, restarting now.");
+    expect(post).toHaveBeenCalledWith(42, "Thanks, restarting now.", UUID); // Lab 4 BR-39: with its Idempotency-Key
     expect(await within(panel()).findByText("Thanks, restarting now.")).toBeInTheDocument();
     expect(screen.getByLabelText("Add Public Comment")).toHaveValue("");
     expect(tab(/^Public Comments/)).toHaveTextContent("Public Comments (2)");
@@ -951,7 +977,7 @@ describe("Staff Ticket Detail: Public Comments and Internal Notes", () => {
     await user.type(screen.getByLabelText("Add Internal Note"), "Switch port looks fine.");
     await user.click(screen.getByRole("button", { name: "Add Note" }));
 
-    expect(postNote).toHaveBeenCalledWith(42, "Switch port looks fine.");
+    expect(postNote).toHaveBeenCalledWith(42, "Switch port looks fine.", UUID);
     expect(postComment).not.toHaveBeenCalled();
     expect(await within(panel()).findByText("Switch port looks fine.")).toBeInTheDocument();
     expect(tab(/^Internal Notes/)).toHaveTextContent("Internal Notes (1)");
@@ -1088,6 +1114,8 @@ describe("Staff Ticket Detail: Public Comments and Internal Notes", () => {
     vi.mocked(api.getTicketNotes).mockResolvedValue([]);
     await screen.findByRole("heading", { name: "TKT-2026-000042" });
     expect(await screen.findByRole("tab", { name: "Public Comments" })).toBeInTheDocument(); // no "(n)" for what is not known
+    // Lab 4: Actions Taken is the first tab, so the comments tab is opened (superseding change).
+    await userEvent.click(tab("Public Comments"));
     expect(tab("Internal Notes (0)")).toBeInTheDocument(); // the other list is unaffected
     expect(await screen.findByRole("alert")).toHaveTextContent("Unable to load the comments.");
     expect(screen.queryByLabelText("Add Public Comment")).not.toBeInTheDocument();
@@ -1109,14 +1137,16 @@ describe("Staff Ticket Detail: Public Comments and Internal Notes", () => {
     expect(tab(/^Internal Notes/)).toHaveFocus();
     expect(tab(/^Internal Notes/)).toHaveAttribute("aria-selected", "true");
     await user.keyboard("{End}");
-    expect(tab(/^Attachments/)).toHaveFocus();
+    expect(tab(/^History/)).toHaveFocus();
+    // Lab 4 puts Actions Taken first and History last, so wrapping and Home land on Actions Taken and End
+    // on History (superseding change).
     await user.keyboard("{ArrowRight}");
-    expect(tab(/^Public Comments/)).toHaveFocus(); // wraps
+    expect(tab(/^Actions Taken/)).toHaveFocus(); // wraps
     await user.keyboard("{ArrowLeft}");
-    expect(tab(/^Attachments/)).toHaveFocus();
+    expect(tab(/^History/)).toHaveFocus();
     await user.keyboard("{Home}");
-    expect(tab(/^Public Comments/)).toHaveFocus();
-    expect(tab(/^Public Comments/)).toHaveAttribute("aria-selected", "true");
+    expect(tab(/^Actions Taken/)).toHaveFocus();
+    expect(tab(/^Actions Taken/)).toHaveAttribute("aria-selected", "true");
   });
 
   it("asks for the comments and the notes of the Ticket it is showing, once each", async () => {
@@ -1143,9 +1173,10 @@ describe("Staff Ticket Detail: Public Comments and Internal Notes", () => {
     const slowPost = deferred<ContentItem>();
     vi.spyOn(api, "getTicketComments").mockImplementation((id: number) => (id === 42 ? slowList.promise : Promise.resolve([item({ id: 77, body: "belongs to Ticket 43" })])));
     vi.spyOn(api, "getTicketNotes").mockResolvedValue([]);
+    vi.spyOn(api, "getTicketActions").mockResolvedValue([]);
     vi.spyOn(api, "postTicketNote").mockReturnValue(slowPost.promise);
     render(
-      <MemoryRouter initialEntries={["/staff/tickets/42"]}>
+      <MemoryRouter future={ROUTER_FUTURE} initialEntries={["/staff/tickets/42"]}>
         <App />
         <Jump to="/staff/tickets/43" />
       </MemoryRouter>,
@@ -1159,6 +1190,7 @@ describe("Staff Ticket Detail: Public Comments and Internal Notes", () => {
     // The comments list and the note post for Ticket 42 are both still in flight when Ticket 43 opens.
     await user.click(screen.getByRole("button", { name: "jump to /staff/tickets/43" }));
     await screen.findByRole("heading", { name: "TKT-2026-000043" });
+    await user.click(await screen.findByRole("tab", { name: /^Public Comments/ }));
     expect(await within(screen.getByRole("tabpanel")).findByText("belongs to Ticket 43")).toBeInTheDocument();
     expect(screen.getByLabelText("Add Public Comment")).toHaveValue("");
 

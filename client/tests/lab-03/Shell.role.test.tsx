@@ -7,6 +7,7 @@ import App from "../../src/App.js";
 import * as api from "../../src/api.js";
 import type { AuthUser } from "../../src/api.js";
 import { ADMIN, REQUESTER, STAFF, renderApp } from "./support.js";
+import { ROUTER_FUTURE } from "../../src/routerFuture.js";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -101,7 +102,7 @@ describe("Logout", () => {
     });
 
     render(
-      <MemoryRouter initialEntries={["/tickets/new", "/tickets"]} initialIndex={1}>
+      <MemoryRouter future={ROUTER_FUTURE} initialEntries={["/tickets/new", "/tickets"]} initialIndex={1}>
         <App />
         <BackButton />
       </MemoryRouter>,
@@ -126,7 +127,7 @@ describe("Logout", () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("Failed to fetch")));
     try {
       render(
-        <MemoryRouter initialEntries={["/staff/tickets"]}>
+        <MemoryRouter future={ROUTER_FUTURE} initialEntries={["/staff/tickets"]}>
           <App />
         </MemoryRouter>,
       );

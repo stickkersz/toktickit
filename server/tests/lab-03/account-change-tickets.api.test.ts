@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import type { TicketStatus } from "@prisma/client";
 import request from "supertest";
 import { app } from "../../src/app.js";
-import { createUser, loginAs, signedIn, useIsolatedDatabase, TEST_PASSWORD } from "./helpers.js";
+import { asLab4Move, createUser, loginAs, signedIn, useIsolatedDatabase, TEST_PASSWORD } from "./helpers.js";
 
 // What happens to a Ticket when its owner is deactivated or stops being IT Staff (BR-56 to
 // BR-58): nothing is rewritten, the owner counts as ineligible, and the Ticket can be worked
@@ -57,7 +57,8 @@ const KINDS = [
   ["a deactivated owner", "inactive"],
   ["an owner who is no longer IT Staff", "demoted"],
 ] as const;
-const move = (id: number, body: object) => staff.patch(`/api/staff/tickets/${id}/status`).send(body);
+// Sent as a Lab 4 client sends it (fromStatus, and a Completed Action before Resolved): see asLab4Move.
+const move = async (id: number, body: Record<string, unknown>) => staff.patch(`/api/staff/tickets/${id}/status`).send(await asLab4Move(iso.db.client, id, body));
 
 describe.each(KINDS)("a Ticket whose owner is %s", (_label, kind) => {
   const ineligibleOwner = () => (kind === "inactive" ? inactiveOwnerId : demotedOwnerId);
@@ -272,7 +273,7 @@ describe("account changes made through the Administrator endpoints", () => {
     expect(await Promise.all(tickets.map((t) => ticketRow(t.id)))).toEqual(during);
     // And they can work the Ticket again straight away.
     const back = await signedIn(gone.user);
-    expect((await back.patch(`/api/staff/tickets/${tickets[0].id}/status`).send({ currentStatus: "IN_PROGRESS" })).status).toBe(200);
+    expect((await back.patch(`/api/staff/tickets/${tickets[0].id}/status`).send(await asLab4Move(iso.db.client, tickets[0].id, { currentStatus: "IN_PROGRESS" }))).status).toBe(200);
   });
 
   // API-50 / AC-42, BR-60

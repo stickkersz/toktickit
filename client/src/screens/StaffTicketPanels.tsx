@@ -1,4 +1,7 @@
-import { Attachment, getAttachmentDownloadUrl, getAttachmentPreviewUrl, getTicketComments, getTicketNotes, postTicketComment, postTicketNote } from "../api.js";
+import { useLocation } from "react-router-dom";
+import { StaffActionsTaken, useActions } from "../ActionsTaken.js";
+import { StatusHistory } from "../StatusHistory.js";
+import { Attachment, StaffOwner, getAttachmentDownloadUrl, getAttachmentPreviewUrl, getTicketComments, getTicketNotes, postTicketComment, postTicketNote } from "../api.js";
 import { ContentPanel, LockIcon } from "../ContentPanel.js";
 import { Tabs } from "../Tabs.js";
 import { useContentThread } from "../content.js";
@@ -8,7 +11,33 @@ import { TruncatedFilename, fileTypeLabel, formatDate, formatFileSize } from "..
 // Public Comments, Internal Notes and Attachments, as tabs with counts. They are a separate
 // component so that the comments and notes are loaded and held apart from the controls above them,
 // which reload and merge on their own schedule and must not be disturbed by a post, or the reverse.
-export default function StaffTicketPanels({ ticketId, attachments }: { ticketId: number; attachments: Attachment[] }) {
+export default function StaffTicketPanels({
+  ticketId,
+  attachments,
+  ticketCreatedAt,
+  ticketStatus,
+  owners,
+  currentUserId,
+  onTicketChanged,
+  onOwnersStale,
+  onActionsChanged,
+  historyKey,
+  tabRequest,
+}: {
+  ticketId: number;
+  attachments: Attachment[];
+  ticketCreatedAt: string;
+  ticketStatus: string;
+  owners: StaffOwner[];
+  currentUserId: number;
+  onTicketChanged: () => void;
+  onOwnersStale: () => void;
+  onActionsChanged: () => void;
+  historyKey: number;
+  tabRequest: { id: string; seq: number } | null;
+}) {
+  const actions = useActions(ticketId);
+  const tab = new URLSearchParams(useLocation().search).get("tab") ?? undefined;
   const comments = useContentThread(ticketId, getTicketComments, postTicketComment, "comment");
   const notes = useContentThread(ticketId, getTicketNotes, postTicketNote, "note");
   const activeAttachments = attachments.filter((a) => !a.isRemoved).length;
@@ -17,7 +46,28 @@ export default function StaffTicketPanels({ ticketId, attachments }: { ticketId:
     <Tabs
       label="Ticket activity"
       idPrefix="staff-ticket"
+      initialId={tab}
+      select={tabRequest}
       tabs={[
+        // Lab 4: first, before the conversation (ui-spec.md section 7).
+        {
+          id: "actions",
+          label: "Actions Taken",
+          count: actions.count,
+          content: (
+            <StaffActionsTaken
+              ticketId={ticketId}
+              ticketCreatedAt={ticketCreatedAt}
+              ticketStatus={ticketStatus}
+              owners={owners}
+              currentUserId={currentUserId}
+              actions={actions}
+              onTicketChanged={onTicketChanged}
+              onOwnersStale={onOwnersStale}
+              onActionsChanged={onActionsChanged}
+            />
+          ),
+        },
         // Staff may comment on a Ticket in any status, closed ones included (BR-34 limits only Requesters).
         { id: "comments", label: "Public Comments", count: comments.count, content: <ContentPanel kind="comments" thread={comments} /> },
         {
@@ -40,6 +90,8 @@ export default function StaffTicketPanels({ ticketId, attachments }: { ticketId:
         // Read only for staff: a Requester adds and removes Attachments, staff only read them (BR-54,
         // BR-55). The upload and Remove controls are absent from the page, not merely disabled.
         { id: "attachments", label: "Attachments", count: activeAttachments, content: <AttachmentList attachments={attachments} /> },
+        // Lab 4 ui-spec.md section 9: the Status History, read only, last.
+        { id: "history", label: "History", count: null, content: <StatusHistory ticketId={ticketId} reloadKey={historyKey} /> },
       ]}
     />
   );

@@ -139,6 +139,8 @@ describe("POST /api/tickets/:id/attachments", () => {
       $transaction: async (fn: (tx: unknown) => unknown) =>
         fn({
           $executeRaw: async () => 0,
+          // Lab 4 BR-38: the upload transaction also touches the Ticket's last activity (superseding change).
+          ticket: realPrisma.ticket,
           attachment: {
             count: (args: unknown) =>
               (realPrisma.attachment.count as (a: unknown) => unknown)(args),
@@ -187,6 +189,8 @@ describe("POST /api/tickets/:id/attachments", () => {
       $transaction: async (fn: (tx: unknown) => unknown) =>
         fn({
           $executeRaw: async () => 0,
+          // Lab 4 BR-38: the upload transaction also touches the Ticket's last activity (superseding change).
+          ticket: realPrisma.ticket,
           attachment: {
             count: (args: unknown) =>
               (realPrisma.attachment.count as (a: unknown) => unknown)(args),

@@ -1,4 +1,5 @@
 import { TicketStatus } from "@prisma/client";
+import { isValidId } from "./ids.js";
 
 const PRIORITIES = ["LOW", "MEDIUM", "HIGH"] as const;
 type Priority = (typeof PRIORITIES)[number];
@@ -13,9 +14,14 @@ export type OwnerFilter =
   | { kind: "me" }
   | { kind: "needs-owner" };
 
+// Lab 4 api-spec section 11: `active` is not Resolved, Closed, or Cancelled; `resolved` is Resolved or Closed.
+export type StatusGroup = "active" | "resolved";
+export const parseStatusGroup = (value: unknown): StatusGroup | null => (value === "active" || value === "resolved" ? value : null);
+
 export interface ParsedStaffQueueQuery {
   search: string;
   status: TicketStatus | null;
+  statusGroup: StatusGroup | null;
   itPriority: Priority | null;
   categoryId: number | null;
   owner: OwnerFilter | null;
@@ -41,7 +47,7 @@ export function parseStaffQueueQuery(query: Record<string, unknown>): ParsedStaf
       : null;
 
   const categoryRaw = typeof query.category === "string" ? Number(query.category) : NaN;
-  const categoryId = Number.isInteger(categoryRaw) && categoryRaw > 0 ? categoryRaw : null;
+  const categoryId = isValidId(categoryRaw) ? categoryRaw : null;
 
   let owner: OwnerFilter | null = null;
   if (typeof query.owner === "string") {
@@ -49,7 +55,7 @@ export function parseStaffQueueQuery(query: Record<string, unknown>): ParsedStaf
       owner = { kind: query.owner };
     } else if (/^[1-9]\d*$/.test(query.owner)) {
       const id = Number(query.owner);
-      if (Number.isSafeInteger(id)) owner = { kind: "id", id };
+      if (isValidId(id)) owner = { kind: "id", id };
     }
   }
 
@@ -66,10 +72,13 @@ export function parseStaffQueueQuery(query: Record<string, unknown>): ParsedStaf
   }
 
   let page = typeof query.page === "string" ? Number(query.page) : NaN;
-  if (!Number.isInteger(page) || page < 1) page = 1;
+  if (!isValidId(page)) page = 1;
 
   let pageSize = typeof query.pageSize === "string" ? Number(query.pageSize) : NaN;
   if (!Number.isInteger(pageSize) || pageSize < 5 || pageSize > 50) pageSize = 10;
 
-  return { search, status, itPriority, categoryId, owner, sortField, sortDirection, page, pageSize };
+  // A single status wins over a group (api-spec section 11).
+  const statusGroup = status === null ? parseStatusGroup(query.statusGroup) : null;
+
+  return { search, status, statusGroup, itPriority, categoryId, owner, sortField, sortDirection, page, pageSize };
 }

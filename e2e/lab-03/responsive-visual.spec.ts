@@ -17,6 +17,7 @@ import {
   signIn,
   STAFF,
   VIEWPORTS,
+  completeAnActionOn,
 } from "./helpers.js";
 
 // RESP-01 (AC-35) and RESP-02 (ui-spec sections 13 and 14) from docs/lab-03/tests.md.
@@ -82,7 +83,7 @@ test.describe("Lab 3 screenshots (RESP-02)", () => {
   });
 
   test("staff queue", async ({ page }) => {
-    await signIn(page, STAFF.email, LANDING.IT_STAFF);
+    await signIn(page, STAFF.email, LANDING.IT_STAFF, "/staff/tickets");
     await expect(page.getByRole("table")).toBeVisible();
     await capture(page, "staff-queue", "loaded");
     await capture(page, "staff-queue", "loaded", "tablet");
@@ -110,6 +111,7 @@ test.describe("Lab 3 screenshots (RESP-02)", () => {
 
   test("staff ticket detail", async ({ page }) => {
     const ticket = await createTicketAsRequester(`E2E screenshot detail ${short()}`);
+    await completeAnActionOn(ticket.id);
     await signIn(page, STAFF.email, LANDING.IT_STAFF);
     await page.goto(`/staff/tickets/${ticket.id}`);
     await expect(page.getByRole("heading", { name: ticket.ticketNumber })).toBeVisible();
@@ -141,7 +143,8 @@ test.describe("Lab 3 screenshots (RESP-02)", () => {
     await capture(page, "staff-ticket-detail", "invalid-transition");
     await page.unroute(`**/api/staff/tickets/${ticket.id}/status`);
 
-    await page.reload();
+    // Opened again without the mocked refusal (not a persistence check, so not a reload).
+    await page.goto(`/staff/tickets/${ticket.id}`);
     const status = page.getByLabel("Current Status");
     for (const next of ["OPEN", "IN_PROGRESS"]) {
       await status.selectOption(next);
@@ -159,7 +162,7 @@ test.describe("Lab 3 screenshots (RESP-02)", () => {
   });
 
   test("user management", async ({ page }) => {
-    await signIn(page, ADMIN.email, LANDING.ADMINISTRATOR);
+    await signIn(page, ADMIN.email, LANDING.ADMINISTRATOR, "/admin/users");
     await expect(page.getByRole("table")).toBeVisible();
     await capture(page, "user-management", "list");
     await capture(page, "user-management", "list", "tablet");
@@ -228,7 +231,7 @@ test.describe("Lab 3 responsive layout (RESP-01)", () => {
     await fits("Forbidden");
     await page.context().clearCookies();
 
-    await signIn(page, STAFF.email, LANDING.IT_STAFF);
+    await signIn(page, STAFF.email, LANDING.IT_STAFF, "/staff/tickets");
     await fits("Ticket Queue");
     for (const [viewport, width] of [["desktop", 1280], ["992", 992]] as const) {
       await page.setViewportSize({ width, height: 900 });
@@ -249,7 +252,7 @@ test.describe("Lab 3 responsive layout (RESP-01)", () => {
     }
     await page.context().clearCookies();
 
-    await signIn(page, ADMIN.email, LANDING.ADMINISTRATOR);
+    await signIn(page, ADMIN.email, LANDING.ADMINISTRATOR, "/admin/users");
     await fits("User Management list");
     await page.setViewportSize(VIEWPORTS.mobile);
     await page.getByRole("button", { name: "Create User" }).click();
@@ -282,7 +285,7 @@ test.describe("Keyboard focus in the green header (A11Y-04)", () => {
   });
 
   test("queue rows and sortable headers show the Zen Green ring, never the browser's blue", async ({ page }) => {
-    await signIn(page, STAFF.email, LANDING.IT_STAFF);
+    await signIn(page, STAFF.email, LANDING.IT_STAFF, "/staff/tickets");
     const table = page.getByRole("table");
     for (const control of [table.getByRole("columnheader", { name: /Ticket No\./ }), table.getByRole("button").first()]) {
       await page.keyboard.press("Shift");

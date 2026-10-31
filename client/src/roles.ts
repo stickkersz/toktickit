@@ -1,15 +1,8 @@
 import type { UserRole } from "./api.js";
 
-// Where each role lands after signing in (ui-spec §3).
+// Where each role lands after signing in: its Dashboard (Lab 4 ui-spec section 3, FR-14).
 export function landingPathFor(role: UserRole): string {
-  switch (role) {
-    case "IT_STAFF":
-      return "/staff/tickets";
-    case "ADMINISTRATOR":
-      return "/admin/users";
-    default:
-      return "/tickets";
-  }
+  return role === "REQUESTER" ? "/dashboard" : "/staff/dashboard";
 }
 
 export const ROLE_LABEL: Record<UserRole, string> = {

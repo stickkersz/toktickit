@@ -29,7 +29,7 @@ test.describe("User administration", () => {
     const name = `E2E Admin Flow ${id}`;
     const email = `e2e-admin-flow-${id}@toktickit.test`;
 
-    await signIn(page, ADMIN.email, LANDING.ADMINISTRATOR);
+    await signIn(page, ADMIN.email, LANDING.ADMINISTRATOR, "/admin/users");
     await expect(page.getByRole("heading", { name: "User Management" })).toBeVisible();
 
     // The last-Administrator case needs this to be the only active Administrator.
@@ -105,10 +105,11 @@ test.describe("User administration", () => {
     const former = await createUserAsAdmin("IT_STAFF", "former-owner");
     const ticket = await createTicketAsRequester(`E2E orphaned ${short()}`);
     await asAdmin((api) => api.patch(`/api/staff/tickets/${ticket.id}/owner`, { data: { ownerId: former.id } }));
-    await asAdmin((api) => api.patch(`/api/staff/tickets/${ticket.id}/status`, { data: { currentStatus: "OPEN" } }));
+    // Lab 4 BR-23: a move states the status it was chosen from (superseding change).
+    await asAdmin((api) => api.patch(`/api/staff/tickets/${ticket.id}/status`, { data: { fromStatus: "NEW", currentStatus: "OPEN" } }));
 
     // The Administrator deactivates the owner through User Management.
-    await signIn(page, ADMIN.email, LANDING.ADMINISTRATOR);
+    await signIn(page, ADMIN.email, LANDING.ADMINISTRATOR, "/admin/users");
     await openUser(page, former.email, former.name);
     await page.getByRole("switch", { name: "Active" }).uncheck();
     await page.getByRole("button", { name: "Save changes" }).click();
@@ -116,7 +117,7 @@ test.describe("User administration", () => {
     await logout(page);
 
     // Another IT Staff user finds it under "Needs an owner", with the marker and badge.
-    await signIn(page, OTHER_STAFF.email, LANDING.IT_STAFF);
+    await signIn(page, OTHER_STAFF.email, LANDING.IT_STAFF, "/staff/tickets");
     await page.getByLabel("Owner").selectOption("needs-owner");
     await page.getByLabel("Search tickets").fill(ticket.ticketNumber);
     const row = page.getByRole("table").getByRole("button", { name: new RegExp(ticket.ticketNumber) });

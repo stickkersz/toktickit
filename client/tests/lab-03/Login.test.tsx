@@ -40,12 +40,12 @@ describe("Login screen", () => {
   });
 
   // UI-01 / AC-01
-  it("signs in once, stores nothing in localStorage, and lands a Requester on My Tickets", async () => {
+  it("signs in once, stores nothing in localStorage, and lands a Requester on their Dashboard (Lab 4 FR-14)", async () => {
     const login = vi.spyOn(api, "login").mockResolvedValue(REQUESTER);
     const { user, submit } = await fill(REQUESTER.email, "Str0ng!Pass");
     await user.click(submit);
 
-    expect(await screen.findByRole("heading", { name: "My Tickets" })).toBeInTheDocument();
+    expect(await screen.findByText("Your tickets at a glance")).toBeInTheDocument();
     expect(login).toHaveBeenCalledTimes(1);
     expect(login).toHaveBeenCalledWith(REQUESTER.email, "Str0ng!Pass");
     expect(localStorage.length).toBe(0);
@@ -57,7 +57,7 @@ describe("Login screen", () => {
     const { user, submit } = await fill(STAFF.email, "Str0ng!Pass");
     await user.click(submit);
 
-    expect(await screen.findByRole("heading", { name: "Ticket Queue" })).toBeInTheDocument();
+    expect(await screen.findByText("Your work and the queue at a glance")).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "My Tickets" })).not.toBeInTheDocument();
   });
 
@@ -129,7 +129,7 @@ describe("Login screen", () => {
     expect(password).toHaveValue("Str0ng!Pass");
 
     await user.click(screen.getByRole("button", { name: "Retry" }));
-    expect(await screen.findByRole("heading", { name: "My Tickets" })).toBeInTheDocument();
+    expect(await screen.findByText("Your tickets at a glance")).toBeInTheDocument();
     expect(login).toHaveBeenCalledTimes(2);
   });
 
@@ -145,7 +145,7 @@ describe("Login screen", () => {
     expect(login).toHaveBeenCalledTimes(1);
 
     resolveLogin(REQUESTER);
-    await waitFor(() => expect(screen.getByRole("heading", { name: "My Tickets" })).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("Your tickets at a glance")).toBeInTheDocument());
     expect(login).toHaveBeenCalledTimes(1);
   });
 
@@ -162,7 +162,7 @@ describe("Login screen", () => {
 
   it("does not render the login form to someone who is already signed in", async () => {
     renderApp("/login", REQUESTER);
-    expect(await screen.findByRole("heading", { name: "My Tickets" })).toBeInTheDocument();
+    expect(await screen.findByText("Your tickets at a glance")).toBeInTheDocument();
     expect(screen.queryByLabelText("Email address *")).not.toBeInTheDocument();
   });
 });

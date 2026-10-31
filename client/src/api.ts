@@ -135,6 +135,10 @@ export interface TicketListParams {
   category?: number;
   requestedPriority?: TicketPriority;
   currentStatus?: string;
+  // Lab 4 api-spec section 11: the dashboard drill-downs.
+  statusGroup?: "active" | "resolved";
+  updatedWithinDays?: number;
+  resolvedWithinDays?: number;
   sort?: string;
   page?: number;
   pageSize?: number;
@@ -149,6 +153,11 @@ export class ApiError extends Error {
   permitted?: string[];
   // On a refusal that names a field, such as EMAIL_TAKEN: the message for that field.
   fields?: Record<string, string>;
+  // On 409 STALE_ACTION: the Action as the server now holds it (Lab 4 api-spec, optimistic concurrency).
+  action?: ActionItem;
+  // On 409 STATUS_CHANGED: the status the Ticket has now. On 409 ACTIONS_INCOMPLETE: how many are open.
+  currentStatus?: string;
+  plannedActions?: number;
   constructor(message: string, status: number, code?: string) {
     super(message);
     this.status = status;
@@ -201,12 +210,13 @@ export async function getRelatedSystems(): Promise<RelatedSystem[]> {
 // say. BR-34 asks for a safe failure state; "Failed to fetch" is the raw
 // TypeError text from fetch and means nothing to a Requester, so the technical
 // detail goes to the console and the UI gets a stable, documented message.
-export async function createTicket(input: CreateTicketInput): Promise<Ticket> {
+// Lab 4 BR-39: the form sends one Idempotency-Key per submission and keeps it for a retry.
+export async function createTicket(input: CreateTicketInput, idempotencyKey?: string): Promise<Ticket> {
   let res: Response;
   try {
     res = await apiFetch(`/api/tickets`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}) },
       body: JSON.stringify(input),
     });
   } catch (cause) {
@@ -241,6 +251,9 @@ export async function getTickets(params: TicketListParams): Promise<TicketListRe
   if (params.category) query.set("category", String(params.category));
   if (params.requestedPriority) query.set("requestedPriority", params.requestedPriority);
   if (params.currentStatus) query.set("currentStatus", params.currentStatus);
+  if (params.statusGroup) query.set("statusGroup", params.statusGroup);
+  if (params.updatedWithinDays) query.set("updatedWithinDays", String(params.updatedWithinDays));
+  if (params.resolvedWithinDays) query.set("resolvedWithinDays", String(params.resolvedWithinDays));
   if (params.sort) query.set("sort", params.sort);
   if (params.page) query.set("page", String(params.page));
   if (params.pageSize) query.set("pageSize", String(params.pageSize));
@@ -333,6 +346,15 @@ export interface ChangePasswordInput {
   confirmPassword: string;
 }
 
+// A request the browser cancels because the page itself is being left (a link to a full page load, a
+// reload, closing the tab) is not a failure worth a console error (Lab 4 BR-43). pageshow clears the flag
+// when the browser brings the page back from its cache.
+let leavingPage = false;
+if (typeof window !== "undefined") {
+  window.addEventListener("pagehide", () => (leavingPage = true));
+  window.addEventListener("pageshow", () => (leavingPage = false));
+}
+
 async function authRequest(path: string, init?: RequestInit): Promise<{ res: Response; body: unknown }> {
   let res: Response;
   try {
@@ -340,7 +362,7 @@ async function authRequest(path: string, init?: RequestInit): Promise<{ res: Res
   } catch (cause) {
     // The raw TypeError text means nothing to a user; the technical detail goes
     // to the console and the screen gets a stable message.
-    console.error(`${path}: request did not reach the API`, cause);
+    if (!leavingPage) console.error(`${path}: request did not reach the API`, cause);
     throw new ApiError("Unable to reach the TokTickIT API. Check your connection and try again.", 0, "NETWORK_ERROR");
   }
   let body: unknown = null;
@@ -353,13 +375,16 @@ async function authRequest(path: string, init?: RequestInit): Promise<{ res: Res
 }
 
 function errorFromResponse(status: number, body: unknown, fallback: string): ApiError {
-  const payload = (body ?? {}) as { error?: string; message?: string; fields?: Record<string, string>; permitted?: string[] };
+  const payload = (body ?? {}) as { error?: string; message?: string; fields?: Record<string, string>; permitted?: string[]; action?: ActionItem; currentStatus?: string; plannedActions?: number };
   if (payload.error === "VALIDATION_ERROR") {
     return new ValidationError(payload.message ?? "Validation failed.", payload.fields ?? {});
   }
   const error = new ApiError(payload.message ?? fallback, status, payload.error);
   if (Array.isArray(payload.permitted)) error.permitted = payload.permitted;
   if (payload.fields) error.fields = payload.fields;
+  if (payload.action) error.action = payload.action;
+  if (typeof payload.currentStatus === "string") error.currentStatus = payload.currentStatus;
+  if (typeof payload.plannedActions === "number") error.plannedActions = payload.plannedActions;
   return error;
 }
 
@@ -434,6 +459,8 @@ export interface StaffTicketItem {
 export interface StaffQueueParams {
   search?: string;
   status?: string;
+  // Lab 4 api-spec section 11.
+  statusGroup?: "active" | "resolved";
   itPriority?: string;
   category?: number;
   // A User id, or "unassigned", "me" or "needs-owner".
@@ -452,6 +479,7 @@ export async function getStaffTickets(params: StaffQueueParams): Promise<StaffQu
   const query = new URLSearchParams();
   if (params.search) query.set("search", params.search);
   if (params.status) query.set("status", params.status);
+  if (params.statusGroup) query.set("statusGroup", params.statusGroup);
   if (params.itPriority) query.set("itPriority", params.itPriority);
   if (params.category) query.set("category", String(params.category));
   if (params.owner) query.set("owner", params.owner);
@@ -478,6 +506,8 @@ export interface StaffTicketDetail extends TicketDetail {
   requesterIsActive: boolean;
   // Straight from the server's workflow table: the client carries no copy of BR-25.
   permittedNextStatuses: string[];
+  // Lab 4 BR-21: the counts the resolution gate is decided on (api-spec endpoint 8).
+  resolutionGate: { plannedActions: number; completedActions: number; canResolve: boolean };
 }
 
 export interface StaffOwner {
@@ -519,11 +549,12 @@ export function setTicketPriority(ticketId: number, itPriority: TicketPriority):
   return patchTicket(ticketId, "priority", { itPriority }, "Unable to change the IT Priority.");
 }
 
-export function changeTicketStatus(ticketId: number, currentStatus: string, resolutionSummary?: string): Promise<StaffTicketItem> {
+// Lab 4 BR-23: every move states `fromStatus`, the status the person saw when they chose it.
+export function changeTicketStatus(ticketId: number, currentStatus: string, resolutionSummary: string | undefined, fromStatus: string): Promise<StaffTicketItem> {
   return patchTicket(
     ticketId,
     "status",
-    resolutionSummary === undefined ? { currentStatus } : { currentStatus, resolutionSummary },
+    resolutionSummary === undefined ? { fromStatus, currentStatus } : { fromStatus, currentStatus, resolutionSummary },
     "Unable to change the Ticket status.",
   );
 }
@@ -556,10 +587,12 @@ async function getContent(ticketId: number, path: "comments" | "notes", fallback
   return body as ContentItem[];
 }
 
-async function postContent(ticketId: number, path: "comments" | "notes", text: string, fallback: string): Promise<ContentItem> {
+// Lab 4 BR-39: one Idempotency-Key per submission, kept by the composer for a retry. A 200 replay is the
+// record already created, so it is treated like the 201.
+async function postContent(ticketId: number, path: "comments" | "notes", text: string, fallback: string, idempotencyKey: string): Promise<ContentItem> {
   const { res, body } = await authRequest(`/api/tickets/${ticketId}/${path}`, {
     method: "POST",
-    headers: JSON_HEADERS,
+    headers: { ...JSON_HEADERS, "Idempotency-Key": idempotencyKey },
     body: JSON.stringify({ body: text }),
   });
   if (!res.ok) throw errorFromResponse(res.status, body, fallback);
@@ -567,10 +600,12 @@ async function postContent(ticketId: number, path: "comments" | "notes", text: s
 }
 
 export const getTicketComments = (ticketId: number) => getContent(ticketId, "comments", "Unable to load the comments.");
-export const postTicketComment = (ticketId: number, body: string) => postContent(ticketId, "comments", body, "Unable to add the comment.");
+export const postTicketComment = (ticketId: number, body: string, idempotencyKey: string) =>
+  postContent(ticketId, "comments", body, "Unable to add the comment.", idempotencyKey);
 // IT Staff and Administrators only: a Requester never calls these (BR-35).
 export const getTicketNotes = (ticketId: number) => getContent(ticketId, "notes", "Unable to load the notes.");
-export const postTicketNote = (ticketId: number, body: string) => postContent(ticketId, "notes", body, "Unable to add the note.");
+export const postTicketNote = (ticketId: number, body: string, idempotencyKey: string) =>
+  postContent(ticketId, "notes", body, "Unable to add the note.", idempotencyKey);
 
 // Administrator user management (api-spec.md endpoints 13 to 16). No password hash ever comes back.
 export interface AdminUser {
@@ -622,3 +657,135 @@ export async function setInitialPassword(id: number, initialPassword: string): P
   if (!res.ok) throw errorFromResponse(res.status, body, "Unable to set the initial password.");
   return body as AdminUser;
 }
+
+// Lab 4 Actions Taken (api-spec.md endpoints 1 to 5). Every person is { id, name }; no email is sent.
+export type ActionStatus = "PLANNED" | "COMPLETED" | "CANCELLED";
+export interface ActionPerson {
+  id: number;
+  name: string;
+}
+export interface ActionItem {
+  id: number;
+  ticketId: number;
+  status: ActionStatus;
+  actionAt: string;
+  description: string;
+  result: string | null;
+  followUpRequired: boolean;
+  followUpNote: string | null;
+  attachmentNotes: string | null;
+  recordedBy: ActionPerson;
+  recordedAt: string;
+  responsibleStaff: ActionPerson & { eligible: boolean };
+  performedBy: ActionPerson | null;
+  completedAt: string | null;
+  cancelledBy: ActionPerson | null;
+  cancelledAt: string | null;
+  cancelReason: string | null;
+  lastEditedBy: ActionPerson | null;
+  version: number;
+  updatedAt: string;
+}
+export interface ActionInput {
+  actionAt: string;
+  description: string;
+  responsibleStaffId: number;
+  followUpRequired: boolean;
+  followUpNote?: string;
+  attachmentNotes?: string;
+}
+
+export async function getTicketActions(ticketId: number): Promise<ActionItem[]> {
+  const { res, body } = await authRequest(`/api/tickets/${ticketId}/actions`);
+  if (res.status === 404) throw new NotFoundError("Ticket not found.");
+  if (!res.ok) throw errorFromResponse(res.status, body, "Unable to load the actions.");
+  return body as ActionItem[];
+}
+
+async function sendAction(path: string, method: string, data: object, fallback: string, headers: Record<string, string> = {}): Promise<ActionItem> {
+  const { res, body } = await authRequest(path, { method, headers: { ...JSON_HEADERS, ...headers }, body: JSON.stringify(data) });
+  if (!res.ok) throw errorFromResponse(res.status, body, fallback);
+  return body as ActionItem;
+}
+
+// One Idempotency-Key per form submission (BR-39): the form keeps it for a retry and replaces it only
+// after a confirmed success, a change to what was typed, or IDEMPOTENCY_KEY_REUSED.
+export const createAction = (ticketId: number, input: ActionInput, idempotencyKey: string) =>
+  sendAction(`/api/tickets/${ticketId}/actions`, "POST", input, "Unable to add the action.", { "Idempotency-Key": idempotencyKey });
+export const updateAction = (id: number, version: number, changes: Partial<ActionInput>) =>
+  sendAction(`/api/actions/${id}`, "PATCH", { version, ...changes }, "Unable to save the action.");
+export const completeAction = (id: number, version: number, result: string, actionAt: string) =>
+  sendAction(`/api/actions/${id}/complete`, "POST", { version, result, actionAt }, "Unable to complete the action.");
+export const cancelAction = (id: number, version: number, reason: string) =>
+  sendAction(`/api/actions/${id}/cancel`, "POST", { version, reason }, "Unable to cancel the action.");
+
+// Lab 4 Status History (api-spec.md endpoint 6): oldest first, read only.
+export interface StatusHistoryEntry {
+  id: number;
+  fromStatus: string | null;
+  toStatus: string;
+  changedBy: ActionPerson;
+  changedAt: string;
+  resolutionSummary: string | null;
+}
+export interface StatusHistory {
+  entries: StatusHistoryEntry[];
+  earlierChangesUnrecorded: boolean;
+}
+
+export async function getTicketHistory(ticketId: number): Promise<StatusHistory> {
+  const { res, body } = await authRequest(`/api/tickets/${ticketId}/history`);
+  if (res.status === 404) throw new NotFoundError("Ticket not found.");
+  if (!res.ok) throw errorFromResponse(res.status, body, "Unable to load the status history.");
+  return body as StatusHistory;
+}
+
+// Lab 4 dashboards (api-spec.md endpoints 9 and 10). Every figure is counted by the server (BR-28).
+export interface DashboardFigure {
+  count: number;
+  link: string;
+}
+export interface DashboardTicket {
+  id: number;
+  ticketNumber: string;
+  summary: string;
+  currentStatus: string;
+  updatedAt: string;
+  link: string;
+}
+export interface StaffDashboard {
+  generatedAt: string;
+  timeZone: string;
+  metrics: {
+    unassigned: DashboardFigure;
+    myTickets: DashboardFigure;
+    urgent: DashboardFigure;
+    byStatus: (DashboardFigure & { status: string })[];
+  };
+  myPlannedActions: {
+    count: number;
+    items: { actionId: number; ticketId: number; ticketNumber: string; description: string; actionAt: string; link: string }[];
+  };
+  recentlyUpdated: DashboardTicket[];
+  accounts?: { active: Record<UserRole, number>; inactive: number; link: string };
+}
+export interface RequesterDashboard {
+  generatedAt: string;
+  timeZone: string;
+  metrics: {
+    open: DashboardFigure;
+    waitingForYou: DashboardFigure;
+    recentlyUpdated: DashboardFigure & { windowDays: number };
+    recentlyResolved: DashboardFigure & { windowDays: number };
+  };
+  recentlyUpdated: DashboardTicket[];
+  recentlyResolved: (Omit<DashboardTicket, "updatedAt"> & { resolvedAt: string })[];
+}
+
+async function getDashboard<T>(path: string): Promise<T> {
+  const { res, body } = await authRequest(path);
+  if (!res.ok) throw errorFromResponse(res.status, body, "The dashboard could not be loaded.");
+  return body as T;
+}
+export const getStaffDashboard = () => getDashboard<StaffDashboard>("/api/dashboard/staff");
+export const getRequesterDashboard = () => getDashboard<RequesterDashboard>("/api/dashboard/requester");

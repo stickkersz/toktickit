@@ -34,6 +34,12 @@ const STATUS_LABEL: Record<string, string> = {
 };
 const statusLabel = (status: string) => STATUS_LABEL[status] ?? status;
 
+// ui-spec.md section 10: the gate in words, from the counts the server gives.
+const gateSentence = (planned: number) =>
+  planned > 0
+    ? `This ticket cannot be resolved yet: ${planned} planned ${planned === 1 ? "action is" : "actions are"} still open.`
+    : "Record and complete at least one action before resolving.";
+
 // BR-27: 10 to 2000 characters after trimming.
 const SUMMARY_MIN = 10;
 const SUMMARY_MAX = 2000;
@@ -52,7 +58,7 @@ const SAVE_FIELDS: Record<Control, (keyof StaffTicketItem)[]> = {
 const RELOAD_FIELDS: Record<Control, (keyof StaffTicketDetailData)[]> = {
   owner: ["ownerId", "ownerName", "ownerIsActive", "ownerEligible"],
   priority: ["itPriority"],
-  status: ["currentStatus", "permittedNextStatuses", "resolutionSummary"],
+  status: ["currentStatus", "permittedNextStatuses", "resolutionSummary", "resolutionGate"],
 };
 
 function pick<T extends object>(source: T, keys: (keyof T)[]): Partial<T> {
@@ -87,6 +93,17 @@ function StaffTicketDetail() {
   const [ticket, setTicket] = useState<StaffTicketDetailData | null>(null);
   const [owners, setOwners] = useState<StaffOwner[]>([]);
   const [busy, setBusy] = useState<Record<Control, boolean>>({ owner: false, priority: false, status: false });
+  // Claim, the status confirmations and Reload remove themselves when they finish, so focus goes back to
+  // the control they acted on once it is usable again, never to the page (Lab 4 FR-17, the #84 sweep).
+  const controlRef = { owner: useRef<HTMLSelectElement>(null), priority: useRef<HTMLSelectElement>(null), status: useRef<HTMLSelectElement>(null) };
+  const [returnTo, setReturnTo] = useState<Control | null>(null);
+  useEffect(() => {
+    if (!returnTo || busy[returnTo]) return;
+    controlRef[returnTo].current?.focus();
+    setReturnTo(null);
+    // controlRef holds stable refs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [returnTo, busy]);
   // A control whose latest values could not be reloaded is locked: its options may be out of date, so
   // nothing more is changed through it until a Reload succeeds.
   const [stale, setStale] = useState<Record<Control, boolean>>({ owner: false, priority: false, status: false });
@@ -97,8 +114,19 @@ function StaffTicketDetail() {
   // Closing and cancelling are terminal (no move out of either), so both wait for a confirmation.
   const [confirming, setConfirming] = useState<"CLOSED" | "CANCELLED" | null>(null);
   const [summaryError, setSummaryError] = useState<string | null>(null);
+  // Lab 4: a Resolve the gate blocks is explained next to the control and nothing is sent (ui-spec section 10).
+  // The sentence is built from the gate as it is now, so it follows Action writes on this screen and goes
+  // once the gate opens (review on #85).
+  const [gateShown, setGateShown] = useState(false);
+  // Bumped after every successful move so the History and the Actions follow it; also opens a tab on request.
+  const [moves, setMoves] = useState(0);
+  const [tabRequest, setTabRequest] = useState<{ id: string; seq: number } | null>(null);
+  // The status the last move asked for, so a STATUS_CHANGED that names it can be told apart (see fail).
+  const requestedStatus = useRef<string | null>(null);
+  const [statusNote, setStatusNote] = useState<string | null>(null);
 
   const loadIdRef = useRef(0);
+  const refreshSeq = useRef<Record<Control, number>>({ owner: 0, priority: 0, status: 0 });
 
   // Reads the whole Ticket, for opening the screen and for Retry.
   async function load() {
@@ -129,16 +157,21 @@ function StaffTicketDetail() {
   // what is on screen may be out of date (the permitted next statuses, the Resolution Summary, the
   // owner list), and must not be presented as current.
   async function refresh(control: Control): Promise<boolean> {
+    // Section 5 async UI: a re-read can now start from outside its control (an Action write, review on
+    // #85), so two can overlap; only the latest one per control may apply.
+    const seq = ++refreshSeq.current[control];
     try {
       const [detail, list] = await Promise.all([
         getStaffTicketDetail(ticketId),
         control === "owner" ? getStaffOwners() : Promise.resolve(null),
       ]);
+      if (refreshSeq.current[control] !== seq) return true;
       setTicket((t) => t && { ...t, ...pick(detail, RELOAD_FIELDS[control]) });
       if (list) setOwners(list);
       setStale((st) => (st[control] ? { ...st, [control]: false } : st));
       return true;
     } catch {
+      if (refreshSeq.current[control] !== seq) return true;
       setStale((st) => ({ ...st, [control]: true }));
       return false;
     }
@@ -146,6 +179,7 @@ function StaffTicketDetail() {
 
   // The Reload button of a locked control.
   async function reload(control: Control) {
+    setReturnTo(control);
     setBusyFor(control, true);
     setSaved(null);
     setProblem(null);
@@ -161,7 +195,21 @@ function StaffTicketDetail() {
   }
 
   function fail(control: Control, e: unknown, generic: string) {
-    if (e instanceof ApiError && e.code === "ALREADY_ASSIGNED") {
+    if (e instanceof ApiError && e.code === "STATUS_CHANGED" && e.currentStatus === requestedStatus.current) {
+      // The Ticket is already where it was asked to go: a retry after a lost response, or someone else's
+      // identical move. Said neutrally, claiming the move for nobody (spec section 11); History says who.
+      setStatusNote(`This ticket is already ${statusLabel(e.currentStatus)}.`);
+      setMoves((m) => m + 1);
+    } else if (e instanceof ApiError && e.code === "STATUS_CHANGED") {
+      setProblem({
+        control,
+        conflict: true,
+        message: `This ticket moved to ${statusLabel(e.currentStatus ?? "")} while you were viewing it.`,
+      });
+    } else if (e instanceof ApiError && (e.code === "ACTIONS_INCOMPLETE" || e.code === "NO_COMPLETED_ACTION")) {
+      // The re-read that follows a refusal brings the counts the server used.
+      setGateShown(true);
+    } else if (e instanceof ApiError && e.code === "ALREADY_ASSIGNED") {
       setProblem({ control, conflict: true, message: "Someone else has claimed this Ticket. It now shows its current owner." });
     } else if (e instanceof ApiError && e.code === "INVALID_OWNER") {
       setProblem({ control, conflict: true, message: "That person can no longer be a Ticket Owner. The list has been refreshed." });
@@ -241,7 +289,16 @@ function StaffTicketDetail() {
     }
     setProblem(null);
     setSaved(null);
+    setGateShown(false);
+    setStatusNote(null);
     if (next === "RESOLVED") {
+      // BR-21: explained before anything is sent; the server enforces it again on the move.
+      if (!ticket.resolutionGate.canResolve) {
+        setResolving(false);
+        setConfirming(null);
+        setGateShown(true);
+        return;
+      }
       // Resolving needs a summary and a confirmation, so nothing is sent yet.
       setResolving(true);
       setConfirming(null);
@@ -253,15 +310,19 @@ function StaffTicketDetail() {
       return;
     }
     setConfirming(null);
-    return run("status", () => changeTicketStatus(ticketId, next), "Unable to change the status. Nothing was changed.", () => refresh("status"));
+    const from = ticket.currentStatus;
+    requestedStatus.current = next;
+    return run("status", () => changeTicketStatus(ticketId, next, undefined, from), "Unable to change the status. Nothing was changed.", () => moved(next));
   }
 
   function confirmTerminal() {
     if (!confirming) return;
     const target = confirming;
-    return run("status", () => changeTicketStatus(ticketId, target), "Unable to change the status. Nothing was changed.", async () => {
+    const from = ticket!.currentStatus;
+    requestedStatus.current = target;
+    return run("status", () => changeTicketStatus(ticketId, target, undefined, from), "Unable to change the status. Nothing was changed.", async () => {
       setConfirming(null);
-      return refresh("status");
+      return moved(target);
     });
   }
 
@@ -272,11 +333,22 @@ function StaffTicketDetail() {
       return;
     }
     setSummaryError(null);
-    return run("status", () => changeTicketStatus(ticketId, "RESOLVED", trimmed), "Unable to resolve the Ticket. Nothing was changed.", async () => {
+    setReturnTo("status");
+    const from = ticket!.currentStatus;
+    requestedStatus.current = "RESOLVED";
+    return run("status", () => changeTicketStatus(ticketId, "RESOLVED", trimmed, from), "Unable to resolve the Ticket. Nothing was changed.", async () => {
       setResolving(false);
       setSummary("");
-      return refresh("status");
+      return moved("RESOLVED");
     });
+  }
+
+  // After a move: the status, permitted moves, gate and summary reload, and the History and Actions follow.
+  async function moved(to: string): Promise<boolean> {
+    requestedStatus.current = to;
+    const ok = await refresh("status");
+    setMoves((m) => m + 1);
+    return ok;
   }
 
   function goBack() {
@@ -325,14 +397,18 @@ function StaffTicketDetail() {
   // Options come from the last reload: while that is missing, offer nothing but the current status.
   // (A locked control is never one that looked terminal: a terminal Ticket has no move to make stale.)
   const terminal = ticket.permittedNextStatuses.length === 0;
-  const statusOptions = stale.status ? [ticket.currentStatus] : [ticket.currentStatus, ...ticket.permittedNextStatuses];
+  // Just after a move the status is the new one while the permitted list may still be the old one's, which
+  // can contain it: listed once, so no two options share a key (Lab 4 ui-spec section 11).
+  const statusOptions = stale.status ? [ticket.currentStatus] : [...new Set([ticket.currentStatus, ...ticket.permittedNextStatuses])];
   const locked = { owner: busy.owner || stale.owner, priority: busy.priority || stale.priority, status: busy.status || stale.status };
   const problemFor = (control: Control) => (problem && problem.control === control ? problem : null);
 
   const feedback = (control: Control) => (
     <div className="zg-field-feedback small" aria-live="polite">
       {busy[control] && !stale[control] && <span className="text-muted">Saving…</span>}
-      {!busy[control] && saved === control && <span className="text-success">Saved</span>}
+      {/* Lab 4 ui-spec section 10 names the status confirmation "Status updated."; the others keep "Saved". */}
+      {!busy[control] && saved === control && <span className="text-success">{control === "status" ? "Status updated." : "Saved"}</span>}
+      {!busy[control] && control === "status" && saved !== "status" && statusNote && <span className="text-muted">{statusNote}</span>}
     </div>
   );
 
@@ -388,19 +464,19 @@ function StaffTicketDetail() {
 
       <h2 className="h6 text-muted text-uppercase mb-2">Ticket information</h2>
       <div className="row g-3 mb-4">
-        <div className="col-md-3">
+        <div className="col-md-6 col-lg-3">
           <label htmlFor="staff-ticket-number" className="form-label fw-semibold">Ticket No.</label>
           <input id="staff-ticket-number" className="form-control" readOnly value={ticket.ticketNumber} />
         </div>
-        <div className="col-md-3">
+        <div className="col-md-6 col-lg-3">
           <label htmlFor="staff-category" className="form-label fw-semibold">Category</label>
           <input id="staff-category" className="form-control" readOnly value={ticket.categoryName} />
         </div>
-        <div className="col-md-3">
+        <div className="col-md-6 col-lg-3">
           <label htmlFor="staff-related-system" className="form-label fw-semibold">Related System</label>
           <input id="staff-related-system" className="form-control" readOnly value={ticket.relatedSystemName} />
         </div>
-        <div className="col-md-3">
+        <div className="col-md-6 col-lg-3">
           <label htmlFor="staff-requester" className="form-label fw-semibold">Requester</label>
           <input
             id="staff-requester"
@@ -409,11 +485,11 @@ function StaffTicketDetail() {
             value={ticket.requesterIsActive ? ticket.requesterName : `${ticket.requesterName} (inactive)`}
           />
         </div>
-        <div className="col-md-3">
+        <div className="col-md-6 col-lg-3">
           <span className="form-label fw-semibold d-block">Requested Priority</span>
           <PriorityBadge value={ticket.requestedPriority} />
         </div>
-        <div className="col-md-3">
+        <div className="col-md-6 col-lg-3">
           <label htmlFor="staff-created" className="form-label fw-semibold">Created Date</label>
           <input id="staff-created" className="form-control" readOnly value={formatDate(ticket.createdAt)} />
         </div>
@@ -435,11 +511,12 @@ function StaffTicketDetail() {
 
       <h2 className="h6 text-muted text-uppercase mb-2">Handling</h2>
       <div className="row g-3 mb-4">
-        <div className="col-md-4">
+        <div className="col-md-6 col-lg-4">
           <label htmlFor="staff-owner" className="form-label fw-semibold">Ticket Owner</label>
           <div className="d-flex gap-2">
             <select
               id="staff-owner"
+              ref={controlRef.owner}
               className="form-select zg-editable"
               value={ticket.ownerId ?? ""}
               disabled={locked.owner}
@@ -460,7 +537,7 @@ function StaffTicketDetail() {
               ))}
             </select>
             {canClaim && user && (
-              <button type="button" className="btn zg-btn-primary zg-touch-target" disabled={locked.owner} onClick={() => void changeOwner(user.id)}>
+              <button type="button" className="btn zg-btn-primary zg-touch-target" disabled={locked.owner} onClick={() => (setReturnTo("owner"), void changeOwner(user.id))}>
                 Claim
               </button>
             )}
@@ -476,10 +553,11 @@ function StaffTicketDetail() {
           {problemNote("owner")}
         </div>
 
-        <div className="col-md-4">
+        <div className="col-md-6 col-lg-4">
           <label htmlFor="staff-it-priority" className="form-label fw-semibold">IT Priority</label>
           <select
             id="staff-it-priority"
+            ref={controlRef.priority}
             className="form-select zg-editable"
             value={ticket.itPriority}
             disabled={locked.priority}
@@ -495,10 +573,11 @@ function StaffTicketDetail() {
           {problemNote("priority")}
         </div>
 
-        <div className="col-md-4">
+        <div className="col-md-6 col-lg-4">
           <label htmlFor="staff-status" className="form-label fw-semibold">Current Status</label>
           <select
             id="staff-status"
+            ref={controlRef.status}
             className="form-select zg-editable"
             value={resolving ? "RESOLVED" : (confirming ?? ticket.currentStatus)}
             disabled={locked.status || terminal}
@@ -512,6 +591,26 @@ function StaffTicketDetail() {
             ))}
           </select>
           {terminal && <div className="text-muted small mt-1">This Ticket is {statusLabel(ticket.currentStatus)}, so its status cannot change.</div>}
+          {gateShown && !ticket.resolutionGate.canResolve && (
+            <div className="zg-alert-warning rounded p-2 mt-2 small" role="alert">
+              <p className="mb-1">{gateSentence(ticket.resolutionGate.plannedActions)}</p>
+              {/* A link, as ui-spec section 10 names it: it goes to a place (the Actions tab, also its URL). */}
+              <Link
+                to={`/staff/tickets/${ticketId}?tab=actions`}
+                className="btn btn-sm btn-outline-secondary zg-touch-target"
+                onClick={(e) => {
+                  // A modified or non-left click is the browser's (a new tab or window); only a plain click
+                  // switches the tab in place (review on #89).
+                  if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+                  e.preventDefault();
+                  setGateShown(false);
+                  setTabRequest((r) => ({ id: "actions", seq: (r?.seq ?? 0) + 1 }));
+                }}
+              >
+                Go to Actions Taken
+              </Link>
+            </div>
+          )}
           {feedback("status")}
           {staleNote("status")}
           {problemNote("status")}
@@ -550,6 +649,7 @@ function StaffTicketDetail() {
                   onClick={() => {
                     setResolving(false);
                     setSummaryError(null);
+                    setReturnTo("status");
                   }}
                 >
                   Cancel
@@ -566,12 +666,19 @@ function StaffTicketDetail() {
             <div className="border rounded p-3" role="group" aria-label="Confirm the status change">
               <p className="mb-2">
                 {confirming === "CLOSED" ? "Close this Ticket?" : "Cancel this Ticket?"} It cannot move to any other status afterwards.
+                {/* Lab 4 BR-15, ui-spec section 10: say what the cancel takes with it. */}
+                {confirming === "CANCELLED" && ticket.resolutionGate.plannedActions > 0 && (
+                  <>
+                    {" "}
+                    {ticket.resolutionGate.plannedActions === 1 ? "Its 1 planned action will be cancelled too." : `Its ${ticket.resolutionGate.plannedActions} planned actions will be cancelled too.`}
+                  </>
+                )}
               </p>
               <div className="d-flex gap-2 justify-content-end">
-                <button type="button" className="btn btn-outline-secondary btn-sm zg-touch-target" disabled={locked.status} onClick={() => setConfirming(null)}>
+                <button type="button" className="btn btn-outline-secondary btn-sm zg-touch-target" disabled={locked.status} onClick={() => (setConfirming(null), setReturnTo("status"))}>
                   Keep current status
                 </button>
-                <button type="button" className="btn zg-btn-primary btn-sm zg-touch-target" disabled={locked.status} onClick={() => void confirmTerminal()}>
+                <button type="button" className="btn zg-btn-primary btn-sm zg-touch-target" disabled={locked.status} onClick={() => (setReturnTo("status"), void confirmTerminal())}>
                   {busy.status ? "Saving…" : confirming === "CLOSED" ? "Confirm and close" : "Confirm and cancel"}
                 </button>
               </div>
@@ -582,7 +689,19 @@ function StaffTicketDetail() {
 
       <hr />
 
-      <StaffTicketPanels ticketId={ticketId} attachments={ticket.attachments} />
+      <StaffTicketPanels
+        ticketId={ticketId}
+        attachments={ticket.attachments}
+        ticketCreatedAt={ticket.createdAt}
+        ticketStatus={ticket.currentStatus}
+        owners={owners}
+        currentUserId={user?.id ?? 0}
+        onTicketChanged={() => void moved(ticket.currentStatus)}
+        onOwnersStale={() => void refresh("owner")}
+        onActionsChanged={() => void refresh("status")}
+        historyKey={moves}
+        tabRequest={tabRequest}
+      />
     </div>
   );
 }

@@ -4,6 +4,7 @@ import { MemoryRouter } from "react-router-dom";
 import App from "../../src/App.js";
 import * as api from "../../src/api.js";
 import type { AuthUser, TicketDetail } from "../../src/api.js";
+import { ROUTER_FUTURE } from "../../src/routerFuture.js";
 
 const ARI: AuthUser = { id: 1, name: "Ari Anan", email: "ari.anan@example.com", role: "REQUESTER", mustChangePassword: false };
 
@@ -31,7 +32,7 @@ function ticketDetail(overrides: Partial<TicketDetail> = {}): TicketDetail {
 function renderAtDetail(ticketId = 42, requester: AuthUser = ARI) {
   vi.spyOn(api, "getCurrentUser").mockResolvedValue(requester);
   return render(
-    <MemoryRouter initialEntries={[`/tickets/${ticketId}`]}>
+    <MemoryRouter future={ROUTER_FUTURE} initialEntries={[`/tickets/${ticketId}`]}>
       <App />
     </MemoryRouter>,
   );
@@ -49,6 +50,7 @@ describe("Requester Ticket Detail", () => {
     vi.spyOn(api, "getCurrentUser").mockResolvedValue(ARI);
     vi.spyOn(api, "getTicketDetail").mockResolvedValue(ticketDetail());
     vi.spyOn(api, "getTicketComments").mockResolvedValue([]);
+    vi.spyOn(api, "getTicketActions").mockResolvedValue([]);
 
     renderAtDetail();
 
@@ -59,7 +61,10 @@ describe("Requester Ticket Detail", () => {
     expect(summaryField).toHaveAttribute("readonly");
     expect(summaryField).not.toBeDisabled();
     expect(screen.queryByText(/internal note/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/actions taken/i)).not.toBeInTheDocument();
+    // Lab 4 BR-17 supersedes "no Actions": the Requester now sees Actions Taken, read-only, with no control
+    // to add or change one (Lab 4 tests.md section 6).
+    expect(await screen.findByRole("heading", { name: /^Actions Taken/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /add action|edit|complete|cancel action/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("combobox", { name: /status/i })).not.toBeInTheDocument();
   });
 
@@ -73,6 +78,7 @@ describe("Requester Ticket Detail", () => {
     expect(screen.getByRole("button", { name: /back to my tickets/i })).toBeInTheDocument();
   });
 
+  // UI-13 / BR-30: a removed Attachment is muted and labelled (tag added in the Lab 4 pre-release audit)
   it("shows the active attachment count and both active and removed rows, with file-type icons and a truncation tooltip", async () => {
     const longName = "a-very-long-original-filename-that-should-be-truncated-in-the-row.pdf";
     vi.spyOn(api, "getCurrentUser").mockResolvedValue(ARI);

@@ -296,3 +296,24 @@ export async function userIds(client: PrismaClient, table: "RequesterUser" | "Us
   const rows = await client.$queryRawUnsafe<{ id: number }[]>(`SELECT id FROM "${table}" ORDER BY id`);
   return rows.map((r) => r.id);
 }
+
+// Lab 4 supersedes two Lab 3 workflow rules (Lab 4 tests.md section 6): a move must state the status the
+// user saw (BR-23), and Resolved needs a Completed Action (BR-21). The Lab 3 tests check other rules (the
+// matrix, owners, the summary), so their requests are completed here as a Lab 4 client would send them:
+// `fromStatus` is the status the Ticket has now (unless the test sets one), and a Ticket about to be
+// resolved is given one Completed Action. A missing Ticket gets a well-formed fromStatus, so it still
+// reaches the 404.
+export async function asLab4Move(client: PrismaClient, ticketId: number, body: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const ticket = Number.isInteger(ticketId) && ticketId > 0 && ticketId <= 2147483647
+    ? await client.ticket.findUnique({ where: { id: ticketId }, select: { currentStatus: true, ownerId: true, requesterId: true } })
+    : null;
+  const out = { ...body };
+  if (out.fromStatus === undefined) out.fromStatus = ticket?.currentStatus ?? "NEW";
+  if (ticket && out.currentStatus === "RESOLVED" && (await client.actionTaken.count({ where: { ticketId, status: "COMPLETED" } })) === 0) {
+    const by = ticket.ownerId ?? ticket.requesterId;
+    await client.actionTaken.create({
+      data: { ticketId, actionAt: new Date(), description: "Lab 3 test: work that resolves it", status: "COMPLETED", result: "Done.", recordedById: by, responsibleStaffId: by, performedById: by, completedAt: new Date(), version: 2 },
+    });
+  }
+  return out;
+}

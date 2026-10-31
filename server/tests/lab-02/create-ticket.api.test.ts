@@ -43,6 +43,17 @@ describe("POST /api/tickets", () => {
     });
   });
 
+  // L2-BR-08 (pre-release audit, L-452): the Ticket Date is the server's clock, whatever the body says
+  it("ignores a ticket date, created date, status or requester sent in the body", async () => {
+    const before = Date.now();
+    const res = await ari.post("/api/tickets").send({ ...validBody, createdAt: "2001-01-01T00:00:00.000Z", ticketDate: "2001-01-01", currentStatus: "CLOSED", requesterId: 999999 });
+    expect(res.status).toBe(201);
+    const created = Date.parse(res.body.createdAt);
+    expect(created).toBeGreaterThanOrEqual(before - 1000);
+    expect(created).toBeLessThanOrEqual(Date.now() + 1000);
+    expect(res.body).toMatchObject({ currentStatus: "NEW", requesterId: ariId });
+  });
+
   it("generates a unique ticketNumber per Ticket", async () => {
     const first = await ari.post("/api/tickets").send(validBody);
     const second = await ari.post("/api/tickets").send(validBody);

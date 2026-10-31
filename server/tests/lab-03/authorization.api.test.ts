@@ -181,7 +181,7 @@ describe("a Requester asking for Internal Notes", () => {
 // ---------------------------------------------------------------------------
 
 type Method = "get" | "post" | "patch" | "delete";
-type Ids = { ticket: number; attachment: number; user: number };
+type Ids = { ticket: number; attachment: number; user: number; action?: number };
 type Endpoint = { method: Method; path: string; url: (ids: Ids) => string; body?: object | ((ids: Ids) => object); file?: boolean };
 
 const endpoint = (method: Method, path: string, extra: Partial<Endpoint> = {}): Endpoint => ({
@@ -192,7 +192,8 @@ const endpoint = (method: Method, path: string, extra: Partial<Endpoint> = {}): 
       .replace(/^\/api\/tickets\/:id/, `/api/tickets/${ids.ticket}`)
       .replace(/^\/api\/staff\/tickets\/:id/, `/api/staff/tickets/${ids.ticket}`)
       .replace(/^\/api\/attachments\/:id/, `/api/attachments/${ids.attachment}`)
-      .replace(/^\/api\/admin\/users\/:id/, `/api/admin/users/${ids.user}`),
+      .replace(/^\/api\/admin\/users\/:id/, `/api/admin/users/${ids.user}`)
+      .replace(/^\/api\/actions\/:id/, `/api/actions/${ids.action ?? 999999}`),
   ...extra,
 });
 
@@ -208,6 +209,11 @@ const STAFF: Endpoint[] = [
   endpoint("patch", "/api/staff/tickets/:id/status", { body: { currentStatus: "OPEN" } }),
   endpoint("get", "/api/tickets/:id/notes"),
   endpoint("post", "/api/tickets/:id/notes", { body: { body: "A note nobody may write" } }),
+  // Lab 4 Actions Taken (BR-17): valid bodies, so a missing guard shows as a write.
+  endpoint("post", "/api/tickets/:id/actions", { body: { actionAt: new Date().toISOString(), description: "An action nobody may record" } }),
+  endpoint("patch", "/api/actions/:id", { body: { version: 1, description: "An edit nobody may make" } }),
+  endpoint("post", "/api/actions/:id/complete", { body: { version: 1, result: "A completion nobody may make" } }),
+  endpoint("post", "/api/actions/:id/cancel", { body: { version: 1, reason: "A cancellation nobody may make" } }),
 ];
 
 const ADMIN: Endpoint[] = [
@@ -235,6 +241,11 @@ const OTHER_PROTECTED: Endpoint[] = [
   endpoint("delete", "/api/attachments/:id", { body: { reason: "Nobody may remove this" } }),
   endpoint("get", "/api/tickets/:id/comments"),
   endpoint("post", "/api/tickets/:id/comments", { body: { body: "A comment nobody may write" } }),
+  endpoint("get", "/api/tickets/:id/actions"),
+  endpoint("get", "/api/tickets/:id/history"),
+  // Lab 4 dashboards: each is closed to the other role, which the Lab 4 tests check (SEC-03).
+  endpoint("get", "/api/dashboard/staff"),
+  endpoint("get", "/api/dashboard/requester"),
 ];
 
 const PROTECTED = [...OTHER_PROTECTED, ...STAFF, ...ADMIN];
@@ -274,6 +285,7 @@ async function snapshot(ids: Ids) {
     attachments: await db.attachment.count({ where: { isRemoved: false } }),
     comments: await db.publicComment.count(),
     notes: await db.internalNote.count(),
+    actions: await db.actionTaken.findMany({ orderBy: { id: "asc" }, select: { id: true, status: true, version: true, description: true } }),
     users: await db.user.count(),
     ticket: await db.ticket.findUniqueOrThrow({
       where: { id: ids.ticket },
@@ -313,7 +325,11 @@ describe("the authorization sweep", () => {
     const upload = await requester
       .post(`/api/tickets/${ticket.body.id}/attachments`)
       .attach("files", Buffer.from("sweep file"), { filename: "s.jpg", contentType: "image/jpeg" });
-    ids = { ticket: ticket.body.id, attachment: upload.body.uploaded[0].id, user: target.id };
+    // A Planned Action on the sweep's Ticket, so the Action write endpoints are refused on a real row.
+    const action = await getPrisma().actionTaken.create({
+      data: { ticketId: ticket.body.id, actionAt: new Date(), description: "The sweep's own Action", recordedById: staff.id, responsibleStaffId: staff.id },
+    });
+    ids = { ticket: ticket.body.id, attachment: upload.body.uploaded[0].id, user: target.id, action: action.id };
     requesterCookie = requester.cookie;
     staffCookie = (await signedIn(staff)).cookie;
   });

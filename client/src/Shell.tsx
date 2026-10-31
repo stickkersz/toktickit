@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { useFocusNet } from "./focusNet.js";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { RoleBadge } from "./Badge.js";
 import { useAuth } from "./authContext.js";
@@ -12,6 +13,9 @@ interface NavItem {
   isActive: (pathname: string) => boolean;
 }
 
+// Lab 4 ui-spec section 3: Dashboard is first for every role, marked on its own route only.
+const DASHBOARD: NavItem = { label: "Dashboard", to: "/dashboard", isActive: (p) => p === "/dashboard" };
+const STAFF_DASHBOARD: NavItem = { label: "Dashboard", to: "/staff/dashboard", isActive: (p) => p === "/staff/dashboard" };
 const MY_TICKETS: NavItem = {
   label: "My Tickets",
   to: "/tickets",
@@ -28,9 +32,9 @@ const USERS: NavItem = { label: "Users", to: "/admin/users", isActive: (p) => p 
 // ui-spec.md section 3: navigation is role specific, and a destination the role may
 // not use is never rendered (AC-11, FR-05).
 export const NAV_BY_ROLE: Record<UserRole, NavItem[]> = {
-  REQUESTER: [MY_TICKETS, CREATE_TICKET],
-  IT_STAFF: [TICKET_QUEUE],
-  ADMINISTRATOR: [TICKET_QUEUE, USERS],
+  REQUESTER: [DASHBOARD, MY_TICKETS, CREATE_TICKET],
+  IT_STAFF: [STAFF_DASHBOARD, TICKET_QUEUE],
+  ADMINISTRATOR: [STAFF_DASHBOARD, TICKET_QUEUE, USERS],
 };
 
 // Application shell: role navigation, the signed-in user's name and role, a way to
@@ -43,6 +47,8 @@ export const NAV_BY_ROLE: Record<UserRole, NavItem[]> = {
 // toggle is not worth it. Identity and Logout sit inside that panel on mobile.
 export default function Shell() {
   const { user, signOut } = useAuth();
+  const mainRef = useRef<HTMLElement>(null);
+  useFocusNet(mainRef);
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -102,7 +108,7 @@ export default function Shell() {
             </div>
 
             <div className="d-flex flex-column flex-md-row align-items-md-center gap-2 gap-md-3 py-2 py-md-0">
-              <span className="text-white d-flex align-items-center gap-2">
+              <span className="text-white d-flex align-items-center gap-2 zg-header-user">
                 {user.name} <RoleBadge role={user.role} />
               </span>
               <Link
@@ -120,7 +126,7 @@ export default function Shell() {
         </div>
       </nav>
 
-      <main className="container py-4">
+      <main className="container py-4" ref={mainRef}>
         <Outlet />
       </main>
     </div>

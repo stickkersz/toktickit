@@ -30,7 +30,7 @@ export interface ContentThread {
 export function useContentThread(
   ticketId: number,
   fetchList: (ticketId: number) => Promise<ContentItem[]>,
-  send: (ticketId: number, body: string) => Promise<ContentItem>,
+  send: (ticketId: number, body: string, idempotencyKey: string) => Promise<ContentItem>,
   noun: string,
 ): ContentThread {
   const [items, setItems] = useState<ContentItem[]>([]);
@@ -39,6 +39,10 @@ export function useContentThread(
   const [posting, setPosting] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const postingRef = useRef(false);
+  // Lab 4 BR-39: one key per submission. A retry of the same text reuses it, so a comment whose response
+  // was lost is not posted twice; any edit to the text starts a new one (after a success the box is
+  // empty, so the next comment is always an edit).
+  const keyRef = useRef(crypto.randomUUID());
 
   const load = useCallback(() => {
     setState("loading");
@@ -56,6 +60,7 @@ export function useContentThread(
   useEffect(load, [load]);
 
   function setDraft(value: string) {
+    if (value !== draft) keyRef.current = crypto.randomUUID();
     setDraftState(value);
     setProblem(null);
   }
@@ -72,11 +77,17 @@ export function useContentThread(
     setPosting(true);
     setProblem(null);
     try {
-      const created = await send(ticketId, text);
-      setItems((list) => [...list, created]);
+      const created = await send(ticketId, text, keyRef.current);
+      // A replay is the record already created; it is never listed twice.
+      setItems((list) => (list.some((i) => i.id === created.id) ? list : [...list, created]));
       setDraftState("");
     } catch (e) {
       if (e instanceof ValidationError) setProblem(e.fields.body ?? e.message);
+      else if (e instanceof ApiError && e.code === "IDEMPOTENCY_KEY_REUSED") {
+        // The text is kept, the server's message shown, and the next send is a new request.
+        keyRef.current = crypto.randomUUID();
+        setProblem(e.message);
+      }
       else if (e instanceof ApiError && e.code === "TICKET_TERMINAL") setProblem(TERMINAL_MESSAGE);
       else setProblem(`Unable to add the ${noun}. Nothing was added.`);
     } finally {

@@ -1,5 +1,5 @@
 import { Router, type Request, type Response } from "express";
-import type { Prisma, TicketStatus } from "@prisma/client";
+import { Prisma, type ActionStatus, type TicketStatus } from "@prisma/client";
 import { getPrisma } from "../prisma.js";
 import { sendError } from "../httpErrors.js";
 import { requireAuth } from "../middleware/requireAuth.js";
@@ -7,6 +7,8 @@ import { requireRole } from "../middleware/requireRole.js";
 import { isValidId } from "../ids.js";
 import { escapeLike } from "../searchText.js";
 import { parseStaffQueueQuery } from "../staffQueueQuery.js";
+import { RESOLVED_STATUSES, activeWhere, needsOwnerWhere } from "../dashboardWindow.js";
+import { resolutionGate } from "../actionValidation.js";
 import {
   isTicketStatus,
   isTransitionPermitted,
@@ -23,6 +25,16 @@ export const staffTicketsRouter = Router();
 export function isEligibleOwner(owner: { isActive: boolean; role: string } | null): boolean | null {
   if (!owner) return null;
   return owner.isActive && (owner.role === "IT_STAFF" || owner.role === "ADMINISTRATOR");
+}
+
+// The same rule, read inside the caller's write transaction with a share lock on the user's row
+// (BR-18 here, Lab 4 BR-07 for Responsible Staff). A deactivation or role change locks that row
+// FOR UPDATE (adminUsers lockPeople), so it either waits for the write or is seen by it: nobody
+// deactivated a moment before the write is ever set (review on Lab 4 #83).
+export async function isEligibleStaffLocked(tx: Prisma.TransactionClient, userId: number): Promise<boolean> {
+  const rows = await tx.$queryRaw<{ isActive: boolean; role: string }[]>(Prisma.sql`
+    SELECT "isActive", "role"::text AS "role" FROM "User" WHERE "id" = ${userId} FOR SHARE`);
+  return isEligibleOwner(rows[0] ?? null) === true;
 }
 
 // What every staff-facing Ticket response needs, so the list, the detail and every mutation
@@ -78,6 +90,8 @@ staffTicketsRouter.get(
         });
       }
       if (query.status) and.push({ currentStatus: query.status });
+      if (query.statusGroup === "active") and.push(activeWhere);
+      if (query.statusGroup === "resolved") and.push({ currentStatus: { in: RESOLVED_STATUSES } });
       if (query.itPriority) and.push({ itPriority: query.itPriority });
       if (query.categoryId !== null) and.push({ categoryId: query.categoryId });
 
@@ -94,11 +108,8 @@ staffTicketsRouter.get(
         case "needs-owner":
           // Open Tickets that are unassigned or whose owner is ineligible. A CLOSED or
           // CANCELLED Ticket keeps its marker but is excluded: nothing more is expected
-          // of it (BR-59).
-          and.push({ currentStatus: { notIn: ["CLOSED", "CANCELLED"] } });
-          and.push({
-            OR: [{ ownerId: null }, { owner: { is: { OR: [{ isActive: false }, { role: "REQUESTER" }] } } }],
-          });
+          // of it (BR-59). The Lab 4 dashboard's Unassigned figure counts the same rule.
+          and.push(...needsOwnerWhere);
           break;
       }
       const where: Prisma.TicketWhereInput = and.length > 0 ? { AND: and } : {};
@@ -160,7 +171,7 @@ staffTicketsRouter.patch("/api/staff/tickets/:id/owner", ...staffOnly, async (re
   try {
     const ticketId = ticketIdFrom(req);
     const ownerId: unknown = req.body?.ownerId;
-    if (ownerId !== null && !(typeof ownerId === "number" && Number.isInteger(ownerId) && ownerId > 0)) {
+    if (ownerId !== null && !isValidId(ownerId)) {
       return sendError(res, 400, "VALIDATION_ERROR", "ownerId must be a user id, or null to unassign.", {
         ownerId: "ownerId must be a user id, or null to unassign.",
       });
@@ -171,43 +182,46 @@ staffTicketsRouter.patch("/api/staff/tickets/:id/owner", ...staffOnly, async (re
     const existing = await prisma.ticket.findUnique({ where: { id: ticketId }, select: { id: true } });
     if (!existing) return sendError(res, 404, "NOT_FOUND", "Ticket not found.");
 
+    // Lab 4 BR-38: last activity moves only when a field changes, so each write below matches only a
+    // Ticket whose owner is different, and a request that changes nothing writes nothing.
     if (ownerId === null) {
       // BR-20: unassigning is always permitted.
-      const updated = await prisma.ticket.update({
-        where: { id: ticketId },
-        data: { ownerId: null },
-        include: staffTicketInclude,
-      });
+      await prisma.ticket.updateMany({ where: { id: ticketId, ownerId: { not: null } }, data: { ownerId: null } });
+      const updated = await prisma.ticket.findUniqueOrThrow({ where: { id: ticketId }, include: staffTicketInclude });
       return res.status(200).json(serializeStaffTicket(updated));
     }
 
-    // BR-18: the target must exist, be active, and hold the IT Staff or Administrator role.
-    const target = await prisma.user.findUnique({ where: { id: ownerId }, select: { isActive: true, role: true } });
-    if (!target || isEligibleOwner(target) !== true) {
+    // BR-18: the target must exist, be active, and hold the IT Staff or Administrator role, checked
+    // inside the same transaction as the write and with the target's row share-locked.
+    const outcome = await prisma.$transaction(async (tx) => {
+      if (!(await isEligibleStaffLocked(tx, ownerId))) return "INVALID_OWNER" as const;
+      if (ownerId === req.user!.id) {
+        // A claim (BR-19, BR-58). The condition is part of the write itself, so two people
+        // claiming at once cannot both win: it succeeds while the Ticket has no owner or its owner
+        // is ineligible, and the loser gets ALREADY_ASSIGNED. A Ticket already yours is a success
+        // with no write (BR-38).
+        const claimed = await tx.ticket.updateMany({
+          where: {
+            id: ticketId,
+            OR: [{ ownerId: null }, { owner: { is: { OR: [{ isActive: false }, { role: "REQUESTER" }] } } }],
+          },
+          data: { ownerId: req.user!.id },
+        });
+        if (claimed.count === 0) {
+          const current = await tx.ticket.findUnique({ where: { id: ticketId }, select: { ownerId: true } });
+          if (current?.ownerId !== req.user!.id) return "ALREADY_ASSIGNED" as const;
+        }
+      } else {
+        // Assigning or reassigning to someone else, whether or not it is currently assigned (BR-20).
+        await tx.ticket.updateMany({ where: { id: ticketId, OR: [{ ownerId: null }, { ownerId: { not: ownerId } }] }, data: { ownerId } });
+      }
+      return "OK" as const;
+    });
+    if (outcome === "INVALID_OWNER") {
       return sendError(res, 409, "INVALID_OWNER", "That user cannot be a Ticket Owner: they must be an active IT Staff member or Administrator.");
     }
-
-    if (ownerId === req.user!.id) {
-      // A claim (BR-19, BR-58). The condition is part of the write itself, so two people
-      // claiming at once cannot both win: it succeeds while the Ticket has no owner, is
-      // already yours, or its owner is ineligible, and the loser gets ALREADY_ASSIGNED.
-      const claimed = await prisma.ticket.updateMany({
-        where: {
-          id: ticketId,
-          OR: [
-            { ownerId: null },
-            { ownerId: req.user!.id },
-            { owner: { is: { OR: [{ isActive: false }, { role: "REQUESTER" }] } } },
-          ],
-        },
-        data: { ownerId: req.user!.id },
-      });
-      if (claimed.count === 0) {
-        return sendError(res, 409, "ALREADY_ASSIGNED", "This Ticket already has an owner. Ask them, or an administrator, to reassign it.");
-      }
-    } else {
-      // Assigning or reassigning to someone else, whether or not it is currently assigned (BR-20).
-      await prisma.ticket.update({ where: { id: ticketId }, data: { ownerId } });
+    if (outcome === "ALREADY_ASSIGNED") {
+      return sendError(res, 409, "ALREADY_ASSIGNED", "This Ticket already has an owner. Ask them, or an administrator, to reassign it.");
     }
 
     const updated = await prisma.ticket.findUniqueOrThrow({ where: { id: ticketId }, include: staffTicketInclude });
@@ -233,104 +247,134 @@ staffTicketsRouter.patch("/api/staff/tickets/:id/priority", ...staffOnly, async 
     if (!(await prisma.ticket.findUnique({ where: { id: ticketId }, select: { id: true } }))) {
       return sendError(res, 404, "NOT_FOUND", "Ticket not found.");
     }
-    // Only itPriority is written: Requested Priority is immutable (BR-21).
-    const updated = await prisma.ticket.update({
-      where: { id: ticketId },
-      data: { itPriority: value as (typeof PRIORITIES)[number] },
-      include: staffTicketInclude,
-    });
+    // Only itPriority is written: Requested Priority is immutable (BR-21). The same value writes nothing,
+    // so last activity does not move (Lab 4 BR-38).
+    const itPriority = value as (typeof PRIORITIES)[number];
+    await prisma.ticket.updateMany({ where: { id: ticketId, itPriority: { not: itPriority } }, data: { itPriority } });
+    const updated = await prisma.ticket.findUniqueOrThrow({ where: { id: ticketId }, include: staffTicketInclude });
     res.status(200).json(serializeStaffTicket(updated));
   } catch {
     sendError(res, 500, "INTERNAL_ERROR", "Unable to change the IT Priority.");
   }
 });
 
-// PATCH /api/staff/tickets/:id/status (endpoint 10, FR-14, BR-25 to BR-28, BR-58).
-// Checked in this order: the request itself (400), the Ticket (404), the transition
-// (409 INVALID_TRANSITION), then the owner (409 OWNER_REQUIRED).
+// PATCH /api/staff/tickets/:id/status (Lab 3 endpoint 10, changed by Lab 4 api-spec endpoint 7: FR-07 to
+// FR-09, BR-15, BR-20 to BR-24). Checked in this order: the request (400), the Ticket (404), the status the
+// user saw (409 STATUS_CHANGED), the transition (409 INVALID_TRANSITION), the owner (409 OWNER_REQUIRED), and
+// for Resolved the gate (409 ACTIONS_INCOMPLETE, then NO_COMPLETED_ACTION).
+//
+// Everything after the request checks runs in one transaction holding FOR UPDATE on the Ticket row: the
+// judgement, the move, its Status Change, and a cancel's cascade to Planned Actions. Action writes take the
+// same row (routes/actions.ts), so an Action cannot be added between the gate and the move (BR-21), and
+// the owner's row is share-locked so a deactivation cannot slip in either.
+const STATUS_LABEL: Record<TicketStatus, string> = {
+  NEW: "New",
+  OPEN: "Open",
+  IN_PROGRESS: "In Progress",
+  WAITING_FOR_REQUESTER: "Waiting for Requester",
+  RESOLVED: "Resolved",
+  CLOSED: "Closed",
+  REOPENED: "Reopened",
+  CANCELLED: "Cancelled",
+};
+
+type MoveOutcome =
+  | { kind: "moved" }
+  | { kind: "notFound" }
+  | { kind: "changed"; current: TicketStatus }
+  | { kind: "invalid"; current: TicketStatus }
+  | { kind: "ownerRequired" }
+  | { kind: "incomplete"; plannedActions: number }
+  | { kind: "noCompleted" };
+
 staffTicketsRouter.patch("/api/staff/tickets/:id/status", ...staffOnly, async (req: Request, res: Response) => {
   try {
     const ticketId = ticketIdFrom(req);
     const target: unknown = req.body?.currentStatus;
-    if (!isTicketStatus(target)) {
-      return sendError(res, 400, "VALIDATION_ERROR", "Unknown status.", { currentStatus: "Choose one of the eight Ticket statuses." });
-    }
+    const from: unknown = req.body?.fromStatus;
+    const fields: Record<string, string> = {};
+    if (!isTicketStatus(target)) fields.currentStatus = "Choose one of the eight Ticket statuses.";
+    // BR-23: the status the user saw, so a move is never applied against a status they did not see.
+    if (!isTicketStatus(from)) fields.fromStatus = "Send the status the Ticket had when you chose the move.";
     let summary: string | undefined;
     if (target === "RESOLVED") {
       const result = validateResolutionSummary(req.body?.resolutionSummary);
-      if (result.error) return sendError(res, 400, "VALIDATION_ERROR", result.error, { resolutionSummary: result.error });
-      summary = result.value;
+      if (result.error) fields.resolutionSummary = result.error;
+      else summary = result.value;
+    }
+    if (Object.keys(fields).length > 0) {
+      return sendError(res, 400, "VALIDATION_ERROR", Object.keys(fields).length === 1 ? Object.values(fields)[0] : "Some fields are not valid.", fields);
     }
     if (ticketId === null) return sendError(res, 404, "NOT_FOUND", "Ticket not found.");
+    const to = target as TicketStatus;
+    const seen = from as TicketStatus;
+    const userId = req.user!.id;
 
-    const prisma = getPrisma();
+    const outcome = await getPrisma().$transaction(async (tx): Promise<MoveOutcome> => {
+      const rows = await tx.$queryRaw<{ currentStatus: TicketStatus; ownerId: number | null }[]>(Prisma.sql`
+        SELECT "currentStatus", "ownerId" FROM "Ticket" WHERE "id" = ${ticketId} FOR UPDATE`);
+      if (rows.length === 0) return { kind: "notFound" };
+      const { currentStatus, ownerId } = rows[0];
+      if (currentStatus !== seen) return { kind: "changed", current: currentStatus };
+      if (!isTransitionPermitted(currentStatus, to)) return { kind: "invalid", current: currentStatus };
+      if (requiresOwner(to) && (ownerId === null || !(await isEligibleStaffLocked(tx, ownerId)))) return { kind: "ownerRequired" };
+      if (to === "RESOLVED") {
+        const counts = await tx.actionTaken.groupBy({ by: ["status"], where: { ticketId }, _count: { _all: true } });
+        const count = (s: ActionStatus) => counts.find((c) => c.status === s)?._count._all ?? 0;
+        // The same rule Ticket Detail shows (BR-21), so the screen and the move never disagree.
+        const gate = resolutionGate(count("PLANNED"), count("COMPLETED"));
+        if (!gate.canResolve) return gate.plannedActions > 0 ? { kind: "incomplete", plannedActions: gate.plannedActions } : { kind: "noCompleted" };
+      }
 
-    // Judges the move against ONE read of the Ticket and hands back the status it judged. That
-    // exact status is what the write is conditional on: judging one read and then guarding the
-    // write with a second, unjudged read would let a concurrent change be mistaken for the status
-    // that had been checked, and an unvalidated move, even one out of CLOSED or CANCELLED, would
-    // go through.
-    type Verdict = { ok: true; from: TicketStatus } | { ok: false; refusal: Refusal };
-    type Refusal = { status: 404 } | { status: 409; code: "INVALID_TRANSITION" | "OWNER_REQUIRED"; from: TicketStatus };
-    const judge = async (): Promise<Verdict> => {
-      const t = await prisma.ticket.findUnique({
-        where: { id: ticketId },
-        select: { currentStatus: true, owner: { select: { isActive: true, role: true } } },
+      await tx.ticket.update({ where: { id: ticketId }, data: { currentStatus: to, ...(summary !== undefined ? { resolutionSummary: summary } : {}) } });
+      await tx.statusChange.create({
+        data: { ticketId, fromStatus: currentStatus, toStatus: to, changedById: userId, resolutionSummary: to === "RESOLVED" ? summary! : null },
       });
-      if (!t) return { ok: false, refusal: { status: 404 } };
-      if (!isTransitionPermitted(t.currentStatus, target)) {
-        return { ok: false, refusal: { status: 409, code: "INVALID_TRANSITION", from: t.currentStatus } };
+      if (to === "CANCELLED") {
+        // BR-15: a Cancelled Ticket leaves no work hanging. Each Planned Action is cancelled with the Ticket
+        // and its version moved on, as any cancellation does (BR-13).
+        await tx.actionTaken.updateMany({
+          where: { ticketId, status: "PLANNED" },
+          data: { status: "CANCELLED", cancelReason: "Ticket cancelled", cancelledById: userId, cancelledAt: new Date(), version: { increment: 1 } },
+        });
       }
-      if (requiresOwner(target) && isEligibleOwner(t.owner) !== true) {
-        return { ok: false, refusal: { status: 409, code: "OWNER_REQUIRED", from: t.currentStatus } };
-      }
-      return { ok: true, from: t.currentStatus };
-    };
-    const respondRefusal = (r: Refusal) => {
-      if (r.status === 404) return sendError(res, 404, "NOT_FOUND", "Ticket not found.");
-      if (r.code === "INVALID_TRANSITION") {
-        const permitted = permittedNext(r.from);
+      return { kind: "moved" };
+    });
+
+    switch (outcome.kind) {
+      case "notFound":
+        return sendError(res, 404, "NOT_FOUND", "Ticket not found.");
+      case "changed":
+        return res.status(409).json({
+          error: "STATUS_CHANGED",
+          message: `This Ticket moved to ${STATUS_LABEL[outcome.current]} while you were viewing it. Check the current status and try again.`,
+          currentStatus: outcome.current,
+          permitted: permittedNext(outcome.current),
+        });
+      case "invalid": {
+        const permitted = permittedNext(outcome.current);
         return res.status(409).json({
           error: "INVALID_TRANSITION",
           message:
             permitted.length > 0
-              ? `A Ticket that is ${r.from} cannot move to ${target}. It can move to: ${permitted.join(", ")}.`
-              : `A Ticket that is ${r.from} cannot move to any other status.`,
-          currentStatus: r.from,
+              ? `A Ticket that is ${outcome.current} cannot move to ${to}. It can move to: ${permitted.join(", ")}.`
+              : `A Ticket that is ${outcome.current} cannot move to any other status.`,
+          currentStatus: outcome.current,
           permitted,
         });
       }
-      return sendError(res, 409, "OWNER_REQUIRED", `A Ticket needs an active IT Staff owner before it can move to ${target}. Claim it or assign an owner first.`);
-    };
-
-    const verdict = await judge();
-    if (!verdict.ok) return respondRefusal(verdict.refusal);
-
-    // Conditional on the Ticket still being in the status that was judged, and on the owner still
-    // being eligible when one is required. If it has moved on, nothing is written and the move is
-    // judged again from where the Ticket actually is: it is never applied on the strength of a
-    // check made against a status the Ticket no longer has.
-    const moved = await prisma.ticket.updateMany({
-      where: {
-        id: ticketId,
-        currentStatus: verdict.from,
-        ...(requiresOwner(target) ? { owner: { is: { isActive: true, role: { in: ["IT_STAFF", "ADMINISTRATOR"] } } } } : {}),
-      },
-      data: { currentStatus: target, ...(summary !== undefined ? { resolutionSummary: summary } : {}) },
-    });
-    if (moved.count === 0) {
-      const again = await judge();
-      if (!again.ok) return respondRefusal(again.refusal);
-      // Still permitted from its new status, but that is not the status it was judged against.
-      return res.status(409).json({
-        error: "INVALID_TRANSITION",
-        message: "The Ticket changed while you were editing it. Reload and try again.",
-        currentStatus: again.from,
-        permitted: permittedNext(again.from),
-      });
+      case "ownerRequired":
+        return sendError(res, 409, "OWNER_REQUIRED", `A Ticket needs an active IT Staff owner before it can move to ${to}. Claim it or assign an owner first.`);
+      case "incomplete":
+        return res.status(409).json({
+          error: "ACTIONS_INCOMPLETE",
+          message: `This ticket cannot be resolved yet: ${outcome.plannedActions} planned ${outcome.plannedActions === 1 ? "action is" : "actions are"} still open.`,
+          plannedActions: outcome.plannedActions,
+        });
+      case "noCompleted":
+        return res.status(409).json({ error: "NO_COMPLETED_ACTION", message: "Record and complete at least one action before resolving.", completedActions: 0 });
     }
-
-    const updated = await prisma.ticket.findUniqueOrThrow({ where: { id: ticketId }, include: staffTicketInclude });
+    const updated = await getPrisma().ticket.findUniqueOrThrow({ where: { id: ticketId }, include: staffTicketInclude });
     res.status(200).json(serializeStaffTicket(updated));
   } catch {
     sendError(res, 500, "INTERNAL_ERROR", "Unable to change the Ticket status.");

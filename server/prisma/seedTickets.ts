@@ -1,6 +1,6 @@
 import type { PrismaClient, TicketPriority, TicketStatus } from "@prisma/client";
 
-interface SeedTicket {
+export interface SeedTicket {
   ticketNumber: string;
   requester: string; // email
   category: string; // name
@@ -22,7 +22,7 @@ interface SeedTicket {
 //
 // Fixed ticket numbers in the 9xxxxx range keep the seed idempotent (upsert on the
 // unique number) and clear of the generated sequence, which starts at 000001.
-const TICKETS: SeedTicket[] = [
+export const SEED_TICKETS: SeedTicket[] = [
   { ticketNumber: "TKT-2026-900001", requester: "kanokwan.srisuwan@toktickit.test", category: "Network", relatedSystem: "Staff VPN", summary: "Cannot connect to the VPN from home", description: "The VPN client fails at the login step with a timeout every time since Monday morning.", requestedPriority: "HIGH", itPriority: "HIGH", status: "NEW", owner: null },
   { ticketNumber: "TKT-2026-900002", requester: "thanapon.wattana@toktickit.test", category: "Hardware", relatedSystem: "Cafeteria Payment Kiosk", summary: "Kiosk card reader does not respond", description: "The card reader on the ground floor kiosk shows a blank screen and ignores every card.", requestedPriority: "MEDIUM", itPriority: "MEDIUM", status: "OPEN", owner: "pimchanok.somboon@toktickit.test" },
   { ticketNumber: "TKT-2026-900003", requester: "nutchanon.boonmee@toktickit.test", category: "Software", relatedSystem: "E-Learning Platform", summary: "Course page shows an error after upload", description: "Uploading a PDF to my course page ends with an error banner, and the file never appears.", requestedPriority: "LOW", itPriority: "LOW", status: "IN_PROGRESS", owner: "wichai.charoen@toktickit.test" },
@@ -39,7 +39,7 @@ const TICKETS: SeedTicket[] = [
   { ticketNumber: "TKT-2026-900014", requester: "kanokwan.srisuwan@toktickit.test", category: "Software", relatedSystem: "Library Catalog System", summary: "Catalog search returns no results", description: "Every search in the catalog returns no results even for titles I know the library holds.", requestedPriority: "MEDIUM", itPriority: "MEDIUM", status: "CLOSED", owner: "sunisa.kaewmanee@toktickit.test", resolutionSummary: "Rebuilt the search index and confirmed known titles are found again." },
 ];
 
-export const SEED_TICKET_NUMBERS = TICKETS.map((t) => t.ticketNumber);
+export const SEED_TICKET_NUMBERS = SEED_TICKETS.map((t) => t.ticketNumber);
 
 // Idempotent, upserting on the ticket number and leaving an existing row exactly as it is,
 // so re-seeding never undoes work done through the application. The users and reference
@@ -55,7 +55,7 @@ export async function seedTickets(prisma: PrismaClient): Promise<void> {
   };
 
   const now = Date.now();
-  for (const [index, t] of TICKETS.entries()) {
+  for (const [index, t] of SEED_TICKETS.entries()) {
     // Spread over the last two weeks so the default newest-first order is stable.
     const createdAt = new Date(now - (index + 1) * 20 * 60 * 60 * 1000);
     await prisma.ticket.upsert({

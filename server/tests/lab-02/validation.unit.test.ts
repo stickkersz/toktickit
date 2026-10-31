@@ -5,6 +5,7 @@ import {
   validateRequestedPriority,
 } from "../../src/validation.js";
 
+// UNIT-02 / AC-04, AC-05, BR-13, BR-14 (tag added in the Lab 4 pre-release audit)
 describe("validateSummary", () => {
   it("rejects a summary under 5 characters (after trim)", () => {
     expect(validateSummary("  hi  ").error).toBeDefined();

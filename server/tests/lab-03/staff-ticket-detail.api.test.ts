@@ -3,7 +3,7 @@ import request from "supertest";
 import type { TicketStatus } from "@prisma/client";
 import { app } from "../../src/app.js";
 import { ALL_STATUSES, isTransitionPermitted, permittedNext } from "../../src/ticketStatus.js";
-import { createUser, signedIn, useIsolatedDatabase } from "./helpers.js";
+import { asLab4Move, createUser, signedIn, useIsolatedDatabase } from "./helpers.js";
 
 // Staff Ticket operations (api-spec.md endpoints 6 and 8 to 10) and the staff Ticket Detail,
 // against a throwaway database. Every Ticket is created fresh by the test that needs it.
@@ -273,7 +273,8 @@ describe("PATCH /api/staff/tickets/:id/priority", () => {
 });
 
 describe("PATCH /api/staff/tickets/:id/status", () => {
-  const move = (s: Session, id: number, body: object) => s.patch(`/api/staff/tickets/${id}/status`).send(body);
+  // Sent as a Lab 4 client sends it (fromStatus, and a Completed Action before Resolved): see asLab4Move.
+  const move = async (s: Session, id: number, body: Record<string, unknown>) => s.patch(`/api/staff/tickets/${id}/status`).send(await asLab4Move(iso.db.client, id, body));
 
   // API-23 / AC-23, BR-25, BR-26
   it("refuses every move BR-25 does not list, including to the current status, with the permitted set named, and changes nothing", async () => {
@@ -292,7 +293,8 @@ describe("PATCH /api/staff/tickets/:id/status", () => {
       }
       expect((await stored(t.id)).currentStatus, from).toBe(from);
     }
-    expect(refused).toBe(8 * 8 - 14);
+    // Lab 4 BR-20 adds two moves to Lab 3's fourteen (superseding change).
+    expect(refused).toBe(8 * 8 - 16);
   });
 
   it("performs every move BR-25 does list, when the Ticket has an eligible owner", async () => {
@@ -307,7 +309,7 @@ describe("PATCH /api/staff/tickets/:id/status", () => {
         moved++;
       }
     }
-    expect(moved).toBe(14);
+    expect(moved).toBe(16);
   });
 
   // API-24 / AC-24, BR-27
@@ -393,47 +395,48 @@ describe("PATCH /api/staff/tickets/:id/status", () => {
     ]);
     expect([close.status, reopen.status].sort()).toEqual([200, 409]);
     const loser = close.status === 409 ? close : reopen;
-    expect(loser.body.error).toBe("INVALID_TRANSITION");
+    // Lab 4 BR-23: the loser stated a status the Ticket no longer has, so it is told the status changed.
+    expect(loser.body.error).toBe("STATUS_CHANGED");
     expect((await stored(t.id)).currentStatus).toBe(close.status === 200 ? "CLOSED" : "REOPENED");
   });
 
   // Review round 1 (songt888): the write must be conditional on the very status that was validated.
   // Re-reading the status between the check and the write let a concurrent change be treated as
   // the status that had been checked, so an unvalidated move, even out of a terminal state, went
-  // through. These tests change the Ticket in the gap between the check and the write itself.
+  // through. Lab 4 (BR-21, BR-23) judges the move inside one transaction that holds the Ticket row, so
+  // the only gap left is between the user's page and that transaction. These tests change the Ticket,
+  // or its owner, in exactly that gap; the expected answers follow Lab 4 (superseding change, Lab 4
+  // tests.md section 6): the user stated a status the Ticket no longer has, so STATUS_CHANGED.
   describe("a change that lands between the check and the write", () => {
     // API-57 / AC-23, BR-25, BR-26, BR-28
-    // Wraps the isolated client so that, right after the validation read returns, the Ticket is
-    // changed by someone else, exactly as a concurrent request would.
-    function interfereAfterValidation(ticketId: number, change: () => Promise<unknown>) {
+    // Wraps the isolated client so that the change commits just before the move's transaction starts,
+    // exactly as a concurrent request would.
+    function interfereBeforeWrite(change: () => Promise<unknown>) {
       const real = iso.db.client;
-      let validated = false;
-      return iso.override({
-        session: real.session,
-        ticket: {
-          findUnique: async (args: Parameters<typeof real.ticket.findUnique>[0]) => {
-            const found = await real.ticket.findUnique(args);
-            // The first read that carries the status is the validation read.
-            if (!validated && args?.where && "id" in args.where && args.where.id === ticketId && args.select && "currentStatus" in args.select) {
-              validated = true;
-              await change();
+      return iso.override(
+        new Proxy(real, {
+          get(target, prop) {
+            if (prop === "$transaction") {
+              return async (...args: Parameters<typeof real.$transaction>) => {
+                await change();
+                return (real.$transaction as (...a: unknown[]) => unknown)(...args);
+              };
             }
-            return found;
+            const value = Reflect.get(target, prop);
+            return typeof value === "function" ? value.bind(target) : value;
           },
-          findUniqueOrThrow: real.ticket.findUniqueOrThrow.bind(real.ticket),
-          updateMany: real.ticket.updateMany.bind(real.ticket),
-        },
-      });
+        }),
+      );
     }
 
     it("never lets a move out of a terminal state through: a Ticket closed after the check stays closed", async () => {
       const t = await makeTicket({ status: "IN_PROGRESS", ownerId: staffId });
-      // IN_PROGRESS to RESOLVED is permitted, so the check passes; then the Ticket is CANCELLED.
-      const restore = interfereAfterValidation(t.id, () => iso.db.client.ticket.update({ where: { id: t.id }, data: { currentStatus: "CANCELLED" } }));
+      const body = await asLab4Move(iso.db.client, t.id, { currentStatus: "RESOLVED", resolutionSummary: "A valid summary for this move." });
+      const restore = interfereBeforeWrite(() => iso.db.client.ticket.update({ where: { id: t.id }, data: { currentStatus: "CANCELLED" } }));
       try {
-        const res = await move(staff, t.id, { currentStatus: "RESOLVED", resolutionSummary: "A valid summary for this move." });
+        const res = await staff.patch(`/api/staff/tickets/${t.id}/status`).send(body);
         expect(res.status).toBe(409);
-        expect(res.body.error).toBe("INVALID_TRANSITION");
+        expect(res.body.error).toBe("STATUS_CHANGED");
         expect(res.body.currentStatus).toBe("CANCELLED");
       } finally {
         restore();
@@ -445,13 +448,12 @@ describe("PATCH /api/staff/tickets/:id/status", () => {
 
     it("refuses a move that was valid when checked but is not valid from the status the Ticket has now", async () => {
       const t = await makeTicket({ status: "OPEN", ownerId: staffId });
-      // OPEN to IN_PROGRESS passes the check; then someone moves it to WAITING_FOR_REQUESTER and RESOLVED-side
-      // moves would differ, so the only safe outcome is that the write applies to nothing and is re-judged.
-      const restore = interfereAfterValidation(t.id, () => iso.db.client.ticket.update({ where: { id: t.id }, data: { currentStatus: "CLOSED" } }));
+      const body = await asLab4Move(iso.db.client, t.id, { currentStatus: "IN_PROGRESS" });
+      const restore = interfereBeforeWrite(() => iso.db.client.ticket.update({ where: { id: t.id }, data: { currentStatus: "CLOSED" } }));
       try {
-        const res = await move(staff, t.id, { currentStatus: "IN_PROGRESS" });
+        const res = await staff.patch(`/api/staff/tickets/${t.id}/status`).send(body);
         expect(res.status).toBe(409);
-        expect(res.body.error).toBe("INVALID_TRANSITION");
+        expect(res.body.error).toBe("STATUS_CHANGED");
       } finally {
         restore();
       }
@@ -460,14 +462,15 @@ describe("PATCH /api/staff/tickets/:id/status", () => {
 
     it("re-judges the move from the new status: if it is still permitted from there it is refused as changed, not silently applied", async () => {
       const t = await makeTicket({ status: "OPEN", ownerId: staffId });
-      // OPEN to CANCELLED passes; then the Ticket moves to IN_PROGRESS, from which CANCELLED is also permitted.
-      const restore = interfereAfterValidation(t.id, () => iso.db.client.ticket.update({ where: { id: t.id }, data: { currentStatus: "IN_PROGRESS" } }));
+      // OPEN to CANCELLED was chosen; then the Ticket moves to IN_PROGRESS, from which CANCELLED is also permitted.
+      const body = await asLab4Move(iso.db.client, t.id, { currentStatus: "CANCELLED" });
+      const restore = interfereBeforeWrite(() => iso.db.client.ticket.update({ where: { id: t.id }, data: { currentStatus: "IN_PROGRESS" } }));
       try {
-        const res = await move(staff, t.id, { currentStatus: "CANCELLED" });
-        // Not applied on the strength of a check made against a status the Ticket no longer had.
+        const res = await staff.patch(`/api/staff/tickets/${t.id}/status`).send(body);
+        // Not applied on the strength of a choice made against a status the Ticket no longer had.
         expect(res.status).toBe(409);
-        expect(res.body.error).toBe("INVALID_TRANSITION");
-        expect(res.body.message).toMatch(/changed/i);
+        expect(res.body.error).toBe("STATUS_CHANGED");
+        expect(res.body.message).toMatch(/moved to In Progress/);
       } finally {
         restore();
       }
@@ -477,9 +480,10 @@ describe("PATCH /api/staff/tickets/:id/status", () => {
     it("does not resolve or close a Ticket whose owner became ineligible after the check", async () => {
       const owner = (await createUser({ role: "IT_STAFF" })).user;
       const t = await makeTicket({ status: "IN_PROGRESS", ownerId: owner.id });
-      const restore = interfereAfterValidation(t.id, () => iso.db.client.user.update({ where: { id: owner.id }, data: { isActive: false } }));
+      const body = await asLab4Move(iso.db.client, t.id, { currentStatus: "RESOLVED", resolutionSummary: "A valid summary for this move." });
+      const restore = interfereBeforeWrite(() => iso.db.client.user.update({ where: { id: owner.id }, data: { isActive: false } }));
       try {
-        const res = await move(staff, t.id, { currentStatus: "RESOLVED", resolutionSummary: "A valid summary for this move." });
+        const res = await staff.patch(`/api/staff/tickets/${t.id}/status`).send(body);
         expect(res.status).toBe(409);
         expect(res.body.error).toBe("OWNER_REQUIRED");
       } finally {

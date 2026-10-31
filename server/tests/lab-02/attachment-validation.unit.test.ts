@@ -3,6 +3,7 @@ import { validateAttachment } from "../../src/attachmentValidation.js";
 
 const validFile = { originalFilename: "receipt.jpg", mimeType: "image/jpeg", sizeBytes: 1024 };
 
+// UNIT-03 / AC-07, AC-08, AC-09, BR-26 (tag added in the Lab 4 pre-release audit)
 describe("validateAttachment", () => {
   it("accepts a valid JPG under the size limit with room in the active count", () => {
     expect(validateAttachment(validFile, 0)).toBeNull();

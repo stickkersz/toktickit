@@ -116,13 +116,14 @@ describe("Change Password screen", () => {
     await user.type(confirm, "Fresh!Pass456");
     await user.click(submit);
 
-    expect(await screen.findByRole("heading", { name: "My Tickets" })).toBeInTheDocument();
+    expect(await screen.findByText("Your tickets at a glance")).toBeInTheDocument();
     expect(change).toHaveBeenCalledWith({
       currentPassword: "ChangeMe!23",
       newPassword: "Fresh!Pass456",
       confirmPassword: "Fresh!Pass456",
     });
-    expect(screen.getByRole("link", { name: "Create Ticket" })).toBeInTheDocument();
+    // The Requester Dashboard has its own Create Ticket button too, so look in the navigation.
+    expect(within(screen.getByRole("navigation", { name: "Main" })).getByRole("link", { name: "Create Ticket" })).toBeInTheDocument();
     expect(screen.queryByText("You must change your password to continue.")).not.toBeInTheDocument();
   });
 
@@ -134,7 +135,7 @@ describe("Change Password screen", () => {
     await user.type(next, "Fresh!Pass456");
     await user.type(confirm, "Fresh!Pass456");
     await user.click(submit);
-    expect(await screen.findByRole("heading", { name: "Ticket Queue" })).toBeInTheDocument();
+    expect(await screen.findByText("Your work and the queue at a glance")).toBeInTheDocument();
   });
 
   it("puts a server field error and a wrong current password under the right fields", async () => {
@@ -194,7 +195,7 @@ describe("Change Password screen", () => {
     vi.spyOn(api, "changePassword").mockResolvedValue(REQUESTER);
     const user = userEvent.setup();
     const { current, next, confirm, submit } = await openChangePassword(REQUESTER);
-    expect(screen.getByRole("link", { name: "Cancel and go back" })).toHaveAttribute("href", "/tickets");
+    expect(screen.getByRole("link", { name: "Cancel and go back" })).toHaveAttribute("href", "/dashboard");
 
     await user.type(current, "Old!Passw0rd1");
     await user.type(next, "Fresh!Pass456");
@@ -202,7 +203,7 @@ describe("Change Password screen", () => {
     await user.click(submit);
 
     expect(await screen.findByText("Your password has been changed. Your other sessions have been signed out.")).toHaveAttribute("role", "status");
-    expect(screen.getByRole("link", { name: "Back to your home screen" })).toHaveAttribute("href", "/tickets");
+    expect(screen.getByRole("link", { name: "Back to your home screen" })).toHaveAttribute("href", "/dashboard");
     expect(screen.getByLabelText("New password *")).toHaveValue("");
   });
 

@@ -77,8 +77,11 @@ body {
   cursor: not-allowed;
 }
 
-/* Focus uses the Zen Green accent, never Bootstrap blue (§3, §11). */
+/* Focus uses the Zen Green accent, never Bootstrap blue (§3, §11). :focus-within covers a date field's
+   own calendar button, which sits inside the input, so the input loses :focus while it is the one focused
+   (found by the Lab 4 keyboard pass, A11Y-01). */
 .form-control:focus,
+.form-control:focus-within,
 .form-select:focus,
 .btn:focus-visible,
 .nav-link:focus-visible,
@@ -118,8 +121,29 @@ a:focus-visible {
   border-color: var(--color-secondary);
   color: #ffffff;
 }
-.zg-btn-primary:disabled {
+/* Disabled keeps the primary colours at half strength; Bootstrap's own .btn:disabled would otherwise
+   replace them with a grey outline (Lab 4 screen check). */
+.zg-btn-primary:disabled,
+.zg-btn-primary.disabled {
+  background-color: var(--color-primary);
+  border-color: var(--color-primary);
+  color: #ffffff;
   opacity: 0.5;
+}
+
+/* Secondary buttons: Bootstrap fills btn-outline-secondary with its own grey on focus and press. They
+   stay an outline in the Zen Green tokens, the focus ring alone marking focus (Lab 4 screen check). */
+.btn-outline-secondary {
+  color: var(--color-text);
+  border-color: var(--color-field-editable-border);
+}
+.btn-outline-secondary:hover:not(:disabled),
+.btn-outline-secondary:focus-visible,
+.btn-outline-secondary:active,
+.btn-outline-secondary.active {
+  background-color: var(--color-pale);
+  border-color: var(--color-secondary);
+  color: var(--color-text);
 }
 
 /* ui-spec.md §3 — error/failure callout. */
@@ -343,14 +367,17 @@ a:hover {
   background: transparent;
   border-bottom-color: var(--color-primary);
 }
-/* On a phone the three tabs share the width and wrap their labels, so none is hidden off the edge of a
-   scrolling strip where its existence would go unnoticed. */
-@media (max-width: 767.98px) {
+/* Below 992px the tabs share the width and wrap onto further rows, so none is hidden off the edge of a
+   scrolling strip where its existence would go unnoticed. With Lab 4's five tabs a single row overflows a
+   768px screen, and a single word such as "Attachments" is wider than a fifth of 375px, so each tab takes
+   the width its label needs and the rows fill up. */
+@media (max-width: 991.98px) {
   .zg-tabs {
     overflow-x: visible;
+    flex-wrap: wrap !important;
   }
   .zg-tabs .zg-tab.nav-link {
-    flex: 1 1 0;
+    flex: 1 1 auto;
     min-width: 0;
     white-space: normal;
     text-align: center;
@@ -432,4 +459,286 @@ a:hover {
 }
 .form-check-input:disabled {
   opacity: 0.5;
+}
+
+/* Lab 4 Actions Taken (ui-spec.md sections 2 and 7). Badges are text plus a token colour, never colour alone. */
+.zg-badge-action-planned {
+  background-color: var(--color-surface);
+  color: var(--color-primary);
+  border: 1px solid var(--color-primary);
+}
+.zg-badge-action-completed {
+  background-color: var(--color-success);
+  color: var(--color-surface);
+}
+.zg-badge-action-cancelled {
+  background-color: var(--color-field-readonly-bg);
+  color: var(--color-text-muted);
+  border: 1px solid var(--color-field-editable-border);
+}
+.zg-badge-followup,
+.zg-badge-overdue {
+  background-color: var(--color-warning-bg);
+  color: var(--color-text);
+  border: 1px solid var(--color-warning);
+}
+.zg-badge-not-active {
+  background-color: var(--color-field-readonly-bg);
+  color: var(--color-text-muted);
+  border: 1px solid var(--color-field-editable-border);
+}
+/* Long descriptions wrap inside their cell instead of widening the page. */
+.zg-action-description {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.zg-action-detail-row > td {
+  background-color: var(--color-pale);
+}
+.zg-action-form {
+  background-color: var(--color-surface);
+}
+
+/* Modal dialog (ui-spec.md sections 7 and 12): centred, full width minus 16px margins on a phone, and
+   scrolling inside itself when taller than the screen. */
+.zg-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1050;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background-color: rgba(27, 43, 35, 0.45);
+}
+.zg-dialog {
+  width: 100%;
+  max-width: 560px;
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  background-color: var(--color-surface);
+  border-radius: 0.5rem;
+  padding: 1.25rem;
+}
+
+/* The date and time field's selected segment: Zen Green pale, not the browser's blue highlight. */
+input[type="datetime-local"]::-webkit-datetime-edit-day-field:focus,
+input[type="datetime-local"]::-webkit-datetime-edit-month-field:focus,
+input[type="datetime-local"]::-webkit-datetime-edit-year-field:focus,
+input[type="datetime-local"]::-webkit-datetime-edit-hour-field:focus,
+input[type="datetime-local"]::-webkit-datetime-edit-minute-field:focus,
+input[type="datetime-local"]::-webkit-datetime-edit-ampm-field:focus {
+  background-color: var(--color-pale);
+  color: var(--color-text);
+}
+
+/* Lab 4 Status History (ui-spec.md section 9): a vertical list joined by a Zen Green rule. */
+.zg-history-entry {
+  border-left: 3px solid var(--color-pale);
+  padding: 0 0 0.75rem 0.75rem;
+  position: relative;
+}
+.zg-history-entry:last-child {
+  padding-bottom: 0;
+}
+
+/* Lab 4 dashboards (ui-spec.md sections 4 to 6). Tokens only. One column below 768px, three cards
+   across from 768px (four for the Requester from 1200px, two at tablet width). */
+.zg-metric-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+@media (min-width: 768px) {
+  .zg-metric-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .zg-metric-grid-4 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (min-width: 1200px) {
+  .zg-metric-grid-4 {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+.zg-metric-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 1rem;
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-field-editable-border);
+  border-radius: 0.5rem;
+  color: var(--color-text);
+  text-decoration: none;
+  min-width: 0;
+}
+a.zg-metric-card:hover {
+  border-color: var(--color-secondary);
+  background-color: var(--color-pale);
+}
+.zg-metric-card-attention,
+a.zg-metric-card-attention:hover {
+  background-color: var(--color-warning-bg);
+  border-color: var(--color-warning);
+}
+.zg-metric-label {
+  font-size: 14px;
+  font-weight: 600;
+}
+.zg-metric-value {
+  font-size: 32px;
+  font-weight: 700;
+  line-height: 1.1;
+  color: var(--color-primary);
+}
+.zg-metric-description {
+  font-size: 0.875rem;
+  color: var(--color-text-muted);
+}
+.zg-metric-attention {
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+.zg-metric-card-loading .placeholder {
+  background-color: var(--color-field-editable-border);
+}
+.zg-accounts-card {
+  margin-bottom: 1rem;
+}
+.zg-accounts-figures {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.5rem;
+}
+.zg-status-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.zg-status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 44px;
+  padding: 0.25rem 0.75rem;
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-field-editable-border);
+  border-radius: 999px;
+  color: var(--color-text);
+  text-decoration: none;
+}
+.zg-status-chip:hover {
+  border-color: var(--color-secondary);
+}
+/* Each panel is as tall as its own content, so an empty list is not a tall blank block (found on #87). */
+.zg-dashboard-panel {
+  padding: 1rem;
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-field-editable-border);
+  border-radius: 0.5rem;
+}
+.zg-dashboard-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-height: 44px;
+  padding: 0.5rem;
+  margin: 0 -0.5rem;
+  border-radius: 0.375rem;
+  color: var(--color-text);
+  text-decoration: none;
+}
+.zg-dashboard-row:hover {
+  background-color: var(--color-pale);
+}
+.zg-dashboard-row-text {
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.zg-filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding-left: 0.75rem;
+  background-color: var(--color-pale);
+  color: var(--color-secondary);
+  border: 1px solid var(--color-secondary);
+  border-radius: 999px;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+.zg-filter-chip-remove {
+  min-width: 44px;
+  min-height: 44px;
+  background: none;
+  border: 0;
+  border-radius: 999px;
+  color: inherit;
+  font-size: 1.25rem;
+  line-height: 1;
+}
+.zg-filter-chip-remove:focus-visible {
+  outline: 2px solid var(--color-secondary);
+  outline-offset: -4px;
+}
+/* Cards, chips and list rows are links, so they get the solid Zen Green outline rows use, not the faint
+   field halo of a:focus-visible (ui-spec sections 13 and 14; found by lab-screen-checker). */
+.zg-metric-card:focus-visible,
+.zg-status-chip:focus-visible,
+.zg-dashboard-row:focus-visible {
+  outline: 2px solid var(--color-secondary);
+  outline-offset: 2px;
+  box-shadow: none;
+}
+
+/* The header at tablet width (found on #87): with Dashboard added, the items no longer fit one row at
+   768px. No label breaks mid-text; instead the user's name, role and buttons move to a second row as one
+   group. Below 768px the menu still collapses (Lab 3 ui-spec section 3). */
+.zg-header .nav-link,
+.zg-header .btn,
+.zg-header-user {
+  white-space: nowrap;
+}
+@media (min-width: 768px) and (max-width: 1199.98px) {
+  .zg-header .navbar-collapse {
+    flex-wrap: wrap;
+  }
+}
+
+/* Final screen pass (Issue 09, ui-spec sections 1, 13 and 14): no Bootstrap blue or red anywhere. */
+:root {
+  /* Bootstrap's danger colour and form error colours become the error token, so .text-danger, an
+     invalid field's border and its focus ring all use --color-error. */
+  --bs-danger-rgb: 179, 38, 30;
+  --bs-form-invalid-color: var(--color-error);
+  --bs-form-invalid-border-color: var(--color-error);
+}
+.form-control.is-invalid:focus,
+.form-select.is-invalid:focus {
+  border-color: var(--color-error);
+  box-shadow: 0 0 0 0.2rem rgba(179, 38, 30, 0.25);
+}
+/* A link-styled button (Clear filters) keeps the Zen Green text on hover and focus, never Bootstrap blue. */
+.btn-link {
+  --bs-btn-color: var(--color-primary);
+  --bs-btn-hover-color: var(--color-secondary);
+  --bs-btn-active-color: var(--color-secondary);
+}
+/* A date field's own calendar button: the browser draws its default blue ring otherwise. Chromium ignores
+   a :focus or :focus-visible written after this pseudo-element, so only the colour is set here and the
+   browser's own focus outline takes it; nothing is drawn while the button is not focused. */
+input::-webkit-calendar-picker-indicator {
+  outline-color: var(--color-secondary);
+  outline-offset: 1px;
+  border-radius: 2px;
+}
+/* The tab strip scrolls sideways, which clips an outer ring to two thin stripes; tabs get an inset
+   outline instead. */
+.zg-tabs .zg-tab.nav-link:focus-visible {
+  outline: 2px solid var(--color-secondary);
+  outline-offset: -2px;
+  box-shadow: none;
 }

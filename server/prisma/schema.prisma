@@ -43,6 +43,14 @@ model User {
   publicComments PublicComment[]
   internalNotes  InternalNote[]
 
+  // Lab 4: the five Action Taken roles and the Status Changes a user made.
+  actionsRecorded    ActionTaken[]  @relation("ActionRecordedBy")
+  actionsResponsible ActionTaken[]  @relation("ActionResponsible")
+  actionsPerformed   ActionTaken[]  @relation("ActionPerformedBy")
+  actionsCancelled   ActionTaken[]  @relation("ActionCancelledBy")
+  actionsLastEdited  ActionTaken[]  @relation("ActionLastEditedBy")
+  statusChanges      StatusChange[]
+
   @@index([role, isActive])
 }
 
@@ -68,6 +76,11 @@ model PublicComment {
   body       String
   createdAt  DateTime @default(now())
 
+  // Lab 4 BR-39: Idempotency-Key and the hash of the request that created the row.
+  idempotencyKey String?
+  requestHash    String?
+
+  @@unique([authorId, idempotencyKey])
   @@index([ticketId, createdAt])
 }
 
@@ -81,6 +94,11 @@ model InternalNote {
   body       String
   createdAt  DateTime @default(now())
 
+  // Lab 4 BR-39: Idempotency-Key and the hash of the request that created the row.
+  idempotencyKey String?
+  requestHash    String?
+
+  @@unique([authorId, idempotencyKey])
   @@index([ticketId, createdAt])
 }
 
@@ -134,10 +152,19 @@ model Ticket {
   publicComments               PublicComment[]
   internalNotes                InternalNote[]
 
+  // Lab 4
+  actions        ActionTaken[]
+  statusChanges  StatusChange[]
+  idempotencyKey String?
+  requestHash    String?
+
+  @@unique([requesterId, idempotencyKey])
   @@index([requesterId, createdAt])
   @@index([requesterId, currentStatus])
   @@index([currentStatus, createdAt])
   @@index([ownerId, currentStatus])
+  @@index([updatedAt])
+  @@index([itPriority, currentStatus])
 }
 
 model Attachment {
@@ -154,4 +181,61 @@ model Attachment {
   removalReason    String?
 
   @@index([ticketId, isRemoved])
+}
+
+// Lab 4 (spec section 7): Actions Taken, a child of a Ticket, and the append-only Status History.
+enum ActionStatus {
+  PLANNED
+  COMPLETED
+  CANCELLED
+}
+
+model ActionTaken {
+  id                 Int          @id @default(autoincrement())
+  ticketId           Int
+  ticket             Ticket       @relation(fields: [ticketId], references: [id])
+  actionAt           DateTime
+  description        String
+  result             String?
+  status             ActionStatus @default(PLANNED)
+  followUpRequired   Boolean      @default(false)
+  followUpNote       String?
+  attachmentNotes    String?
+  recordedById       Int
+  recordedBy         User         @relation("ActionRecordedBy", fields: [recordedById], references: [id])
+  responsibleStaffId Int
+  responsibleStaff   User         @relation("ActionResponsible", fields: [responsibleStaffId], references: [id])
+  performedById      Int?
+  performedBy        User?        @relation("ActionPerformedBy", fields: [performedById], references: [id])
+  completedAt        DateTime?
+  cancelledById      Int?
+  cancelledBy        User?        @relation("ActionCancelledBy", fields: [cancelledById], references: [id])
+  cancelledAt        DateTime?
+  cancelReason       String?
+  lastEditedById     Int?
+  lastEditedBy       User?        @relation("ActionLastEditedBy", fields: [lastEditedById], references: [id])
+  version            Int          @default(1)
+  idempotencyKey     String?
+  requestHash        String?
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+
+  @@unique([recordedById, idempotencyKey])
+  @@index([ticketId, actionAt, id])
+  @@index([responsibleStaffId, status, actionAt])
+}
+
+model StatusChange {
+  id                Int           @id @default(autoincrement())
+  ticketId          Int
+  ticket            Ticket        @relation(fields: [ticketId], references: [id])
+  fromStatus        TicketStatus?
+  toStatus          TicketStatus
+  changedById       Int
+  changedBy         User          @relation(fields: [changedById], references: [id])
+  resolutionSummary String?
+  changedAt         DateTime      @default(now())
+
+  @@index([ticketId, changedAt, id])
+  @@index([toStatus, changedAt])
 }

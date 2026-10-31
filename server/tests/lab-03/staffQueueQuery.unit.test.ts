@@ -5,6 +5,8 @@ import { parseStaffQueueQuery } from "../../src/staffQueueQuery.js";
 const DEFAULTS = {
   search: "",
   status: null,
+  // Lab 4 api-spec section 11 adds the status group (superseding change).
+  statusGroup: null,
   itPriority: null,
   categoryId: null,
   owner: null,

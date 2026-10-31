@@ -5,6 +5,7 @@ import { MemoryRouter } from "react-router-dom";
 import App from "../../src/App.js";
 import * as api from "../../src/api.js";
 import type { AuthUser, TicketDetail } from "../../src/api.js";
+import { ROUTER_FUTURE } from "../../src/routerFuture.js";
 
 const ARI: AuthUser = { id: 1, name: "Ari Anan", email: "ari.anan@example.com", role: "REQUESTER", mustChangePassword: false };
 
@@ -38,7 +39,7 @@ function renderAt(path: string) {
   });
   vi.spyOn(api, "getTicketDetail").mockResolvedValue(ticketDetail());
   return render(
-    <MemoryRouter initialEntries={[path]}>
+    <MemoryRouter future={ROUTER_FUTURE} initialEntries={[path]}>
       <App />
     </MemoryRouter>,
   );

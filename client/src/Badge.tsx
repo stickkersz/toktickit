@@ -32,6 +32,9 @@ const STATUS_BADGE: Record<string, { label: string; className: string }> = {
   CANCELLED: { label: "Cancelled", className: "zg-badge-cancelled" },
 };
 
+// The eight statuses in BR-20's order, for status filters.
+export const STATUS_OPTIONS: [string, string][] = Object.entries(STATUS_BADGE).map(([value, { label }]) => [value, label]);
+
 export function StatusBadge({ value }: { value: string }) {
   // An unknown value degrades to its raw text on the neutral style rather than crashing.
   const known = STATUS_BADGE[value];

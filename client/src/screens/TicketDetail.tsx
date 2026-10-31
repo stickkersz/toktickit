@@ -20,6 +20,8 @@ import { TruncatedFilename, fileTypeLabel, formatDate, formatFileSize } from "..
 import { PriorityBadge, StatusBadge } from "../Badge.js";
 import { ContentPanel } from "../ContentPanel.js";
 import { TERMINAL_MESSAGE, useContentThread } from "../content.js";
+import { RequesterActionsTaken } from "../ActionsTaken.js";
+import { StatusHistory } from "../StatusHistory.js";
 import {
   ATTACHMENT_REJECT_MESSAGES,
   AttachmentRejectReason,
@@ -217,33 +219,33 @@ export default function TicketDetail() {
       </div>
 
       <div className="row g-3 mb-4">
-        <div className="col-md-3">
+        <div className="col-md-6 col-lg-3">
           <label htmlFor="detail-ticket-number" className="form-label fw-semibold">Ticket No.</label>
           <input id="detail-ticket-number" className="form-control" readOnly value={ticket.ticketNumber} />
         </div>
-        <div className="col-md-3">
+        <div className="col-md-6 col-lg-3">
           <label htmlFor="detail-ticket-date" className="form-label fw-semibold">Ticket Date</label>
           <input id="detail-ticket-date" className="form-control" readOnly value={formatDate(ticket.createdAt)} />
         </div>
-        <div className="col-md-3">
+        <div className="col-md-6 col-lg-3">
           <label htmlFor="detail-category" className="form-label fw-semibold">Category</label>
           <input id="detail-category" className="form-control" readOnly value={ticket.categoryName} />
         </div>
-        <div className="col-md-3">
+        <div className="col-md-6 col-lg-3">
           <label htmlFor="detail-related-system" className="form-label fw-semibold">Related System</label>
           <input id="detail-related-system" className="form-control" readOnly value={ticket.relatedSystemName} />
         </div>
-        <div className="col-md-3">
+        <div className="col-md-6 col-lg-3">
           <label htmlFor="detail-requester" className="form-label fw-semibold">Requester</label>
           <input id="detail-requester" className="form-control" readOnly value={ticket.requesterName} />
         </div>
-        <div className="col-md-3">
+        <div className="col-md-6 col-lg-3">
           <label className="form-label fw-semibold">Requested Priority</label>
           <div>
             <PriorityBadge value={ticket.requestedPriority} />
           </div>
         </div>
-        <div className="col-md-3">
+        <div className="col-md-6 col-lg-3">
           <label className="form-label fw-semibold">Current Status</label>
           <div>
             <StatusBadge value={ticket.currentStatus} />
@@ -326,6 +328,11 @@ export default function TicketDetail() {
 
       <hr />
 
+      {/* Lab 4 ui-spec.md section 8: read-only, between the Ticket fields and the conversation. */}
+      <RequesterActionsTaken ticketId={ticket.id} />
+
+      <hr />
+
       <div className="d-flex justify-content-between align-items-center mb-3">
         <h2 className="h5 mb-0">Attachments ({activeCount} active)</h2>
         <button
@@ -357,6 +364,7 @@ export default function TicketDetail() {
                 type="button"
                 className="btn btn-sm btn-outline-secondary"
                 aria-label={`Dismiss ${err.filename} error`}
+                title={`Dismiss ${err.filename} error`}
                 onClick={() => setPickerErrors((prev) => prev.filter((_, idx) => idx !== i))}
               >
                 ×
@@ -477,6 +485,16 @@ export default function TicketDetail() {
       <hr />
 
       <PublicComments ticketId={ticket.id} closed={isTerminal} />
+
+      <hr />
+
+      {/* Lab 4 ui-spec.md section 9: the Status History, read only, after the conversation. */}
+      <section aria-labelledby="requester-history-heading">
+        <h2 id="requester-history-heading" className="h5 mb-3">
+          History
+        </h2>
+        <StatusHistory ticketId={ticket.id} />
+      </section>
     </div>
   );
 }

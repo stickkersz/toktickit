@@ -3,7 +3,7 @@ import path from "node:path";
 import express, { Request, Response } from "express";
 import cors from "cors";
 import multer from "multer";
-import type { Attachment } from "@prisma/client";
+import type { Attachment, Ticket } from "@prisma/client";
 import { getPrisma } from "./prisma.js";
 import {
   validateSummary,
@@ -22,10 +22,16 @@ import { isEligibleOwner } from "./routes/staffTickets.js";
 import { permittedNext, TERMINAL_STATUSES } from "./ticketStatus.js";
 import { authRouter } from "./routes/auth.js";
 import { adminUsersRouter } from "./routes/adminUsers.js";
+import { actionsRouter } from "./routes/actions.js";
 import { ticketContentRouter } from "./routes/ticketContent.js";
 import { staffTicketsRouter } from "./routes/staffTickets.js";
 import { requireAuth } from "./middleware/requireAuth.js";
 import { requireRole } from "./middleware/requireRole.js";
+import { resolutionGate } from "./actionValidation.js";
+import { statusHistoryRouter } from "./routes/statusHistory.js";
+import { dashboardsRouter } from "./routes/dashboards.js";
+import { RESOLVED_STATUSES, activeWhere, resolvedWithinWhere, windowStart } from "./dashboardWindow.js";
+import { IDEMPOTENCY_KEY_REUSED_MESSAGE, keyedCreate, readKey } from "./idempotency.js";
 
 const upload = multer({
   storage: multer.diskStorage({
@@ -47,6 +53,9 @@ app.use(authRouter); // Lab 3: /api/auth/*
 app.use(staffTicketsRouter); // Lab 3: /api/staff/tickets
 app.use(ticketContentRouter); // Lab 3: /api/tickets/:id/comments and /notes
 app.use(adminUsersRouter); // Lab 3: /api/admin/users
+app.use(actionsRouter); // Lab 4: /api/tickets/:id/actions and /api/actions/:id
+app.use(statusHistoryRouter); // Lab 4: /api/tickets/:id/history
+app.use(dashboardsRouter); // Lab 4: /api/dashboard/staff and /api/dashboard/requester
 
 // ---------------------------------------------------------------------------
 // Issue 2 — API health check
@@ -138,6 +147,22 @@ function serializeAttachment(attachment: {
   return { ...base, removedAt: attachment.removedAt, removalReason: attachment.removalReason };
 }
 
+// The fields Ticket create accepts, for the BR-39 fingerprint.
+const TICKET_CREATE_FIELDS = ["summary", "description", "requestedPriority", "categoryId", "relatedSystemId"] as const;
+// The 201 body, which a replay repeats (api-spec section 12).
+const createdTicket = (ticket: Ticket) => ({
+  id: ticket.id,
+  ticketNumber: ticket.ticketNumber,
+  requesterId: ticket.requesterId,
+  categoryId: ticket.categoryId,
+  relatedSystemId: ticket.relatedSystemId,
+  summary: ticket.summary,
+  description: ticket.description,
+  requestedPriority: ticket.requestedPriority,
+  currentStatus: ticket.currentStatus,
+  createdAt: ticket.createdAt,
+});
+
 app.post("/api/tickets", ...requesterOnly, async (req: Request, res: Response) => {
   try {
     const fields: Record<string, string> = {};
@@ -170,6 +195,10 @@ app.post("/api/tickets", ...requesterOnly, async (req: Request, res: Response) =
       fields.relatedSystemId = "relatedSystemId must reference an active Related System.";
     }
 
+    // Lab 4 BR-39. Files are uploaded to the Ticket afterwards (endpoint 7), so this fingerprint has none.
+    const { key, hash, error: keyError } = readKey(req, "/api/tickets", TICKET_CREATE_FIELDS);
+    if (keyError) fields.idempotencyKey = keyError;
+
     if (Object.keys(fields).length > 0) {
       return res.status(400).json({
         error: "VALIDATION_ERROR",
@@ -178,43 +207,49 @@ app.post("/api/tickets", ...requesterOnly, async (req: Request, res: Response) =
       });
     }
 
+    const outcome = await keyedCreate(
+      key,
+      hash,
+      () => getPrisma().ticket.findUnique({ where: { requesterId_idempotencyKey: { requesterId, idempotencyKey: key! } } }),
+      createTicket,
+    );
+    if (outcome.kind === "replay") return res.status(200).set("Idempotent-Replayed", "true").json(createdTicket(outcome.row));
+    if (outcome.kind === "reused") return res.status(409).json({ error: "IDEMPOTENCY_KEY_REUSED", message: IDEMPOTENCY_KEY_REUSED_MESSAGE });
+    res.status(201).json(createdTicket(outcome.value));
+
     // BR-19/§7's justified decision: the sequence value is fetched and the
     // Ticket inserted in the same transaction, so a failure leaves no
     // partial row and no gap between "number known" and "row exists".
-    const ticket = await getPrisma().$transaction(async (tx) => {
-      const [{ nextval }] = await tx.$queryRaw<
-        { nextval: bigint }[]
-      >`SELECT nextval('ticket_number_seq') AS nextval`;
-      const ticketNumber = formatTicketNumber(new Date().getFullYear(), nextval);
+    function createTicket() {
+      return getPrisma().$transaction(async (tx) => {
+        const [{ nextval }] = await tx.$queryRaw<
+          { nextval: bigint }[]
+        >`SELECT nextval('ticket_number_seq') AS nextval`;
+        const ticketNumber = formatTicketNumber(new Date().getFullYear(), nextval);
 
-      return tx.ticket.create({
-        data: {
-          ticketNumber,
-          requesterId,
-          categoryId,
-          relatedSystemId,
-          summary: summaryResult.value!,
-          description: descriptionResult.value!,
-          requestedPriority: priorityResult.value!,
-          // BR-22: IT Priority starts as a copy of the Requested Priority, and only
-          // IT Staff or an Administrator may change it afterwards.
-          itPriority: priorityResult.value!,
-        },
+        const created = await tx.ticket.create({
+          data: {
+            ticketNumber,
+            requesterId,
+            categoryId,
+            relatedSystemId,
+            summary: summaryResult.value!,
+            description: descriptionResult.value!,
+            requestedPriority: priorityResult.value!,
+            // BR-22: IT Priority starts as a copy of the Requested Priority, and only
+            // IT Staff or an Administrator may change it afterwards.
+            itPriority: priorityResult.value!,
+            idempotencyKey: key,
+            requestHash: hash,
+          },
+        });
+        // Lab 4 BR-24: the creation is the first Status History entry, written with the Ticket.
+        await tx.statusChange.create({
+          data: { ticketId: created.id, fromStatus: null, toStatus: "NEW", changedById: requesterId, changedAt: created.createdAt },
+        });
+        return created;
       });
-    });
-
-    res.status(201).json({
-      id: ticket.id,
-      ticketNumber: ticket.ticketNumber,
-      requesterId: ticket.requesterId,
-      categoryId: ticket.categoryId,
-      relatedSystemId: ticket.relatedSystemId,
-      summary: ticket.summary,
-      description: ticket.description,
-      requestedPriority: ticket.requestedPriority,
-      currentStatus: ticket.currentStatus,
-      createdAt: ticket.createdAt,
-    });
+    }
   } catch {
     res.status(500).json({ error: "INTERNAL_ERROR", message: "Unable to create the Ticket." });
   }
@@ -305,6 +340,8 @@ app.post(
               sizeBytes: file.size,
             },
           });
+          // Lab 4 BR-38: an Attachment added is Ticket activity.
+          await tx.ticket.update({ where: { id: ticket.id }, data: { updatedAt: new Date() } });
           return { rejected: false, attachment };
         });
 
@@ -383,6 +420,13 @@ app.get("/api/tickets", ...requesterOnly, async (req: Request, res: Response) =>
     if (query.categoryId !== null) where.categoryId = query.categoryId;
     if (query.requestedPriority !== null) where.requestedPriority = query.requestedPriority;
     if (query.currentStatus !== null) where.currentStatus = query.currentStatus;
+    // Lab 4 api-spec section 11: the filters behind the Requester dashboard's drill-downs (BR-36).
+    const and: Record<string, unknown>[] = [];
+    if (query.statusGroup === "active") and.push(activeWhere);
+    if (query.statusGroup === "resolved") and.push({ currentStatus: { in: RESOLVED_STATUSES } });
+    if (query.updatedWithinDays !== null) and.push({ updatedAt: { gte: windowStart(query.updatedWithinDays) } });
+    if (query.resolvedWithinDays !== null) and.push(resolvedWithinWhere(windowStart(query.resolvedWithinDays)));
+    if (and.length > 0) where.AND = and;
 
     const { page, pageSize, sortField, sortDirection } = query;
 
@@ -470,6 +514,11 @@ app.get("/api/tickets/:id", ...anyRole, async (req: Request, res: Response) => {
 
     if (!staff) return res.status(200).json(base);
 
+    // Lab 4 BR-21: the counts the resolution gate is decided on, so the status control can explain a
+    // blocked Resolve before the move is tried. The move itself checks them again.
+    const counts = await getPrisma().actionTaken.groupBy({ by: ["status"], where: { ticketId: ticket.id }, _count: { _all: true } });
+    const countOf = (s: string) => counts.find((c) => c.status === s)?._count._all ?? 0;
+
     // Staff also get IT Priority, ownership, and the statuses the Ticket may move to, taken from
     // the one workflow table so the client carries no copy of it (BR-25, BR-57, BR-59).
     res.status(200).json({
@@ -481,6 +530,7 @@ app.get("/api/tickets/:id", ...anyRole, async (req: Request, res: Response) => {
       ownerEligible: isEligibleOwner(ticket.owner),
       requesterIsActive: ticket.requester.isActive,
       permittedNextStatuses: permittedNext(ticket.currentStatus),
+      resolutionGate: resolutionGate(countOf("PLANNED"), countOf("COMPLETED")),
     });
   } catch {
     res.status(500).json({ error: "INTERNAL_ERROR", message: "Unable to load the Ticket." });
@@ -640,9 +690,15 @@ app.delete("/api/attachments/:id", ...requesterOnly, async (req: Request, res: R
     // succeed: exactly one updates a row, and the loser gets the documented
     // 409 rather than silently overwriting the first one's removedAt and
     // removalReason, which BR-30 requires be retained.
-    const removal = await getPrisma().attachment.updateMany({
-      where: { id: attachmentId, isRemoved: false },
-      data: { isRemoved: true, removedAt: new Date(), removalReason: reasonResult.value },
+    // Lab 4 BR-38: the removal and the Ticket's last activity are one transaction, so a failure cannot
+    // leave a removal that happened reported as a 500 (review on Lab 4 #86).
+    const removal = await getPrisma().$transaction(async (tx) => {
+      const removed = await tx.attachment.updateMany({
+        where: { id: attachmentId, isRemoved: false },
+        data: { isRemoved: true, removedAt: new Date(), removalReason: reasonResult.value },
+      });
+      if (removed.count === 1) await tx.ticket.update({ where: { id: attachment.ticketId }, data: { updatedAt: new Date() } });
+      return removed;
     });
 
     if (removal.count === 0) {
