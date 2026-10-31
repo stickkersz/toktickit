@@ -92,7 +92,7 @@ test.describe("Ticket resolution", () => {
     await page.setViewportSize(VIEWPORTS.desktop);
 
     // The link opens Actions Taken, where the Action is completed.
-    await page.getByRole("button", { name: "Go to Actions Taken" }).click();
+    await page.getByRole("link", { name: "Go to Actions Taken" }).click();
     await expect(page.getByRole("tab", { name: /^Actions Taken/ })).toBeFocused();
     await completeOpenAction(page, "Replace the LAN cable at desk 4B.");
     // The gate opened on this screen: the blocked sentence is gone without a reload (review on #85).

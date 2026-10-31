@@ -251,10 +251,18 @@ test.describe("Actions Taken", () => {
     await tabTo(urgent, 80);
     await page.keyboard.press("Enter");
     await expect(page).toHaveURL(/\/staff\/tickets\?itPriority=HIGH&statusGroup=active$/);
+    // Clear filters is a link-styled button: Zen Green text on focus, never Bootstrap blue (Issue 09 screen pass).
+    const clear = page.getByRole("button", { name: "Clear filters" }).first();
+    await tabTo(clear);
+    expect(await clear.evaluate((el) => getComputedStyle(el).color)).not.toBe("rgb(13, 110, 253)");
 
     // The Actions tab: add an Action without the mouse.
     await page.goto(`/staff/tickets/${ticket.id}?tab=actions`);
     await expect(page.getByRole("tab", { name: /^Actions Taken \(0\)$/ })).toHaveAttribute("aria-selected", "true");
+    // The tab strip scrolls sideways, so a tab's ring is an inset outline that the strip cannot clip.
+    const tab = page.getByRole("tab", { name: /^Actions Taken/ });
+    await tabTo(tab, 80);
+    expect(await tab.evaluate((el) => [getComputedStyle(el).outlineStyle, getComputedStyle(el).outlineOffset].join(" "))).toBe("solid -2px");
     await tabTo(page.getByRole("button", { name: "Add Action" }), 80);
     await page.keyboard.press("Enter");
     await expect(page.getByLabel(/Action Date\/Time/)).toBeFocused();
@@ -277,6 +285,8 @@ test.describe("Actions Taken", () => {
       await page.keyboard.press("Enter");
       const dialog = page.getByRole("dialog");
       await expect(dialog.getByLabel(field)).toBeFocused();
+      // Nothing typed yet, so no error is shown (it once was, in development, Issue 09).
+      await expect(dialog.getByText(/must be between/)).toHaveCount(0);
       for (let i = 0; i < 12; i++) {
         await page.keyboard.press("Tab");
         expect(await dialog.evaluate((d) => d.contains(document.activeElement)), `${opener} dialog keeps focus`).toBe(true);

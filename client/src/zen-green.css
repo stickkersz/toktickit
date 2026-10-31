@@ -707,3 +707,36 @@ a.zg-metric-card-attention:hover {
     flex-wrap: wrap;
   }
 }
+
+/* Final screen pass (Issue 09, ui-spec sections 1, 13 and 14): no Bootstrap blue or red anywhere. */
+:root {
+  /* Bootstrap's danger colour and form error colours become the error token, so .text-danger, an
+     invalid field's border and its focus ring all use --color-error. */
+  --bs-danger-rgb: 179, 38, 30;
+  --bs-form-invalid-color: var(--color-error);
+  --bs-form-invalid-border-color: var(--color-error);
+}
+.form-control.is-invalid:focus,
+.form-select.is-invalid:focus {
+  border-color: var(--color-error);
+  box-shadow: 0 0 0 0.2rem rgba(179, 38, 30, 0.25);
+}
+/* A link-styled button (Clear filters) keeps the Zen Green text on hover and focus, never Bootstrap blue. */
+.btn-link {
+  --bs-btn-color: var(--color-primary);
+  --bs-btn-hover-color: var(--color-secondary);
+  --bs-btn-active-color: var(--color-secondary);
+}
+/* A date field's own calendar button: the browser draws its default blue ring otherwise. */
+input::-webkit-calendar-picker-indicator:focus-visible {
+  outline: 2px solid var(--color-secondary);
+  outline-offset: 1px;
+  border-radius: 2px;
+}
+/* The tab strip scrolls sideways, which clips an outer ring to two thin stripes; tabs get an inset
+   outline instead. */
+.zg-tabs .zg-tab.nav-link:focus-visible {
+  outline: 2px solid var(--color-secondary);
+  outline-offset: -2px;
+  box-shadow: none;
+}

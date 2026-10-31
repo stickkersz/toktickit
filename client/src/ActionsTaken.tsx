@@ -683,11 +683,23 @@ function ActionForm({
 // returns to the control that opened it.
 function Dialog({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
+  // Recorded once: React's development StrictMode runs the effect below twice, and on the second run focus
+  // is already inside the dialog.
+  const opener = useRef<HTMLElement | null>(null);
   useEffect(() => {
-    const opener = document.activeElement as HTMLElement | null;
-    const first = ref.current?.querySelector<HTMLElement>("textarea, input, select, button");
-    first?.focus();
-    return () => opener?.focus();
+    opener.current ??= document.activeElement as HTMLElement | null;
+    const node = ref.current;
+    node?.querySelector<HTMLElement>("textarea, input, select, button")?.focus();
+    // Focus goes back only once the dialog has really left the page (checked a microtask later, when React
+    // has finished removing it). Returning it during StrictMode's extra run blurred the first field and
+    // showed its error on open (Issue 09 screen pass).
+    return () => {
+      queueMicrotask(() => {
+        // Unless the screen has already placed focus (on the Action's row when the opener is gone).
+        const lost = !document.activeElement || document.activeElement === document.body;
+        if (!node?.isConnected && lost) opener.current?.focus();
+      });
+    };
   }, []);
   function onKeyDown(e: React.KeyboardEvent) {
     if (e.key === "Escape") {

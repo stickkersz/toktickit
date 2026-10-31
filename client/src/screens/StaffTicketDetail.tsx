@@ -594,16 +594,18 @@ function StaffTicketDetail() {
           {gateShown && !ticket.resolutionGate.canResolve && (
             <div className="zg-alert-warning rounded p-2 mt-2 small" role="alert">
               <p className="mb-1">{gateSentence(ticket.resolutionGate.plannedActions)}</p>
-              <button
-                type="button"
+              {/* A link, as ui-spec section 10 names it: it goes to a place (the Actions tab, also its URL). */}
+              <Link
+                to={`/staff/tickets/${ticketId}?tab=actions`}
                 className="btn btn-sm btn-outline-secondary zg-touch-target"
-                onClick={() => {
+                onClick={(e) => {
+                  e.preventDefault();
                   setGateShown(false);
                   setTabRequest((r) => ({ id: "actions", seq: (r?.seq ?? 0) + 1 }));
                 }}
               >
                 Go to Actions Taken
-              </button>
+              </Link>
             </div>
           )}
           {feedback("status")}

@@ -91,7 +91,7 @@ describe("the resolution gate on the status control", () => {
     expect(screen.queryByLabelText(/Resolution Summary/)).not.toBeInTheDocument();
     // History is the other tab that is not first; the link opens Actions Taken and focuses its tab.
     await userEvent.click(screen.getByRole("tab", { name: "History" }));
-    await userEvent.click(within(alert).getByRole("button", { name: "Go to Actions Taken" }));
+    await userEvent.click(within(alert).getByRole("link", { name: "Go to Actions Taken" }));
     const actionsTab = screen.getByRole("tab", { name: /^Actions Taken/ });
     expect(actionsTab).toHaveAttribute("aria-selected", "true");
     expect(actionsTab).toHaveFocus();
