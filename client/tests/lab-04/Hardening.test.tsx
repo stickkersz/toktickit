@@ -171,3 +171,19 @@ describe("focus after a control removes itself (FR-17, the #84 sweep)", () => {
     await waitFor(() => expect(screen.getByRole("heading", { name: "Ticket Queue" })).toHaveFocus());
   });
 });
+
+describe("a request cancelled because the page is being left (E2E-09 finding)", () => {
+  // Lab 4 BR-43: leaving the page cancels in-flight requests; that is not a failure worth a console error,
+  // while a real network failure still logs one (the Lab 2 api-errors test).
+  it("logs nothing while the page is being left, and logs again once the page is shown", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("Failed to fetch")));
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    window.dispatchEvent(new Event("pagehide"));
+    await expect(api.getStaffDashboard()).rejects.toThrow("Unable to reach the TokTickIT API");
+    expect(logged).not.toHaveBeenCalled();
+    window.dispatchEvent(new Event("pageshow"));
+    await expect(api.getStaffDashboard()).rejects.toThrow("Unable to reach the TokTickIT API");
+    expect(logged).toHaveBeenCalledWith("/api/dashboard/staff: request did not reach the API", expect.any(TypeError));
+    vi.unstubAllGlobals();
+  });
+});
