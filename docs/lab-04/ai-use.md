@@ -2,7 +2,7 @@
 
 **LLM/agent used:** Claude Code, Anthropic's command-line coding agent, running in this repository's working directory for the whole Lab 4 sprint. Following our lab playbook:
 - **Claude Opus 5.5** did the judgement work: the labsheet checklist, the design interview, the contract, every Issue's code, review fixes, and the release checks.
-- **Claude Sonnet 5** ran the list-checking helpers: the pre-PR gate and the screen checker.
+- **Claude Sonnet 5.5** ran the list-checking helpers: the pre-PR gate and the screen checker.
 
 I used it in two roles:
 - **Specification agent:** questioned me on the design and wrote the Sprint 4 contract (`docs/lab-04/`, including the authorization matrix in section 5 of the specification).

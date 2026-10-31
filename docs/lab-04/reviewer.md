@@ -15,7 +15,7 @@ Every Pull Request below was merged only after an Approve on the commit that was
 - **When there was nothing to fix:** the reviewer approved on the first review (my #82 and #87).
 
 What was different from Lab 3:
-- **Every change on my side had a cause on record.** Each finding was swept across the whole codebase for the same pattern, logged with a prevention rule in our lab playbook, and recorded in `docs/lab-04/tests.md` section 6 under that Pull Request's "Review round".
+- **Every change on my side had a cause on record.** Each finding was swept across the whole codebase for the same pattern, logged with a prevention rule in our lab playbook, and recorded in `docs/lab-04/tests.md` section 6 under that Pull Request's "Review round" (the contract findings on #81 are recorded in the specification's Assumptions and Decisions instead).
 - **Each Pull Request was checked against the labsheet before review.** A pre-PR gate ran first, so the review rounds were about real behaviour, not missing evidence.
 
 ## Pull Requests I authored (reviewed by @songt888 on `stickkersz/toktickit`)
@@ -68,6 +68,6 @@ Comments were kept short and casual, the way classmates talk on a Pull Request.
 On my side:
 - Every finding was answered with a fix commit that included a failing-first test.
 - The finding was swept across the codebase and logged with a prevention rule.
-- The fix was recorded in `tests.md` section 6.
+- The fix was recorded in `tests.md` section 6, or for the contract (#81) in the specification's decisions.
 
 My partner rechecked every fix commit before approving.
