@@ -1,0 +1,73 @@
+# Lab 4: Peer Review Record
+
+**Author:** Nattakit Prasertsak, 67070503413, GitHub @stickkersz
+**Peer reviewer:** Kirakit Kingkaew, 67070503460, GitHub @songt888
+
+## How review worked in Lab 4
+
+Lab 4 kept the Lab 3 flow:
+- one Issue, one feature branch and one Pull Request into `lab4-staging`;
+- a single release Pull Request from `lab4-staging` into `main`;
+- every review a formal GitHub verdict: **Request changes** when something had to be fixed, **Approve** when nothing did.
+
+Every Pull Request below was merged only after an Approve on the commit that was merged. Each round is a real review of the diff, and every quote is taken from the review as posted.
+- **When changes were requested:** the author pushed a fix commit with a test that failed before it and replied in a short comment. The reviewer then rechecked that exact commit before approving.
+- **When there was nothing to fix:** the reviewer approved on the first review (my #82 and #87).
+
+What was different from Lab 3:
+- **Every change on my side had a cause on record.** Each finding was swept across the whole codebase for the same pattern, logged with a prevention rule in our lab playbook, and recorded in `docs/lab-04/tests.md` section 6 under that Pull Request's "Review round".
+- **Each Pull Request was checked against the labsheet before review.** A pre-PR gate ran first, so the review rounds were about real behaviour, not missing evidence.
+
+## Pull Requests I authored (reviewed by @songt888 on `stickkersz/toktickit`)
+
+| PR | Issue and scope | What the reviewer asked for | My response and fix commit | Verdict |
+|---|---|---|---|---|
+| [#81](https://github.com/stickkersz/toktickit/pull/81) | #69, Sprint 4 engineering contract (`specification.md`, `api-spec.md`, `ui-spec.md`, `tests.md`, ADRs 0003 and 0004) | "please define how Idempotency-Key detects a different request body. BR-39 and AC-40 require 409 IDEMPOTENCY_KEY_REUSED for the same key with different content, but the schema only stores idempotencyKey". Also: "BR-20 has no way to reach CANCELLED from WAITING_FOR_REQUESTER or REOPENED" | `42424fe`: a `requestHash` stored next to each key, with the fingerprint defined field by field; the two Cancel moves added with the same confirmation and Action cancellation as every other Cancel; the non-blocking notes covered | Request changes at `07e50fc`, then Approve at `42424fe`; merged as `3c51c16` |
+| [#82](https://github.com/stickkersz/toktickit/pull/82) | #70, Actions Taken and Status History migration, down script and seed | None: "The migration is additive, the down script is verified by comparing the whole public schema before and after (MIG-02), and the seed is idempotent" | None needed | Approve at `ac94060`; merged as `2cdb754` |
+| [#83](https://github.com/stickkersz/toktickit/pull/83) | #71, Actions Taken API | "please keep responsibleStaffId inside the 32-bit range", and "on create the Responsible Staff check runs before the transaction ... BR-07 says 'at the moment it is set'" | `e7e9619`: one 32-bit bound in `isValidId` for every integer read from a request; the Responsible Staff check moved inside the Ticket lock with the user row locked `FOR SHARE` | Request changes at `a1135dc`, then Approve at `e7e9619`; merged as `a6a1dd5` |
+| [#84](https://github.com/stickkersz/toktickit/pull/84) | #72, Actions Taken UI and the Requester's read-only view | "focus is lost after a successful Complete or Cancel ... once the Action is Completed or Cancelled the Complete and Cancel Action buttons are no longer rendered ... so focus falls to the body" | `f311509`: focus goes to the Action's row after Complete and Cancel; the sweep found the same gap for `ACTION_FINAL`, `TICKET_NOT_WORKABLE`, Keep editing and a refused resend, all fixed with tests | Request changes at `0ca1cdb`, then Approve at `f311509`; merged as `2e86ba0` |
+| [#85](https://github.com/stickkersz/toktickit/pull/85) | #73, Ticket workflow, resolution gate and Status History | "the Resolve pre-check and the Cancel confirmation use a stale resolutionGate ... The three E2E flows hide this by calling page.reload()" | `e77929f`: every Action write re-reads the Ticket's status and gate, with a guard so a late answer cannot undo a newer one; the E2E reloads removed. A GitHub push error left the Pull Request on an old head, so `fac29d8` is an empty commit that refreshed it | Request changes at `6b46e3a`, then Approve at `fac29d8`; merged as `4a5f227` |
+| [#86](https://github.com/stickkersz/toktickit/pull/86) | #74, Requester and IT Staff dashboard APIs | "the Requester path takes `FOR SHARE` on the Ticket row, and the new `ticket.update({ updatedAt })` runs in the same transaction. Two Requester comments on the same Ticket both hold the share lock and both wait to update, so Postgres detects a deadlock" | `3b2a2e9`: `FOR NO KEY UPDATE`; a test posts two comments at once, five rounds. The non-blocking Attachment note and the sweep's find (the staff comment path made two separate writes) fixed in the same commit, each with an injected-failure test | Request changes at `7208908`, then Approve at `3b2a2e9`; merged as `62c258b` |
+| [#87](https://github.com/stickkersz/toktickit/pull/87) | #75, dashboard screens and drill-downs | None: "Read through the screens against ui-spec sections 3 to 6 and they match" | None needed | Approve at `f99a0e2`; merged as `980d1e0` |
+| [#88](https://github.com/stickkersz/toktickit/pull/88) | #76, final hardening (Idempotency-Key on every create, a console-clean test run, focus) | "the BR-34 comment block kept its old indentation after the code moved into `write`", and record the removed "files" clauses "so a reader of the contract sees it was changed on purpose" | `8b60230`: comment re-indented; the correction recorded in the specification's Assumptions and Decisions | Request changes at `a862ba8`, then Approve at `8b60230`; merged as `83d202d` |
+| [#89](https://github.com/stickkersz/toktickit/pull/89) | #77, E2E, responsive, accessibility, regression and performance | "'Go to Actions Taken' is now a `Link` but its `onClick` always calls `preventDefault()`, so Ctrl/Cmd-click can't open it in a new tab", and the E2E-09 row should name `e2e/lab-04/console.ts` | `f7fb755`: only a plain left click is handled in place; a test clicks with Ctrl, Cmd and Shift. Row corrected | Request changes at `a620696`, then Approve at `f7fb755`; merged as `7b8cfe9` |
+| [#90](https://github.com/stickkersz/toktickit/pull/90) | #78, pre-release review findings | "the 'Go to your home screen' link uses `landingPathFor(user.role)`, and in this case the cached role is exactly what went stale, so the link points back at the page that just refused. The new test even asserts `href="/staff/dashboard"`" | `2594bbf`: on a mid-session 403 the identity is read again; a changed role goes through the route guard's own forbidden state, an unchanged one gets no link. Two tests, both red before | Request changes at `f948e49`, then Approve at `2594bbf`; merged as `ae77728` |
+
+## Pull Requests I reviewed (authored by @songt888 on `songt888/toktickit`)
+
+| PR | Scope | What I asked for | Their response and fix commit | Verdict |
+|---|---|---|---|---|
+| [#74](https://github.com/songt888/toktickit/pull/74) | Lab 4 engineering contract | The PR deleted `Lab_3_Report.pdf` in a contract PR; "View all My Pending Actions can't page past 50" (api-spec allowed only `page=1`); their `reviewer.md` said no partner review yet. On the recheck: the #81 merge SHA and two status lines in `reviewer.md` | `5fd3b76`: PDF commit reverted and moved out, `page >= 1`. `7f793c2`: `reviewer.md` corrected | Request changes at `36041aa` and `5fd3b76`, then Approve at `7f793c2`; merged as `6a36b0a` |
+| [#75](https://github.com/songt888/toktickit/pull/75) | Stop tracking the Lab 3 report PDF | "PR targets `main`, should go into `lab4-staging`", and no Issue was linked | Retargeted to `lab4-staging` and linked to a new chore Issue #76 | Request changes, then Approve at `16a25f5`; merged as `e9744b9` |
+| [#77](https://github.com/songt888/toktickit/pull/77) | Actions Taken data foundation, migration and seed | Fixed seed dates put every resolution outside the 7-day window, so recently resolved could never be non-zero; Action stamps ignored the status path; no populated Lab 3 upgrade and restore test. Then: dates drifted after two days on a reused database; the restore checked an untouched copy. Last: the file manifest read the shared uploads folder, "so it's vacuous and flaky" | `da6fdb0`, `d220554`, then `5689123`: seed dates relative to the first run, a real restore test, and Attachment files written to a private temporary folder and hashed | Request changes three times, then Approve at `5689123`; merged as `29f5c9f` |
+| [#78](https://github.com/songt888/toktickit/pull/78) | Actions Taken API | `tests.md` rows marked Pass "for stuff no test covers" (API-05, API-06, API-09, API-10); a concurrency test that "can't fail". Then: nothing proved the stubbed create ran, and the assign race never really raced | `2cb41b6`, then `b2eec02`: the missing tests added or the rows trimmed, the create checked as called once, the race set up before `Promise.all` | Request changes twice, then Approve at `b2eec02`; merged as `5bc23ad` |
+| [#79](https://github.com/songt888/toktickit/pull/79) | Ticket workflow and resolution gate | The race test only checked that one request succeeded, "a 500 loser passes"; `tests.md` promised barrier-controlled races and a confirmation test that did not exist; ui-spec's readiness summary missing | `cae2076`: barrier-controlled races asserting the loser's 409, the readiness summary added. On approval I left two small notes (the "Ready to resolve." line on final Tickets, a missing `role="group"`) and a count to update | Request changes at `c9cf216`, then Approve at `cae2076`; merged as `0457a58` |
+| [#80](https://github.com/songt888/toktickit/pull/80) | Actions Taken UI and Requester read-only view | After Load Latest, Edit compared an old draft with the fresh Action, "so untouched fields revert the other user's change"; a late refresh could roll `updatedAt` back and cause a false 409; a test that passes with the guard deleted. Then: comments and notes did not bump the refresh sequence; dropping the refresh also dropped the resolution gate | `40c903d`, `c0ba040`, then `18d6a0e`: compare against the Action that was opened, every write bumps the sequence, the refresh restarts only when one is in flight, all three paths tested | Request changes three times, then Approve at `18d6a0e`; merged as `79cf0ec` |
+| [#81](https://github.com/songt888/toktickit/pull/81) | Requester Dashboard API and UI | Back from a Ticket opened on the Dashboard went to My Tickets; a boundary test whose extra Ticket fell outside the 5-item limit, so a wrong bound still passed; test rows citing a file that did not exist; a shared seed Requester that could flake in parallel. Then: the PR body still described the old E2E | `9422cfd`, and the PR body updated: Back to Dashboard, fewer fixtures so the bound bites, fresh Requesters in E2E | Request changes at `a16c2fc` and `9422cfd`, then Approve at `9422cfd`; merged as `07bc662` |
+| [#82](https://github.com/songt888/toktickit/pull/82) | Staff and Administrator Dashboard API and UI | My Pending Actions reset to page 1 after Back; `tests.md` said every drill-down passes but E2E clicked 5 of 12; an untested snapshot claim; two flaky waits. Then: finishing the only Action on a later page showed an empty page with no pager; the database comparison covered three figures, not all. Last: the Administrator's figures checked against hard-coded values | `c5a0a34`, `ca98843`, then `f507afe`: page kept, empty last page reloads, all 12 figures compared with SQL for all three roles | Request changes three times, then Approve at `f507afe`; merged as `0bc02e5` |
+| [#83](https://github.com/songt888/toktickit/pull/83) | Final regression, E2E, responsive, accessibility and performance hardening (open) | The Ticket Status History area from their ui-spec missing in the client; three tests that cannot fail; Result skipped when editing a completed Action; Bootstrap blue left; the performance test running in every `npm test`; two `tests.md` rows overclaimed | Pending at the time of writing | Request changes at `a982ad5` |
+
+The same patterns turned up in both repositories:
+- **Tests that could not fail.** On my side, the Lab 4 keyboard and console checks were each proved by breaking the code on purpose. On my partner's side, it was the single most common finding: #78, #79, #80 and #83 each had a test that passed with the behaviour removed.
+- **State from earlier in the screen that went stale after another write.** My #85 resolution gate and my #90 cached role, their #80 draft and refresh sequence.
+- **Concurrency.** My #86 lock upgrade deadlock, their #79 race that let a 500 count as a pass.
+
+Seeing the same class of bug from the other side made it quicker to look for it in my own code: after #86 I added a playbook rule that every locked write path gets a test of two requests at once.
+
+## How review comments were given and received
+
+Both directions followed the same rules:
+- Read the actual diff, not the Pull Request description.
+- Cite the real `file:line`.
+- Run the suites when a count is claimed.
+- Never approve a fix from its commit message; recheck the fix commit itself.
+- Ask for a test that fails without the fix, so that "fixed" could be checked rather than taken on trust.
+
+Comments were kept short and casual, the way classmates talk on a Pull Request.
+
+On my side:
+- Every finding was answered with a fix commit that included a failing-first test.
+- The finding was swept across the codebase and logged with a prevention rule.
+- The fix was recorded in `tests.md` section 6.
+
+My partner rechecked every fix commit before approving.
