@@ -40,10 +40,10 @@ type Keyed<T, R> = { kind: "replay"; row: T } | { kind: "reused" } | { kind: "cr
 
 export const isUniqueViolation = (e: unknown) => e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002";
 
-// A create under BR-39 for Ticket, Public Comment and Internal Note (Action create runs the same steps in
-// its own handler, inside the Ticket lock). A row already stored under the key is a replay when its hash matches and a reuse when it does
-// not. Two sends of one key at the same moment both pass that check; the unique constraint lets one insert
-// in, and the other is then answered from the winner's row.
+// A create under BR-39 for Ticket, Public Comment and Internal Note (Action create runs the same steps in its
+// own handler, inside the Ticket lock). A row already stored under the key is a replay when its hash matches
+// and a reuse when it does not. Two sends of one key at the same moment both pass that check; the unique
+// constraint lets one insert in, and the other is then answered from the winner's row.
 export async function keyedCreate<T extends { requestHash: string | null }, R>(
   key: string | null,
   hash: string | null,

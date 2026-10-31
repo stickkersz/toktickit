@@ -79,7 +79,6 @@ function idFrom(raw: string): number | null {
   return isValidId(id) ? id : null;
 }
 
-
 // Locks the Ticket row and says whether it is workable. Every Action write runs inside this lock
 // and also updates the Ticket's last activity (BR-19), so writes on one Ticket are serialised: two edits
 // from one version cannot both pass the version check, and a resolve or cancel of the Ticket (which takes
@@ -91,7 +90,6 @@ async function lockTicket(tx: Prisma.TransactionClient, ticketId: number): Promi
   return { workable: rows.length === 1 && WORKABLE.includes(rows[0].currentStatus) };
 }
 const touchTicket = (tx: Prisma.TransactionClient, ticketId: number) => tx.ticket.update({ where: { id: ticketId }, data: { updatedAt: new Date() } });
-
 
 // Endpoint 1: a Requester for their own Ticket (404 otherwise), IT Staff and Administrators any Ticket.
 actionsRouter.get("/api/tickets/:id/actions", ...anyRole, async (req: Request, res: Response) => {

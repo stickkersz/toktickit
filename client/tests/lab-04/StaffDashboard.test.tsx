@@ -119,12 +119,22 @@ describe("IT Staff Dashboard", () => {
     expect(api.getRequesterDashboard).not.toHaveBeenCalled();
   });
 
-  // UI-05 / AC-34, ui-spec section 3: the API itself refusing (a role changed during the session)
-  it("shows the forbidden sentence with a way home when the dashboard request answers 403", async () => {
+  // UI-05 / AC-34, ui-spec section 3: the API itself refusing mid-session. The cached role is what went
+  // stale, so the identity is read again before any way out is offered (review on #90).
+  it("on a 403 re-reads the identity and sends a user whose role changed to their own home", async () => {
+    vi.spyOn(api, "getStaffDashboard").mockRejectedValue(new ApiError("Forbidden.", 403, "FORBIDDEN"));
+    renderApp("/staff/dashboard", STAFF);
+    // The session now belongs to a Requester (an Administrator changed the role).
+    vi.mocked(api.getCurrentUser).mockResolvedValue(REQUESTER);
+    expect(await screen.findByRole("link", { name: "Go to your home screen" })).toHaveAttribute("href", "/dashboard");
+  });
+
+  it("on a 403 with the role unchanged shows the sentence and no link back to the same page", async () => {
     vi.spyOn(api, "getStaffDashboard").mockRejectedValue(new ApiError("Forbidden.", 403, "FORBIDDEN"));
     renderApp("/staff/dashboard", STAFF);
     expect(await screen.findByText("You do not have access to this dashboard.")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Go to your home screen" })).toHaveAttribute("href", "/staff/dashboard");
+    await waitFor(() => expect(api.getCurrentUser).toHaveBeenCalledTimes(2));
+    expect(screen.queryByRole("link", { name: "Go to your home screen" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Retry" })).not.toBeInTheDocument();
   });
 

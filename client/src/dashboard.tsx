@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ReactNode, RefObject } from "react";
-import { Link } from "react-router-dom";
-import { ApiError } from "./api.js";
+import { Link, useLocation } from "react-router-dom";
+import { ApiError, getCurrentUser } from "./api.js";
 import { useAuth } from "./authContext.js";
 import { landingPathFor } from "./roles.js";
 import { StatusBadge } from "./Badge.js";
@@ -66,14 +66,36 @@ export function DashboardHeader({ subheading, headingRef, children }: { subheadi
 }
 
 export function DashboardFailure({ forbidden, onRetry }: { forbidden: boolean; onRetry: () => void }) {
-  const { user } = useAuth();
-  // The same forbidden state as the route guard's (ui-spec section 3), for an API refusal mid-session.
+  const { user, signIn } = useAuth();
+  const { pathname } = useLocation();
+  const [home, setHome] = useState<string | null>(null);
+  // An API refusal mid-session means the cached role may be stale, so the identity is read again before
+  // any way out is offered (review on #90). A changed role updates the session, and the route guard then
+  // shows its own forbidden state with the right home (ui-spec section 3). An unchanged role gets no link,
+  // since its home is the page that just refused.
+  useEffect(() => {
+    if (!forbidden) return;
+    let live = true;
+    getCurrentUser()
+      .then((fresh) => {
+        if (!live || !fresh) return;
+        if (fresh.role !== user?.role) signIn(fresh);
+        const destination = landingPathFor(fresh.role);
+        if (destination !== pathname) setHome(destination);
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+    // Once per refusal: the identity is read when the forbidden state appears.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [forbidden]);
   if (forbidden)
     return (
       <div className="zg-alert-warning rounded p-3" role="alert">
         <p className="mb-2">You do not have access to this dashboard.</p>
-        {user && (
-          <Link to={landingPathFor(user.role)} className="btn zg-btn-primary btn-sm zg-touch-target">
+        {home && (
+          <Link to={home} className="btn zg-btn-primary btn-sm zg-touch-target">
             Go to your home screen
           </Link>
         )}
