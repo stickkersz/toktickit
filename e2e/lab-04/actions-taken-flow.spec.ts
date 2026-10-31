@@ -1,4 +1,5 @@
-import { expect, Page, test } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
+import { expect, test } from "./console.js";
 import {
   ADMIN,
   apiSignedIn,
@@ -83,6 +84,13 @@ test.describe("Actions Taken", () => {
     for (const [size, viewport] of SIZES) {
       await page.setViewportSize(viewport);
       expect(await hasNoHorizontalScroll(page), `list ${size}`).toBe(true);
+      // RESP-02: a table from 768px, cards below it (ui-spec section 7).
+      if (size === "mobile") {
+        await expect(page.getByRole("table")).toBeHidden();
+        await expect(actionRow(page, "Clear the browser cache")).toBeVisible();
+      } else {
+        await expect(page.getByRole("table")).toBeVisible();
+      }
       await page.screenshot({ animations: "disabled", path: shot(`list-${size}`), fullPage: true });
     }
     await page.setViewportSize(VIEWPORTS.desktop);
@@ -112,6 +120,11 @@ test.describe("Actions Taken", () => {
     await dialog.getByLabel(/Result/).focus();
     for (const [size, viewport] of SIZES) {
       await page.setViewportSize(viewport);
+      expect(await hasNoHorizontalScroll(page), `complete dialog ${size}`).toBe(true);
+      // The dialog fits the width, minus its side margins on a phone (ui-spec section 12).
+      const box = (await dialog.boundingBox())!;
+      expect(box.x, `complete dialog ${size}`).toBeGreaterThanOrEqual(0);
+      expect(box.x + box.width, `complete dialog ${size}`).toBeLessThanOrEqual(viewport.width);
       await page.screenshot({ animations: "disabled", path: shot(`complete-dialog-${size}`) });
     }
     await page.setViewportSize(VIEWPORTS.desktop);
@@ -200,5 +213,85 @@ test.describe("Actions Taken", () => {
     await expect(callout.getByText("Reinstall the VPN client.")).toBeVisible();
     await expect(page.getByLabel(/Action Description/)).toHaveValue("Check the VPN client version and update it.");
     await page.screenshot({ animations: "disabled", path: shot("stale-conflict-desktop"), fullPage: true });
+  });
+
+  // A11Y-01 (AC-49): keyboard only, from the Dashboard through the Actions tab and both dialogs. Every
+  // stop inside the page shows the Zen Green focus ring, the dialogs keep focus inside, and Escape gives it
+  // back to the control that opened them.
+  test("can be used from the keyboard alone: a dashboard, the Actions tab, and both dialogs", async ({ page }) => {
+    const ticket = await createTicketAsRequester(`E2E keyboard ${short()}`);
+    await page.setViewportSize(VIEWPORTS.desktop);
+    await signIn(page, STAFF.email, LANDING.IT_STAFF);
+    await expect(page.getByRole("link", { name: /^Unassigned: / })).toBeVisible();
+
+    // The focus ring of whatever holds focus, when it is inside the page (the header has its own white ring).
+    const ringOk = () =>
+      page.evaluate(() => {
+        const el = document.activeElement as HTMLElement | null;
+        if (!el || el === document.body || !el.closest("main")) return true;
+        const s = getComputedStyle(el);
+        const outline = s.outlineStyle !== "none" && parseFloat(s.outlineWidth) >= 2 && s.outlineColor === "rgb(11, 122, 70)";
+        return outline || s.boxShadow.includes("rgba(11, 122, 70") || `${el.tagName}#${el.id} ${el.className} ${s.outlineStyle} ${s.outlineColor} ${s.boxShadow}`;
+      });
+    // Presses Tab until the target holds focus, checking the ring at every stop on the way.
+    async function tabTo(target: Locator, limit = 60) {
+      for (let i = 0; i < limit; i++) {
+        if (await target.evaluate((el) => el === document.activeElement).catch(() => false)) return;
+        await page.keyboard.press("Tab");
+        await page.waitForTimeout(160);
+        expect(await ringOk(), "focus ring").toBe(true);
+      }
+      throw new Error("never reached by Tab");
+    }
+
+    // Dashboard: every card and chip is reached and shows its ring; Enter opens the list it counts.
+    const urgent = page.getByRole("link", { name: /^Urgent: / });
+    await tabTo(page.getByRole("link", { name: /^Cancelled: / }));
+    await page.keyboard.press("Shift+Tab");
+    await tabTo(urgent, 80);
+    await page.keyboard.press("Enter");
+    await expect(page).toHaveURL(/\/staff\/tickets\?itPriority=HIGH&statusGroup=active$/);
+
+    // The Actions tab: add an Action without the mouse.
+    await page.goto(`/staff/tickets/${ticket.id}?tab=actions`);
+    await expect(page.getByRole("tab", { name: /^Actions Taken \(0\)$/ })).toHaveAttribute("aria-selected", "true");
+    await tabTo(page.getByRole("button", { name: "Add Action" }), 80);
+    await page.keyboard.press("Enter");
+    await expect(page.getByLabel(/Action Date\/Time/)).toBeFocused();
+    await tabTo(page.getByLabel(/Action Description/));
+    await page.keyboard.type("Reseat the dock connector at desk 7.");
+    await tabTo(page.getByRole("button", { name: "Save Action" }));
+    await page.keyboard.press("Enter");
+    await expect(page.getByText("Action added.")).toBeVisible();
+    await addAction(page, "Check the second monitor cable.");
+
+    // Both dialogs: opened with Enter, focus kept inside on Tab, Escape returns it to the opener, then used.
+    for (const [row, opener, field, text, confirm, done] of [
+      ["Reseat the dock", "Complete", /Result/, "Dock reseated; both screens work.", "Mark as Completed", "Action completed."],
+      ["second monitor", "Cancel Action", /Reason/, "Not needed: the cable was fine.", "Cancel Action", "Action cancelled."],
+    ] as const) {
+      await tabTo(actionRow(page, row), 80);
+      await page.keyboard.press("Enter");
+      const open = page.getByRole("button", { name: opener, exact: true });
+      await tabTo(open);
+      await page.keyboard.press("Enter");
+      const dialog = page.getByRole("dialog");
+      await expect(dialog.getByLabel(field)).toBeFocused();
+      for (let i = 0; i < 12; i++) {
+        await page.keyboard.press("Tab");
+        expect(await dialog.evaluate((d) => d.contains(document.activeElement)), `${opener} dialog keeps focus`).toBe(true);
+      }
+      await page.keyboard.press("Escape");
+      await expect(dialog).toBeHidden();
+      await expect(open).toBeFocused();
+      await page.keyboard.press("Enter");
+      await expect(dialog.getByLabel(field)).toBeFocused();
+      await page.keyboard.type(text);
+      await tabTo(dialog.getByRole("button", { name: confirm }), 20);
+      await page.keyboard.press("Enter");
+      await expect(page.getByText(done)).toBeVisible();
+      // Focus stays in the page, on the Action it acted on (Lab 4 #84).
+      expect(await page.evaluate(() => document.activeElement !== document.body)).toBe(true);
+    }
   });
 });

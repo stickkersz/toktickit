@@ -77,8 +77,11 @@ body {
   cursor: not-allowed;
 }
 
-/* Focus uses the Zen Green accent, never Bootstrap blue (§3, §11). */
+/* Focus uses the Zen Green accent, never Bootstrap blue (§3, §11). :focus-within covers a date field's
+   own calendar button, which sits inside the input, so the input loses :focus while it is the one focused
+   (found by the Lab 4 keyboard pass, A11Y-01). */
 .form-control:focus,
+.form-control:focus-within,
 .form-select:focus,
 .btn:focus-visible,
 .nav-link:focus-visible,
