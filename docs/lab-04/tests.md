@@ -364,7 +364,7 @@ Left as they are, all from Labs 2 and 3 and none clipped: the Create Ticket fiel
 
 ### Issue 10: pre-release review
 
-Four reviews of `lab4-staging` (7b8cfe9) against `main` on 2026-10-31: standards (LAB-WORKFLOW sections 3 and 5, CONTEXT.md, the repo's style, and Fowler's smell list as judgement calls), spec (the Lab 4 specification, api-spec, ui-spec, ADRs 0003 and 0004), security (authorization, IDOR, idempotency, raw SQL, locks, integer bounds, error bodies, client trust), and `lab-labsheet-auditor` over all 485 checklist lines. Run on `feature/lab4-10-pre-release-review` after the fixes: server 445 passed (43 files), client 340 passed (22 files), Playwright 33 passed.
+Four reviews of `lab4-staging` (7b8cfe9) against `main` on 2026-10-31: standards (LAB-WORKFLOW sections 3 and 5, CONTEXT.md, the repo's style, and Fowler's smell list as judgement calls), spec (the Lab 4 specification, api-spec, ui-spec, ADRs 0003 and 0004), security (authorization, IDOR, idempotency, raw SQL, locks, integer bounds, error bodies, client trust), and `lab-labsheet-auditor` over all 485 checklist lines. Run on `feature/lab4-10-pre-release-review` after the fixes: server 445 passed (43 files), client 340 passed (22 files), Playwright 33 passed. REG-01 is now 334 passed (30 files): this Issue added one Lab 2 test, the Ticket Date check (L-452); REG-02 266 and REG-03 22 are unchanged. The 333 recorded under Issue 09 was the count on that branch (release review on #92).
 
 Fixed, each behaviour change with a test that failed first:
 - Spec: a Follow-Up Note the server discards (Follow-Up Required off) was part of the Action create fingerprint, so a retry differing only there got 409; it is now left out (API-16 test in `idempotency.api.test.ts`).
