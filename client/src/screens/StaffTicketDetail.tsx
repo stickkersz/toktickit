@@ -599,6 +599,9 @@ function StaffTicketDetail() {
                 to={`/staff/tickets/${ticketId}?tab=actions`}
                 className="btn btn-sm btn-outline-secondary zg-touch-target"
                 onClick={(e) => {
+                  // A modified or non-left click is the browser's (a new tab or window); only a plain click
+                  // switches the tab in place (review on #89).
+                  if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
                   e.preventDefault();
                   setGateShown(false);
                   setTabRequest((r) => ({ id: "actions", seq: (r?.seq ?? 0) + 1 }));

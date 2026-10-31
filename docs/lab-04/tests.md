@@ -126,7 +126,7 @@ Type key: Unit, API (integration), Security (authorization), Workflow, Dashboard
 | E2E-06 | E2E | AC-02, AC-32 | Two Requesters open their dashboards and drill down | Each sees only their own figures; My Tickets matches each card | `e2e/lab-04/dashboards.spec.ts` | Pass |
 | E2E-07 | E2E | AC-36 | Sign in as each role | Each lands on its dashboard with Dashboard marked current | `e2e/lab-04/dashboards.spec.ts` | Pass |
 | E2E-08 | E2E | AC-04 | An Administrator deactivates an IT Staff user while another staff user has the Action form open with them chosen | Saving is refused with the inactive-person message | `e2e/lab-04/actions-taken-flow.spec.ts` | Pass |
-| E2E-09 | E2E | AC-44 | Browser console during every Lab 4 journey | No error or warning collected | `e2e/lab-04/dashboards.spec.ts` | Pass |
+| E2E-09 | E2E | AC-44 | Browser console during every Lab 4 journey | No error or warning collected | `e2e/lab-04/console.ts`, run by every Lab 4 spec (`dashboards.spec.ts`, `actions-taken-flow.spec.ts`, `ticket-resolution.spec.ts`) | Pass |
 
 ## 3. Acceptance-Criterion traceability
 
@@ -359,3 +359,5 @@ Evidence for each item of the section 14 checklist, now ticked:
 15. No console output, placeholder, or dead control: UI-26, E2E-09, STYLE-03.
 
 Left as they are, all from Labs 2 and 3 and none clipped: the Create Ticket fields keep a grey border while their message shows; the Ticket Queue's Ticket No. column wraps at 1280; User Management lists every account without paging (408 on the development database, most of them E2E accounts the reset removes); the date field shows the browser's own date order.
+
+**Review round on #89 (songt, request changes, nothing broken).** "Go to Actions Taken" became a link but cancelled every click, so Ctrl, Cmd or Shift click could not open it in a new tab or window. It now cancels only a plain left click (the one that switches the tab in place), and the UI-20 gate test clicks it with each modifier and checks the click is left to the browser (red before the fix). The sweep found no other link with a click handler; the other `preventDefault` calls are form submits and key handlers. The E2E-09 row now names `e2e/lab-04/console.ts` and the three specs that run it. Server 440, client 338, Playwright 33.

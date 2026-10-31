@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import * as api from "../../src/api.js";
 import { ApiError, type ActionItem, type StaffTicketDetail, type StaffTicketItem, type StatusHistory, type TicketDetail } from "../../src/api.js";
@@ -89,6 +89,23 @@ describe("the resolution gate on the status control", () => {
     expect(alert).toHaveTextContent("This ticket cannot be resolved yet: 2 planned actions are still open.");
     expect(move).not.toHaveBeenCalled();
     expect(screen.queryByLabelText(/Resolution Summary/)).not.toBeInTheDocument();
+    // A real link: Ctrl, Cmd or Shift click is left to the browser (a new tab or window), only a plain
+    // click switches the tab in place (review on #89). The window listener runs after React's handler,
+    // records whether the click was cancelled, then cancels it so jsdom does not try to navigate.
+    const link = within(alert).getByRole("link", { name: "Go to Actions Taken" });
+    expect(link).toHaveAttribute("href", "/staff/tickets/42?tab=actions");
+    let cancelled: boolean | null = null;
+    const record = (e: Event) => {
+      cancelled = e.defaultPrevented;
+      e.preventDefault();
+    };
+    window.addEventListener("click", record);
+    for (const modifier of [{ ctrlKey: true }, { metaKey: true }, { shiftKey: true }]) {
+      fireEvent.click(link, modifier);
+      expect(cancelled, JSON.stringify(modifier)).toBe(false);
+      expect(screen.getByRole("alert")).toHaveTextContent("cannot be resolved yet");
+    }
+    window.removeEventListener("click", record);
     // History is the other tab that is not first; the link opens Actions Taken and focuses its tab.
     await userEvent.click(screen.getByRole("tab", { name: "History" }));
     await userEvent.click(within(alert).getByRole("link", { name: "Go to Actions Taken" }));
