@@ -16,7 +16,7 @@ export function isIdempotencyKey(value: unknown): value is string {
 // body field the endpoint accepts, trimmed, keys sorted, absent ones left out. Fields the endpoint ignores
 // are not part of it, so a replay is recognised by what the server would store, not by the exact bytes
 // sent. No create endpoint carries files (Ticket create's Attachments are uploaded afterwards), but the
-// hashed text keeps its `files: null`, so hashes stored before Issue 08 still match.
+// hashed text keeps its `files: null`, so hashes already stored still match.
 export function requestHash(path: string, body: Record<string, unknown> | undefined, accepted: readonly string[]): string {
   const fields: Record<string, unknown> = {};
   for (const key of [...accepted].sort()) {
@@ -38,12 +38,12 @@ export function readKey(req: Request, path: string, accepted: readonly string[])
 
 type Keyed<T, R> = { kind: "replay"; row: T } | { kind: "reused" } | { kind: "created"; value: R };
 
-const isUniqueViolation = (e: unknown) => e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002";
+export const isUniqueViolation = (e: unknown) => e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002";
 
-// A create under BR-39 for Ticket, Public Comment and Internal Note (Action create keeps its own flow,
-// Issue 03). A row already stored under the key is a replay when its hash matches and a reuse when it does
-// not. Two sends of one key at the same moment both pass that check; the unique constraint lets one insert
-// in, and the other is then answered from the winner's row.
+// A create under BR-39 for Ticket, Public Comment and Internal Note (Action create runs the same steps in its
+// own handler, inside the Ticket lock). A row already stored under the key is a replay when its hash matches
+// and a reuse when it does not. Two sends of one key at the same moment both pass that check; the unique
+// constraint lets one insert in, and the other is then answered from the winner's row.
 export async function keyedCreate<T extends { requestHash: string | null }, R>(
   key: string | null,
   hash: string | null,

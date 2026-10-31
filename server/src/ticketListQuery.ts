@@ -61,7 +61,7 @@ export function parseTicketListQuery(query: Record<string, unknown>): ParsedTick
   const statusGroup = currentStatus === null ? parseStatusGroup(query.statusGroup) : null;
   const windowDays = (raw: unknown) => {
     const n = Number(raw);
-    return Number.isInteger(n) && n >= 1 && n <= 90 ? n : null;
+    return isValidId(n) && n <= 90 ? n : null;
   };
   const updatedWithinDays = windowDays(query.updatedWithinDays);
   const resolvedWithinDays = windowDays(query.resolvedWithinDays);

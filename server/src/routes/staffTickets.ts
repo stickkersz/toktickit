@@ -1,5 +1,5 @@
 import { Router, type Request, type Response } from "express";
-import { Prisma, type TicketStatus } from "@prisma/client";
+import { Prisma, type ActionStatus, type TicketStatus } from "@prisma/client";
 import { getPrisma } from "../prisma.js";
 import { sendError } from "../httpErrors.js";
 import { requireAuth } from "../middleware/requireAuth.js";
@@ -8,6 +8,7 @@ import { isValidId } from "../ids.js";
 import { escapeLike } from "../searchText.js";
 import { parseStaffQueueQuery } from "../staffQueueQuery.js";
 import { RESOLVED_STATUSES, activeWhere, needsOwnerWhere } from "../dashboardWindow.js";
+import { resolutionGate } from "../actionValidation.js";
 import {
   isTicketStatus,
   isTransitionPermitted,
@@ -319,9 +320,10 @@ staffTicketsRouter.patch("/api/staff/tickets/:id/status", ...staffOnly, async (r
       if (requiresOwner(to) && (ownerId === null || !(await isEligibleStaffLocked(tx, ownerId)))) return { kind: "ownerRequired" };
       if (to === "RESOLVED") {
         const counts = await tx.actionTaken.groupBy({ by: ["status"], where: { ticketId }, _count: { _all: true } });
-        const count = (s: string) => counts.find((c) => c.status === s)?._count._all ?? 0;
-        if (count("PLANNED") > 0) return { kind: "incomplete", plannedActions: count("PLANNED") };
-        if (count("COMPLETED") === 0) return { kind: "noCompleted" };
+        const count = (s: ActionStatus) => counts.find((c) => c.status === s)?._count._all ?? 0;
+        // The same rule Ticket Detail shows (BR-21), so the screen and the move never disagree.
+        const gate = resolutionGate(count("PLANNED"), count("COMPLETED"));
+        if (!gate.canResolve) return gate.plannedActions > 0 ? { kind: "incomplete", plannedActions: gate.plannedActions } : { kind: "noCompleted" };
       }
 
       await tx.ticket.update({ where: { id: ticketId }, data: { currentStatus: to, ...(summary !== undefined ? { resolutionSummary: summary } : {}) } });

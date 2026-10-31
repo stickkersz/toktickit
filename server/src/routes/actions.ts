@@ -13,7 +13,7 @@ import {
   validateCompletionAt,
   validateResult,
 } from "../actionValidation.js";
-import { IDEMPOTENCY_KEY_MESSAGE, IDEMPOTENCY_KEY_REUSED_MESSAGE, isIdempotencyKey, requestHash } from "../idempotency.js";
+import { IDEMPOTENCY_KEY_MESSAGE, IDEMPOTENCY_KEY_REUSED_MESSAGE, isIdempotencyKey, isUniqueViolation, requestHash } from "../idempotency.js";
 
 // Actions Taken (Lab 4 api-spec.md endpoints 1 to 5). There is no delete route (BR-18).
 export const actionsRouter = Router();
@@ -79,7 +79,6 @@ function idFrom(raw: string): number | null {
   return isValidId(id) ? id : null;
 }
 
-
 // Locks the Ticket row and says whether it is workable. Every Action write runs inside this lock
 // and also updates the Ticket's last activity (BR-19), so writes on one Ticket are serialised: two edits
 // from one version cannot both pass the version check, and a resolve or cancel of the Ticket (which takes
@@ -91,8 +90,6 @@ async function lockTicket(tx: Prisma.TransactionClient, ticketId: number): Promi
   return { workable: rows.length === 1 && WORKABLE.includes(rows[0].currentStatus) };
 }
 const touchTicket = (tx: Prisma.TransactionClient, ticketId: number) => tx.ticket.update({ where: { id: ticketId }, data: { updatedAt: new Date() } });
-
-const isUniqueViolation = (e: unknown) => e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002";
 
 // Endpoint 1: a Requester for their own Ticket (404 otherwise), IT Staff and Administrators any Ticket.
 actionsRouter.get("/api/tickets/:id/actions", ...anyRole, async (req: Request, res: Response) => {
@@ -134,7 +131,10 @@ actionsRouter.post("/api/tickets/:id/actions", ...staffOnly, async (req: Request
 
     if (rawKey !== undefined) {
       key = rawKey.toLowerCase();
-      hash = requestHash(`/api/tickets/${ticketId}/actions`, req.body, CREATE_FIELDS);
+      // A Follow-Up Note sent with Follow-Up Required off is discarded (BR-04), so it is not part of the
+      // request either (api-spec "Fields the endpoint ignores are not part of it").
+      const kept = data.followUpRequired ? req.body : { ...req.body, followUpNote: undefined };
+      hash = requestHash(`/api/tickets/${ticketId}/actions`, kept, CREATE_FIELDS);
     }
     const prior = key ? await findKeyed() : null;
     if (prior && prior.requestHash === hash) return replay(prior);

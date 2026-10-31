@@ -78,6 +78,7 @@ describe("Requester Ticket Detail", () => {
     expect(screen.getByRole("button", { name: /back to my tickets/i })).toBeInTheDocument();
   });
 
+  // UI-13 / BR-30: a removed Attachment is muted and labelled (tag added in the Lab 4 pre-release audit)
   it("shows the active attachment count and both active and removed rows, with file-type icons and a truncation tooltip", async () => {
     const longName = "a-very-long-original-filename-that-should-be-truncated-in-the-row.pdf";
     vi.spyOn(api, "getCurrentUser").mockResolvedValue(ARI);

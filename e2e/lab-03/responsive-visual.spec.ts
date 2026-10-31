@@ -143,7 +143,8 @@ test.describe("Lab 3 screenshots (RESP-02)", () => {
     await capture(page, "staff-ticket-detail", "invalid-transition");
     await page.unroute(`**/api/staff/tickets/${ticket.id}/status`);
 
-    await page.reload();
+    // Opened again without the mocked refusal (not a persistence check, so not a reload).
+    await page.goto(`/staff/tickets/${ticket.id}`);
     const status = page.getByLabel("Current Status");
     for (const next of ["OPEN", "IN_PROGRESS"]) {
       await status.selectOption(next);

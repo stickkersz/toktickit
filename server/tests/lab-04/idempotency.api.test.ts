@@ -114,6 +114,18 @@ describe("Idempotency-Key on Action create", () => {
     expect(await count(t.id)).toBe(3);
   });
 
+  // API-16 / BR-39, api-spec "Fields the endpoint ignores are not part of it" (pre-release review)
+  it("replays a request that differs only in a Follow-Up Note the server discards", async () => {
+    const t = await makeTicket();
+    const key = randomUUID();
+    const base = { ...body(), followUpRequired: false };
+    expect((await send(staff, t.id, key, { ...base, followUpNote: "First draft of a note." })).status).toBe(201);
+    const again = await send(staff, t.id, key, { ...base, followUpNote: "Another note, also discarded." });
+    expect(again.status).toBe(200);
+    expect(again.headers["idempotent-replayed"]).toBe("true");
+    expect(await count(t.id)).toBe(1);
+  });
+
   // API-18 / BR-39, BR-47 (Action create)
   it("creates a new Action for every keyless send", async () => {
     const t = await makeTicket();
@@ -266,6 +278,12 @@ describe.each(ENDPOINTS)("Idempotency-Key on $name", (e) => {
     expect((await post(e.caller(), e.path(t3.id), shared, e.payload(tag3))).status).toBe(201);
     expect((await post(e.other(), e.path(t3.id), shared, e.payload(tag3))).status).toBe(201);
     expect(await e.count(t3.id, tag3)).toBe(2);
+  });
+
+  // API-17 / api-spec: the key is checked after the Ticket is found (pre-release review)
+  it("answers a missing Ticket with 404 before looking at a malformed key", async () => {
+    if (e.name === "Ticket create") return;
+    expect((await post(e.caller(), e.path(2147483000), "not-a-uuid", e.payload(randomUUID()))).status).toBe(404);
   });
 
   // API-18 / BR-39, BR-47

@@ -107,13 +107,12 @@ function mount(path: "comments" | "notes", guards: typeof anyRole, store: Conten
       // body: they come from the session and the server clock (BR-32).
       const checked = validateContentBody(req.body?.body);
       const { key, hash, error: keyError } = readKey(req, `/api/tickets/${ticketId}/${path}`, ["body"]);
-      const fields: Record<string, string> = {};
-      if (checked.error) fields.body = checked.error;
-      if (keyError) fields.idempotencyKey = keyError;
-      if (Object.keys(fields).length > 0) return sendError(res, 400, "VALIDATION_ERROR", Object.values(fields)[0], fields);
+      if (checked.error) return sendError(res, 400, "VALIDATION_ERROR", checked.error, { body: checked.error });
 
       const prisma = getPrisma();
       if (!(await prisma.ticket.findFirst({ where: reachable(req, ticketId), select: { id: true } }))) return notFound(res);
+      // Lab 4 api-spec: the key is checked once the Ticket is found and the body is valid.
+      if (keyError) return sendError(res, 400, "VALIDATION_ERROR", keyError, { idempotencyKey: keyError });
 
       const authorId = req.user!.id;
       const data: CreateData = { ticketId, authorId, authorRole: req.user!.role, body: checked.value!, idempotencyKey: key, requestHash: hash };
