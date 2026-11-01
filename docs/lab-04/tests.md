@@ -201,6 +201,16 @@ Recorded at release: the full suite counts for Labs 1 to 4 on the final `main`.
 
 The totals are from the run on `main`. The split by lab comes from runs of each lab's folders at `874a224`, whose code is identical to `main`'s (the two differ only in one line of this file). `tests.md` has 109 of 109 planned tests Pass and none Planned.
 
+**After the final audit and screen pass (2026-11-01).** Two more Pull Requests went into `main` after that run: #96 (the final screen pass fixes, four new client tests) and #95 (the console collector that a mock restore cannot remove, and `reviewer.md` up to date). With both, on `fix/lab4-console-leaks` after merging `main`:
+
+| Suite | Labs 1 to 3 | Lab 4 | Total |
+|---|---|---|---|
+| Server | 334 (30 files) | 111 (13 files) | 445 passed, 43 files |
+| Client | 269 (16 files) | 76 (6 files) | 345 passed, 22 files |
+| Playwright | 22 | 11 | 33 passed |
+
+The client output now has no line on stderr. Once #95 is merged, all three suites run again from `main`, and that output replaces the `f40da3a` output as the Part 3 evidence.
+
 **Issue 02 (2026-10-30).** Tests on a scratch database in the Lab 3 state holding Users of every role, Tickets in all eight statuses, Attachments (one removed), Public Comments, an Internal Note and a Session:
 
 - MIG-01: after the migration every Lab 3 row is identical except the two new key columns, which are nullable and null on every existing row; every Ticket has exactly one Status Change (none to New, at its creation time, by its Requester); keys are unique per creating user and keyless rows are unlimited.
@@ -413,4 +423,4 @@ Left for the release and the report (Issues 11 and 12), as the audit found: the 
 
 `lab-labsheet-auditor` re-checked every checklist line against `main` at `45d2a25`: 480 of 485 met; the rest are the submission PDF's and this record's. It found two things in the repository, both fixed here:
 - The saved client output from the final `main` run printed two `console.error` traces ("request did not reach the API"), which UI-26 says cannot happen. The UI-26 collector was installed with `vi.spyOn`, so a test file that called `vi.restoreAllMocks()` in its own `afterEach` switched it off, together with the API stubs, while a Ticket Detail was still loading, and the late requests reached a real `fetch`. The collector is now installed directly, so a mock restore cannot remove it; with that change three tests went red (`client/tests/lab-02/Shell.test.tsx`, `client/tests/lab-03/RequesterTicketDetail.lab03.test.tsx`, and one the audit had not seen, `client/tests/lab-03/RoleRoutes.test.tsx`). Each now unmounts its screen before restoring mocks. Three full client runs in a row: 341 passed, no output on stderr.
-- `docs/lab-04/reviewer.md` stopped before the last Pull Requests; it now has #91 to #94 and my later review rounds on my partner's #83.
+- `docs/lab-04/reviewer.md` stopped before the last Pull Requests; it now has #91 to #94 and #96, and all my review rounds on my partner's #83.

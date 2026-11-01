@@ -101,9 +101,7 @@ describe("role based route protection", () => {
     expect(api.getRelatedSystems).not.toHaveBeenCalled();
 
     // Unmount first, so a screen still loading cannot reach a real fetch once its stubs are gone (UI-26).
-
     cleanup();
-
     vi.restoreAllMocks();
     renderApp("/still/not/a/page", ADMIN);
     // An Administrator lands on the staff Dashboard too (Lab 4 ui-spec section 3; Lab 3 sent them to User Management).
@@ -141,9 +139,7 @@ describe("a stale Lab 2 Development Requester selection in browser storage", () 
     expect(screen.queryByText("Select Development Requester")).not.toBeInTheDocument();
 
     // Unmount first, so a screen still loading cannot reach a real fetch once its stubs are gone (UI-26).
-
     cleanup();
-
     vi.restoreAllMocks();
     renderApp("/select-requester", STAFF);
     expect(await screen.findByText("Your work and the queue at a glance")).toBeInTheDocument();
