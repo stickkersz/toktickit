@@ -69,7 +69,19 @@ export default function StaffTicketPanels({
           ),
         },
         // Staff may comment on a Ticket in any status, closed ones included (BR-34 limits only Requesters).
-        { id: "comments", label: "Public Comments", count: comments.count, content: <ContentPanel kind="comments" thread={comments} /> },
+        // Labelled as shared, like Actions Taken, so it is never mistaken for the Internal Notes beside it
+        // (ui-spec section 14; found by the final screen pass).
+        {
+          id: "comments",
+          label: "Public Comments",
+          count: comments.count,
+          content: (
+            <>
+              <p className="zg-banner-pale rounded p-2 small mb-3">Public Comments are visible to the Requester.</p>
+              <ContentPanel kind="comments" thread={comments} />
+            </>
+          ),
+        },
         {
           id: "notes",
           label: "Internal Notes",

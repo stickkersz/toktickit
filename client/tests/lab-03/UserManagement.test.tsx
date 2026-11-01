@@ -132,6 +132,9 @@ describe("User Management: creating a user", () => {
     await open();
     await userEvent.click(screen.getByRole("button", { name: "Create User" }));
     expect(within(panel()).getByRole("heading", { name: "Create User" })).toBeInTheDocument();
+    // One name for the password field, not a heading and a label saying the same (final screen pass, Lab 4).
+    expect(within(panel()).queryByRole("heading", { name: "Initial Password" })).not.toBeInTheDocument();
+    expect(within(panel()).getByLabelText("Initial Password *")).toBeInTheDocument();
     expect(screen.getByLabelText("Full Name *")).toHaveFocus();
     expect(screen.getByLabelText("Email Address *")).toBeInTheDocument();
     expect(within(panel()).getByRole("combobox", { name: "Role *" })).toHaveValue("REQUESTER");

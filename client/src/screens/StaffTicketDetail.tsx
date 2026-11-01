@@ -177,6 +177,19 @@ function StaffTicketDetail() {
     }
   }
 
+  // After an Action write the gate is re-read, and until that lands the status control waits (disabled and
+  // busy), so a quick "Resolved" is never judged on the gate from before the write (final QA, Lab 4). A
+  // counter, since two writes can overlap.
+  const [gateSyncs, setGateSyncs] = useState(0);
+  async function syncGate() {
+    setGateSyncs((n) => n + 1);
+    try {
+      await refresh("status");
+    } finally {
+      setGateSyncs((n) => n - 1);
+    }
+  }
+
   // The Reload button of a locked control.
   async function reload(control: Control) {
     setReturnTo(control);
@@ -580,8 +593,8 @@ function StaffTicketDetail() {
             ref={controlRef.status}
             className="form-select zg-editable"
             value={resolving ? "RESOLVED" : (confirming ?? ticket.currentStatus)}
-            disabled={locked.status || terminal}
-            aria-busy={busy.status}
+            disabled={locked.status || terminal || gateSyncs > 0}
+            aria-busy={busy.status || gateSyncs > 0}
             onChange={(e) => void chooseStatus(e.target.value)}
           >
             {statusOptions.map((status) => (
@@ -597,7 +610,7 @@ function StaffTicketDetail() {
               {/* A link, as ui-spec section 10 names it: it goes to a place (the Actions tab, also its URL). */}
               <Link
                 to={`/staff/tickets/${ticketId}?tab=actions`}
-                className="btn btn-sm btn-outline-secondary zg-touch-target"
+                className="btn btn-link btn-sm px-0 zg-touch-target"
                 onClick={(e) => {
                   // A modified or non-left click is the browser's (a new tab or window); only a plain click
                   // switches the tab in place (review on #89).
@@ -698,7 +711,7 @@ function StaffTicketDetail() {
         currentUserId={user?.id ?? 0}
         onTicketChanged={() => void moved(ticket.currentStatus)}
         onOwnersStale={() => void refresh("owner")}
-        onActionsChanged={() => void refresh("status")}
+        onActionsChanged={() => void syncGate()}
         historyKey={moves}
         tabRequest={tabRequest}
       />
