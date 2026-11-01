@@ -184,7 +184,7 @@ export default function MyTickets() {
               adjust filters or retry. */}
           {!(listState === "ready" && total === 0 && !anyFilterActive) && (
             <div className="row g-2 mb-3">
-              <div className="col-md-4">
+              <div className="col-12 col-lg-4">
                 <input
                   ref={searchRef}
                   type="search"
@@ -194,7 +194,7 @@ export default function MyTickets() {
                   onChange={(e) => update({ search: e.target.value })}
                 />
               </div>
-              <div className="col-md-3">
+              <div className="col-md-4 col-lg-3">
                 <select
                   className="form-select"
                   value={categoryId}
@@ -208,7 +208,7 @@ export default function MyTickets() {
                   ))}
                 </select>
               </div>
-              <div className="col-md-2">
+              <div className="col-md-4 col-lg-2">
                 <select
                   className="form-select"
                   value={requestedPriority}
@@ -220,7 +220,7 @@ export default function MyTickets() {
                   <option value="HIGH">High</option>
                 </select>
               </div>
-              <div className="col-md-3">
+              <div className="col-md-4 col-lg-3">
                 <select
                   className="form-select"
                   aria-label="Status"

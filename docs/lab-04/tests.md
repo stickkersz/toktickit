@@ -104,7 +104,7 @@ Type key: Unit, API (integration), Security (authorization), Workflow, Dashboard
 | UI-17 | UI | AC-09, BR-12 | A Completed and a Cancelled Action opened | Every field read-only (`readOnly`), no Edit, Complete, or Cancel; "This action is final" shown | `client/tests/lab-04/ActionsTaken.test.tsx` | Pass |
 | UI-18 | UI | AC-04, AC-17 | Ineligible Responsible Staff, and a save refused with `INVALID_RESPONSIBLE` | Name with "Not active"; select offers only active staff; error under the field and the list reloads | `client/tests/lab-04/ActionsTaken.test.tsx` | Pass |
 | UI-19 | UI | AC-15, AC-25 | Requester Ticket Detail | Actions Taken and History shown read-only; no Add, Edit, Complete, Cancel, or status control | `client/tests/lab-04/ActionsTaken.test.tsx` (Actions part), `client/tests/lab-04/TicketWorkflow.test.tsx` (History part) | Pass |
-| UI-20 | UI | AC-19, AC-20, FR-07 | Status control with the gate closed | Resolved chosen shows the gate sentence and "Go to Actions Taken"; nothing sent | `client/tests/lab-04/TicketWorkflow.test.tsx` | Pass |
+| UI-20 | UI | AC-19, AC-20, FR-07 | Status control with the gate closed, and right after an Action write | Resolved chosen shows the gate sentence and "Go to Actions Taken"; nothing sent. After an Action write the status control is disabled and busy until the gate is re-read, so no choice is judged on the old gate and no move starts before the re-read lands | `client/tests/lab-04/TicketWorkflow.test.tsx` | Pass |
 | UI-21 | UI | AC-22, BR-41 | Move answered with `STATUS_CHANGED` | Conflict callout naming the new status, reloaded moves, pending confirmation dropped | `client/tests/lab-04/TicketWorkflow.test.tsx` | Pass |
 | UI-22 | UI | AC-27 | Successful move | Header badge, summary, History, and permitted moves refresh; "Status updated." shown and announced | `client/tests/lab-04/TicketWorkflow.test.tsx` | Pass |
 | UI-23 | UI | AC-24, BR-25 | History of a migrated Ticket | "Created as New" then "Earlier status changes were not recorded." | `client/tests/lab-04/TicketWorkflow.test.tsx` | Pass |
@@ -212,6 +212,12 @@ The shared development database was migrated the same day after a `pg_dump` back
 ## 5. Manual verification
 
 Recorded per Issue: each screen used in a real browser against the seeded database at 375, 768, and 1280, the screenshots read, and the browser console checked.
+
+**Final screen pass on `main` (2026-11-01).** `lab-screen-checker` captured every screen at 375, 768 and 1280 on `main` at `45d2a25`, with keyboard-focus crops of every control type and the browser console on each screen. No horizontal scroll anywhere, and no console error or warning other than the browser's own line for a 4xx the app expects. It reported eleven points; each was checked against the code before anything changed, and the fixes were rechecked with fresh captures:
+- Fixed, each behaviour change with a test that failed first: the status control now waits, disabled and busy, while the gate is re-read after an Action write, so a quick Resolved is never judged on the gate from before the write (this was also behind an intermittent Playwright failure in the resolution flow); Change Password validates on blur and its errors follow what is typed; Login drops an invalid-credentials banner once a field is edited; the Public Comments tab says it is visible to the Requester; the Create User panel names the password field once.
+- Fixed, layout: Create Ticket's counters no longer run into a wrapped message, its fields keep a gap when stacked and no value is clipped at 768; My Tickets' filters fit at 768; User Management uses the full width when no panel is open; the resolve gate's "Go to Actions Taken" looks like a link.
+- Not defects: the Requester opens an Action by clicking its row, which shows the cancel reason and Performed By (the checker had not clicked); the queue's phone cards carry the fields Lab 3's ui-spec lists.
+- Left as it is: a date field's selected part (day, month, year, time) keeps the browser's own highlight. Chromium ignores a focus pseudo-class written on those parts, and styling them without one would hide which part is being edited; the field itself shows the Zen Green ring. The rule that tried to restyle them never applied and was removed.
 
 ## 6. Results
 

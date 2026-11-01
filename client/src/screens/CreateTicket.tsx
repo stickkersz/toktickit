@@ -299,22 +299,23 @@ export default function CreateTicket() {
         </div>
       )}
 
-      <div className="row mb-4">
-        <div className="col-md-4">
+      {/* g-3 keeps a gap when these stack on a phone; two across from 768px, so no value is clipped. */}
+      <div className="row g-3 mb-4">
+        <div className="col-md-6 col-lg-4">
           <label className="form-label fw-semibold">Ticket Number</label>
           <input className="form-control" disabled value="Assigned after submission" />
         </div>
-        <div className="col-md-4">
+        <div className="col-md-6 col-lg-4">
           <label className="form-label fw-semibold">Ticket Date</label>
           <input className="form-control" disabled value="Today" />
         </div>
-        <div className="col-md-4">
+        <div className="col-md-6 col-lg-4">
           <label className="form-label fw-semibold">Requester</label>
           <input className="form-control" disabled value={user?.name ?? ""} />
         </div>
       </div>
 
-      <div className="row mb-3">
+      <div className="row g-3 mb-3">
         <div className="col-md-4">
           <label htmlFor="category" className="form-label fw-semibold">
             Category <RequiredMark />
@@ -396,13 +397,13 @@ export default function CreateTicket() {
           onBlur={() => handleFieldBlur("summary")}
           onChange={(e) => setSummary(e.target.value)}
         />
-        <div className="d-flex justify-content-between">
+        <div className="d-flex justify-content-between gap-2">
           {fieldErrors.summary ? (
             <p className="text-danger small mb-0">{fieldErrors.summary}</p>
           ) : (
             <span />
           )}
-          <span className="text-muted small">{summary.length}/120</span>
+          <span className="text-muted small text-nowrap">{summary.length}/120</span>
         </div>
       </div>
 
@@ -419,13 +420,13 @@ export default function CreateTicket() {
           onBlur={() => handleFieldBlur("description")}
           onChange={(e) => setDescription(e.target.value)}
         />
-        <div className="d-flex justify-content-between">
+        <div className="d-flex justify-content-between gap-2">
           {fieldErrors.description ? (
             <p className="text-danger small mb-0">{fieldErrors.description}</p>
           ) : (
             <span />
           )}
-          <span className="text-muted small">{description.length}/2000</span>
+          <span className="text-muted small text-nowrap">{description.length}/2000</span>
         </div>
       </div>
 

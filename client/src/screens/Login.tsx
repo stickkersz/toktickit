@@ -45,6 +45,12 @@ export default function Login() {
     password: touched.password ? passwordError(password) : undefined,
   };
 
+  // A refusal describes the values that were sent; once either is edited it no longer applies, so it goes
+  // rather than sitting beside a new field error (final screen pass). An API failure keeps its Retry.
+  function clearRefusal() {
+    setFailure((f) => (f === "credentials" || f === "inactive" ? "none" : f));
+  }
+
   async function submit() {
     setTouched({ email: true, password: true });
     if (emailError(email) || passwordError(password)) return;
@@ -127,7 +133,10 @@ export default function Login() {
             autoFocus
             aria-invalid={errors.email ? true : undefined}
             aria-describedby={errors.email ? "login-email-error" : undefined}
-            onChange={(e) => setEmail(e.target.value)}
+            onChange={(e) => {
+              setEmail(e.target.value);
+              clearRefusal();
+            }}
             onBlur={() => setTouched((t) => ({ ...t, email: true }))}
           />
           <div className="zg-field-feedback small">
@@ -144,7 +153,10 @@ export default function Login() {
           label="Password *"
           noun="password"
           value={password}
-          onChange={setPassword}
+          onChange={(value) => {
+            setPassword(value);
+            clearRefusal();
+          }}
           onBlur={() => setTouched((t) => ({ ...t, password: true }))}
           error={errors.password}
           autoComplete="current-password"

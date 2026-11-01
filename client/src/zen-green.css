@@ -521,16 +521,9 @@ a:hover {
   padding: 1.25rem;
 }
 
-/* The date and time field's selected segment: Zen Green pale, not the browser's blue highlight. */
-input[type="datetime-local"]::-webkit-datetime-edit-day-field:focus,
-input[type="datetime-local"]::-webkit-datetime-edit-month-field:focus,
-input[type="datetime-local"]::-webkit-datetime-edit-year-field:focus,
-input[type="datetime-local"]::-webkit-datetime-edit-hour-field:focus,
-input[type="datetime-local"]::-webkit-datetime-edit-minute-field:focus,
-input[type="datetime-local"]::-webkit-datetime-edit-ampm-field:focus {
-  background-color: var(--color-pale);
-  color: var(--color-text);
-}
+/* A date field's selected part (day, month, year, time) keeps the browser's own highlight: Chromium ignores
+   a :focus written after these pseudo-elements, and styling them without one would hide which part is being
+   edited. The field itself still shows the Zen Green ring (final screen pass). */
 
 /* Lab 4 Status History (ui-spec.md section 9): a vertical list joined by a Zen Green rule. */
 .zg-history-entry {
