@@ -213,6 +213,12 @@ The shared development database was migrated the same day after a `pg_dump` back
 
 Recorded per Issue: each screen used in a real browser against the seeded database at 375, 768, and 1280, the screenshots read, and the browser console checked.
 
+**Final screen pass on `main` (2026-11-01).** `lab-screen-checker` captured every screen at 375, 768 and 1280 on `main` at `45d2a25`, with keyboard-focus crops of every control type and the browser console on each screen. No horizontal scroll anywhere, and no console error or warning other than the browser's own line for a 4xx the app expects. It reported eleven points; each was checked against the code before anything changed, and the fixes were rechecked with fresh captures:
+- Fixed, each behaviour change with a test that failed first: the status control now waits, disabled and busy, while the gate is re-read after an Action write, so a quick Resolved is never judged on the gate from before the write (this was also behind an intermittent Playwright failure in the resolution flow); Change Password validates on blur and its errors follow what is typed; Login drops an invalid-credentials banner once a field is edited; the Public Comments tab says it is visible to the Requester; the Create User panel names the password field once.
+- Fixed, layout: Create Ticket's counters no longer run into a wrapped message, its fields keep a gap when stacked and no value is clipped at 768; My Tickets' filters fit at 768; User Management uses the full width when no panel is open; the resolve gate's "Go to Actions Taken" looks like a link.
+- Not defects: the Requester opens an Action by clicking its row, which shows the cancel reason and Performed By (the checker had not clicked); the queue's phone cards carry the fields Lab 3's ui-spec lists.
+- Left as it is: a date field's selected part (day, month, year, time) keeps the browser's own highlight. Chromium ignores a focus pseudo-class written on those parts, and styling them without one would hide which part is being edited; the field itself shows the Zen Green ring. The rule that tried to restyle them never applied and was removed.
+
 ## 6. Results
 
 Filled in per Issue as each one lands, with the exact counts copied from the test output, the tests changed for a superseding rule (listed under each Issue below), and the lessons.
