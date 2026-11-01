@@ -1267,3 +1267,13 @@ describe("Staff Ticket Detail: Attachments", () => {
     expect(screen.getByText("No attachments.")).toBeInTheDocument();
   });
 });
+
+// Final screen pass (Lab 4, ui-spec section 14): shared and private content are labelled, so a Public
+// Comment is never mistaken for an Internal Note.
+describe("Staff Ticket Detail: labels on shared content", () => {
+  it("says on the Public Comments tab that comments are visible to the Requester", async () => {
+    await openDetail();
+    await userEvent.click(screen.getByRole("tab", { name: /^Public Comments/ }));
+    expect(await screen.findByText("Public Comments are visible to the Requester.")).toBeInTheDocument();
+  });
+});

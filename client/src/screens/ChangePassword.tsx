@@ -16,7 +16,11 @@ export default function ChangePassword() {
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [errors, setErrors] = useState<Fields>({});
+  // A field's rule error shows once the field has been left or a submit was tried, and follows what is
+  // typed from then on; a server error shows until that field is edited (validation on blur, Lab 2 and
+  // Lab 3 pattern; found stale by the final screen pass).
+  const [shown, setShown] = useState<Record<keyof Fields, boolean>>({ currentPassword: false, newPassword: false, confirmPassword: false });
+  const [serverErrors, setServerErrors] = useState<Fields>({});
   const [apiFailure, setApiFailure] = useState(false);
   const [busy, setBusy] = useState(false);
   // A voluntary change (from the header) stays on this screen and says it worked.
@@ -35,11 +39,24 @@ export default function ChangePassword() {
     return found;
   }
 
+  const live = validate();
+  const errors: Fields = {
+    currentPassword: serverErrors.currentPassword ?? (shown.currentPassword ? live.currentPassword : undefined),
+    newPassword: serverErrors.newPassword ?? (shown.newPassword ? live.newPassword : undefined),
+    confirmPassword: serverErrors.confirmPassword ?? (shown.confirmPassword ? live.confirmPassword : undefined),
+  };
+  const edit = (field: keyof Fields, set: (v: string) => void) => (value: string) => {
+    set(value);
+    setServerErrors((s) => (s[field] ? { ...s, [field]: undefined } : s));
+  };
+  const leave = (field: keyof Fields) => () => setShown((s) => ({ ...s, [field]: true }));
+
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
     if (busy) return;
     const found = validate();
-    setErrors(found);
+    setShown({ currentPassword: true, newPassword: true, confirmPassword: true });
+    setServerErrors({});
     setApiFailure(false);
     // A new attempt replaces the outcome of the last one, so an earlier success is never shown
     // beside a failure.
@@ -62,9 +79,9 @@ export default function ChangePassword() {
       setConfirmPassword("");
     } catch (e) {
       if (e instanceof ValidationError) {
-        setErrors(e.fields);
+        setServerErrors(e.fields);
       } else if (e instanceof ApiError && e.code === "INVALID_CREDENTIALS") {
-        setErrors({ currentPassword: "Current password is incorrect." });
+        setServerErrors({ currentPassword: "Current password is incorrect." });
       } else {
         // Every value stays in the form so nothing has to be retyped.
         setApiFailure(true);
@@ -115,7 +132,8 @@ export default function ChangePassword() {
             label={mandatory ? "Current (temporary) password *" : "Current password *"}
             noun="current password"
             value={currentPassword}
-            onChange={setCurrentPassword}
+            onChange={edit("currentPassword", setCurrentPassword)}
+            onBlur={leave("currentPassword")}
             error={errors.currentPassword}
             autoComplete="current-password"
             autoFocus
@@ -125,7 +143,8 @@ export default function ChangePassword() {
             label="New password *"
             noun="new password"
             value={newPassword}
-            onChange={setNewPassword}
+            onChange={edit("newPassword", setNewPassword)}
+            onBlur={leave("newPassword")}
             error={errors.newPassword}
             autoComplete="new-password"
             describedBy="cp-rules"
@@ -147,7 +166,8 @@ export default function ChangePassword() {
             label="Confirm new password *"
             noun="password confirmation"
             value={confirmPassword}
-            onChange={setConfirmPassword}
+            onChange={edit("confirmPassword", setConfirmPassword)}
+            onBlur={leave("confirmPassword")}
             error={errors.confirmPassword}
             autoComplete="new-password"
           />

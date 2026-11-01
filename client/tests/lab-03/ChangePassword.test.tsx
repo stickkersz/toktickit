@@ -246,3 +246,22 @@ describe("Change Password screen", () => {
     expect(screen.queryByText("You must change your password to continue.")).not.toBeInTheDocument();
   });
 });
+
+// Final screen pass (Lab 4): validation on blur, and errors that follow what is typed after a failed submit.
+describe("Change Password validation as the user types", () => {
+  it("shows a mismatch when Confirm is left, and clears submit errors once the fields are fixed", async () => {
+    const user = userEvent.setup();
+    const { current, next, confirm, submit } = await openChangePassword();
+    await user.type(next, "Fresh!Pass456");
+    await user.type(confirm, "Fresh!Pass45");
+    await user.tab();
+    expect(await screen.findByText("Password confirmation does not match.")).toBeInTheDocument();
+
+    await user.click(submit);
+    expect(await screen.findByText("Current password is required.")).toBeInTheDocument();
+    await user.type(current, "ChangeMe!23");
+    await user.type(confirm, "6");
+    expect(screen.queryByText("Current password is required.")).not.toBeInTheDocument();
+    expect(screen.queryByText("Password confirmation does not match.")).not.toBeInTheDocument();
+  });
+});

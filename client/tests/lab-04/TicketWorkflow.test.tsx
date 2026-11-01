@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import * as api from "../../src/api.js";
 import { ApiError, type ActionItem, type StaffTicketDetail, type StaffTicketItem, type StatusHistory, type TicketDetail } from "../../src/api.js";
@@ -179,6 +179,29 @@ describe("the gate follows Action writes on the same screen (review on #85)", ()
     expect(screen.queryByText(/cannot be resolved yet/)).not.toBeInTheDocument();
   });
 
+  // UI-20 (final QA): a choice made while the gate is being re-read is never judged on the old gate. The status
+  // control waits, disabled and busy, until the re-read after an Action write has landed.
+  it("keeps the status control disabled until the gate re-read after an Action write lands", async () => {
+    await open(detail({ resolutionGate: { plannedActions: 1, completedActions: 0, canResolve: false } }), [planned]);
+    let land: (d: StaffTicketDetail) => void = () => {};
+    vi.mocked(api.getStaffTicketDetail).mockImplementation(() => new Promise((r) => (land = r)));
+    vi.spyOn(api, "completeAction").mockResolvedValue({ ...planned, status: "COMPLETED", version: 2, result: "Done.", performedBy: { id: STAFF.id, name: STAFF.name }, completedAt: new Date().toISOString() });
+    const panel = screen.getByRole("tabpanel");
+    await userEvent.click(await within(panel).findByRole("button", { name: /Replace the LAN cable/ }));
+    await userEvent.click(within(panel).getByRole("button", { name: "Complete" }));
+    await userEvent.type(within(screen.getByRole("dialog")).getByLabelText(/Result/), "Cable replaced.");
+    await userEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Mark as Completed" }));
+    await screen.findByText("Action completed.");
+    await waitFor(() => expect(statusSelect()).toBeDisabled());
+    expect(statusSelect()).toHaveAttribute("aria-busy", "true");
+
+    await act(async () => land(detail({ resolutionGate: { plannedActions: 0, completedActions: 1, canResolve: true } })));
+    await waitFor(() => expect(statusSelect()).toBeEnabled());
+    await userEvent.selectOptions(statusSelect(), "Resolved");
+    expect(screen.getByLabelText(/Resolution Summary/)).toBeInTheDocument();
+    expect(screen.queryByText(/cannot be resolved yet/)).not.toBeInTheDocument();
+  });
+
   // UI-20 (sweep on #85): the gate sentence goes once the gate opens, however the Action was completed
   it("drops the 'cannot be resolved yet' sentence when the last Planned Action is completed from the tab itself", async () => {
     await open(detail({ resolutionGate: { plannedActions: 1, completedActions: 0, canResolve: false } }), [planned]);
@@ -210,7 +233,7 @@ describe("the gate follows Action writes on the same screen (review on #85)", ()
   });
 
   // UI-22 (sweep on #85, section 5 async UI): an older status re-read never overwrites a newer move
-  it("keeps the newer status when the re-read after an Action write answers after a move's own re-read", async () => {
+  it("starts no move until the re-read after an Action write has landed, then moves", async () => {
     await open(detail({ resolutionGate: { plannedActions: 0, completedActions: 0, canResolve: false } }));
     let releaseOld!: (d: StaffTicketDetail) => void;
     const old = new Promise<StaffTicketDetail>((r) => (releaseOld = r));
@@ -222,11 +245,13 @@ describe("the gate follows Action writes on the same screen (review on #85)", ()
     await userEvent.type(screen.getByLabelText(/Action Description/), "Replace the LAN cable at desk 4B.");
     await userEvent.click(screen.getByRole("button", { name: "Save Action" }));
     await screen.findByText("Action added.");
-    // The re-read the Action started is still out; the move goes ahead and its own re-read answers first.
+    // While the re-read the Action started is still out, no move can start (final QA: the control waits),
+    // so a late answer can no longer land on top of a newer move.
+    await waitFor(() => expect(statusSelect()).toBeDisabled());
+    await act(async () => releaseOld(detail({ currentStatus: "IN_PROGRESS" })));
+    await waitFor(() => expect(statusSelect()).toBeEnabled());
     await userEvent.selectOptions(statusSelect(), "Waiting for Requester");
     await screen.findByText("Status updated.");
-    releaseOld(detail({ currentStatus: "IN_PROGRESS" }));
-    await new Promise((r) => setTimeout(r, 30));
     expect((statusSelect() as HTMLSelectElement).value).toBe("WAITING_FOR_REQUESTER");
   });
 

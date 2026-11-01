@@ -81,7 +81,8 @@ export default function UserManagement() {
     <div className="py-2">
       <h1 className="h4 mb-3">User Management</h1>
       <div className="row g-4">
-        <div className={`col-12 col-lg-7${panel ? " d-none d-lg-block" : ""}`}>
+        {/* The list takes the full width until a panel opens beside it (final screen pass). */}
+        <div className={`col-12${panel ? " col-lg-7 d-none d-lg-block" : ""}`}>
           <div className="row g-2 mb-3" role="search">
             <div className="col-12 col-md-5">
               <input
@@ -475,7 +476,6 @@ function UserPanel({ panel, onClose, onCreated, onChanged }: { panel: Panel; onC
 
         {creating && (
           <div className="mb-3">
-            <h3 className="h6">Initial Password</h3>
             <PasswordField
               id="um-password"
               label="Initial Password *"

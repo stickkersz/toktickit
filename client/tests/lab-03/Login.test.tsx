@@ -166,3 +166,15 @@ describe("Login screen", () => {
     expect(screen.queryByLabelText("Email address *")).not.toBeInTheDocument();
   });
 });
+
+// Final screen pass (Lab 4): a refusal describes the values that were sent, so it goes once either is edited.
+describe("Login after a refusal", () => {
+  it("removes the invalid-credentials banner as soon as the email or password is edited", async () => {
+    vi.spyOn(api, "login").mockRejectedValue(new ApiError("Invalid email or password.", 401, "INVALID_CREDENTIALS"));
+    const { user, submit, email } = await fill(REQUESTER.email, "Wrong!Passw0rd1");
+    await user.click(submit);
+    expect(await screen.findByText(/invalid email or password/i)).toBeInTheDocument();
+    await user.type(email, "x");
+    expect(screen.queryByText(/invalid email or password/i)).not.toBeInTheDocument();
+  });
+});
