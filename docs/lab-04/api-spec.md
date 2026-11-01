@@ -4,7 +4,7 @@ Companion to `docs/lab-04/specification.md`. Every endpoint below implements one
 
 ## Conventions
 
-All Lab 3 conventions continue: base path `/api`; JSON bodies; identity from the `toktickit_session` cookie only; ISO 8601 UTC timestamps; enum values as their Prisma strings; no state-changing GET; the 401, 403, and 404 rule of Lab 3; the `{ error, message, fields? }` error envelope; and no stack trace, SQL, path, hash, or token in any error.
+All Lab 3 conventions continue: base path `/api`; JSON bodies; identity from the `toktickit_session` cookie only; ISO 8601 UTC timestamps; enum values as their Prisma strings; no state-changing GET; the 401, 403, and 404 rule of Lab 3; the `{ error, message, fields? }` error envelope; and no stack trace, SQL, path, hash, or token in any error. A route that does not exist answers 404 `NOT_FOUND` in the same envelope, a body that is not valid JSON 400 `VALIDATION_ERROR`, and one over the size limit 413 `PAYLOAD_TOO_LARGE`, never with Express's own HTML page.
 
 New enum values: `ActionStatus` is `PLANNED | COMPLETED | CANCELLED`.
 

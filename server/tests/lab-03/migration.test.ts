@@ -177,6 +177,7 @@ describe("the Development Requester endpoint", () => {
   it("is gone: GET /api/requesters is a 404 from the router, with or without a session", async () => {
     const anonymous = await request(app).get("/api/requesters");
     expect(anonymous.status).toBe(404);
-    expect(anonymous.body).toEqual({});
+    // The catch-all's generic answer, so no route matched (Lab 4 replaced Express's empty HTML 404).
+    expect(anonymous.body).toEqual({ error: "NOT_FOUND", message: "Not found." });
   });
 });

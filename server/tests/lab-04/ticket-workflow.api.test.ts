@@ -359,6 +359,30 @@ describe("GET /api/tickets/:id resolution gate", () => {
 });
 
 describe("health and safe failures", () => {
+  // API-22 / BR-42 (found while building the submission PDF): a route that does not exist, and a body that is
+  // not valid JSON or is too large, answer in the same { error, message } envelope as every other error, never with
+  // Express's own HTML page, which repeats the method and path or shows a stack trace.
+  it("answers an unknown route with a JSON 404, a malformed JSON body with a JSON 400 and an oversized one with a JSON 413, revealing nothing", async () => {
+    for (const call of [request(app).get("/api/no-such-thing"), request(app).delete("/api/actions/14"), staff.delete("/api/actions/14"), request(app).get("/no-such-thing")]) {
+      const res = await call;
+      expect(res.status).toBe(404);
+      expect(res.headers["content-type"]).toMatch(/application\/json/);
+      expect(Object.keys(res.body).sort()).toEqual(["error", "message"]);
+      expect(res.body.error).toBe("NOT_FOUND");
+      expect(res.text).not.toMatch(/actions\/14|no-such-thing|<html|Cannot /i);
+    }
+    const bad = await request(app).post("/api/auth/login").set("Content-Type", "application/json").send('{"email": "a@b.c", ');
+    expect(bad.status).toBe(400);
+    expect(bad.headers["content-type"]).toMatch(/application\/json/);
+    expect(Object.keys(bad.body).sort()).toEqual(["error", "message"]);
+    expect(bad.body.error).toBe("VALIDATION_ERROR");
+    expect(bad.text).not.toMatch(/SyntaxError|at \w+ \(|node_modules|<html/);
+    const big = await request(app).post("/api/auth/login").set("Content-Type", "application/json").send(JSON.stringify({ x: "a".repeat(200_000) }));
+    expect(big.status).toBe(413);
+    expect(big.headers["content-type"]).toMatch(/application\/json/);
+    expect(Object.keys(big.body).sort()).toEqual(["error", "message"]);
+  });
+
   // API-21 / AC-52, FR-20
   it("answers the health check as in Lab 1", async () => {
     const res = await request(app).get("/api/health");

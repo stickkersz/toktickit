@@ -715,4 +715,22 @@ app.delete("/api/attachments/:id", ...requesterOnly, async (req: Request, res: R
   }
 });
 
+// Lab 4 (BR-42): anything no route above answered, and a body Express could not read, uses the same
+// { error, message } envelope as every other error. Without these, Express sends its own HTML page,
+// which repeats the method and path, or a stack trace for a malformed JSON body.
+app.use((_req, res) => {
+  res.status(404).json({ error: "NOT_FOUND", message: "Not found." });
+});
+
+app.use((err: { type?: string; status?: number }, _req: express.Request, res: express.Response, next: express.NextFunction) => {
+  if (res.headersSent) return next(err);
+  if (err.type === "entity.parse.failed") {
+    return res.status(400).json({ error: "VALIDATION_ERROR", message: "The request body is not valid JSON." });
+  }
+  if (err.type === "entity.too.large") {
+    return res.status(413).json({ error: "PAYLOAD_TOO_LARGE", message: "The request body is too large." });
+  }
+  res.status(500).json({ error: "INTERNAL_ERROR", message: "Something went wrong." });
+});
+
 export default app;
