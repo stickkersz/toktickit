@@ -15,15 +15,18 @@ beforeEach(() => {
 });
 
 // UI-26 / BR-43, AC-44: a console error or warning fails the test that produced it. A test that expects
-// one (a logged network failure) spies on the console itself, which replaces this collector.
+// one (a logged network failure) spies on the console itself, which replaces this collector for that test.
+// The collector is installed directly, not with vi.spyOn, so a test file's own vi.restoreAllMocks() in its
+// afterEach cannot switch it off before this file's afterEach runs; output logged in between is caught too
+// (found by the final audit, where two such files printed request errors unseen).
 let logged: string[] = [];
+for (const level of ["error", "warn"] as const) {
+  console[level] = (...args: unknown[]) => {
+    logged.push(`console.${level}: ${args.map(String).join(" ")}`);
+  };
+}
 beforeEach(() => {
   logged = [];
-  for (const level of ["error", "warn"] as const) {
-    vi.spyOn(console, level).mockImplementation((...args: unknown[]) => {
-      logged.push(`console.${level}: ${args.map(String).join(" ")}`);
-    });
-  }
 });
 afterEach(() => {
   if (logged.length > 0) throw new Error(`Console output during this test (BR-43):\n${logged.join("\n")}`);

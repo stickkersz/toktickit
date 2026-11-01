@@ -1,6 +1,6 @@
 import "@testing-library/jest-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { screen, within } from "@testing-library/react";
+import { cleanup, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import * as api from "../../src/api.js";
 import { ApiError, type ContentItem, type TicketDetail } from "../../src/api.js";
@@ -9,6 +9,8 @@ import { REQUESTER, renderApp } from "./support.js";
 const UUID = expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
 
 afterEach(() => {
+  // Unmount first, so a screen still loading cannot reach a real fetch once its stubs are gone (UI-26).
+  cleanup();
   vi.restoreAllMocks();
 });
 
@@ -215,8 +217,9 @@ describe("Requester Ticket Detail: Public Comments", () => {
       expect(screen.queryByRole("button", { name: "Post Comment" })).not.toBeInTheDocument();
       expect(within(panel()).getByText("This Ticket is closed, so comments can no longer be added.")).toBeInTheDocument();
       expect(within(panel()).getByText("We are investigating the issue on your device.")).toBeInTheDocument();
+      // Unmounting is enough between statuses: restoring every mock here would also remove the shared
+      // History stub, and the next status would reach a real fetch (UI-26).
       unmount();
-      vi.restoreAllMocks();
     }
   });
 

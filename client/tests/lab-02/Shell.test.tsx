@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import App from "../../src/App.js";
@@ -46,6 +46,8 @@ function renderAt(path: string) {
 }
 
 afterEach(() => {
+  // Unmount first, so a screen still loading cannot reach a real fetch once its stubs are gone (UI-26).
+  cleanup();
   vi.restoreAllMocks();
 });
 
