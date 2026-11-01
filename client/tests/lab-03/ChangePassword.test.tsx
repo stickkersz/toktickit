@@ -205,6 +205,9 @@ describe("Change Password screen", () => {
     expect(await screen.findByText("Your password has been changed. Your other sessions have been signed out.")).toHaveAttribute("role", "status");
     expect(screen.getByRole("link", { name: "Back to your home screen" })).toHaveAttribute("href", "/dashboard");
     expect(screen.getByLabelText("New password *")).toHaveValue("");
+    // The emptied form is a fresh start, not a failed submit (review on Lab 4 #96).
+    expect(screen.queryByText("Current password is required.")).not.toBeInTheDocument();
+    expect(document.querySelectorAll(".zg-field-error:not(:empty), .is-invalid")).toHaveLength(0);
   });
 
   // UI-41 / AC-55

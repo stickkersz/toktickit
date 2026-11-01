@@ -232,7 +232,8 @@ describe("the gate follows Action writes on the same screen (review on #85)", ()
     await waitFor(() => expect(vi.mocked(api.getStaffTicketDetail).mock.calls.length).toBeGreaterThan(detailCalls));
   });
 
-  // UI-22 (sweep on #85, section 5 async UI): an older status re-read never overwrites a newer move
+  // UI-20 (final QA, review on #96): while the re-read after an Action write is out, no move can start, so an
+  // older answer can never land on top of a newer move (this test once let the move race the re-read)
   it("starts no move until the re-read after an Action write has landed, then moves", async () => {
     await open(detail({ resolutionGate: { plannedActions: 0, completedActions: 0, canResolve: false } }));
     let releaseOld!: (d: StaffTicketDetail) => void;

@@ -77,6 +77,9 @@ export default function ChangePassword() {
       setCurrentPassword("");
       setNewPassword("");
       setConfirmPassword("");
+      // The emptied form is a fresh start: no field counts as left or tried (review on Lab 4 #96).
+      setShown({ currentPassword: false, newPassword: false, confirmPassword: false });
+      setServerErrors({});
     } catch (e) {
       if (e instanceof ValidationError) {
         setServerErrors(e.fields);
